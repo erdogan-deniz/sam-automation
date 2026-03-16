@@ -22,3 +22,7 @@ SAM/*
 .cache/
 *.orig
 Options
+
+# IDE / local tooling
+.claude/
+.vscode/
