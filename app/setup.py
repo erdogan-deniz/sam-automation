@@ -89,6 +89,10 @@ def ensure_sam(exe_path: str) -> str:
     Returns:
         Актуальный путь к SAM.Game.exe
     """
+    # Когда путь не задан — используем SAM/ рядом с проектом
+    if not exe_path:
+        exe_path = str(Path(__file__).parent.parent / "SAM" / "SAM.Game.exe")
+
     if Path(exe_path).exists():
         return exe_path
 
