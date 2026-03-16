@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-LOG_DIR = Path("logs")
+LOG_DIR = Path(__file__).parent.parent / "logs"
 
 
 def setup_logging(verbose: bool = False, name: str = "sam") -> logging.Logger:
