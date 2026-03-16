@@ -1,13 +1,9 @@
 """Сканирование библиотеки Steam → запись all_ids.txt.
 
-Собирает ID из шести источников:
-  1. localconfig.vdf  — локальная история этой машины
-  2. sharedconfig.vdf — Steam Cloud (все машины аккаунта)
-  3. appmanifest      — установленные приложения (все диски)
-  4. userdata         — папки с пользовательскими данными игр
-  5. Windows Registry — полный список владения
-  6. Steam API        — купленные игры (без никогда не запускавшихся F2P)
-  7. Steam CM         — все лицензии аккаунта (требует логин, самый полный)
+Собирает ID из трёх источников:
+  1. localconfig.vdf — локальная история этой машины (основной источник)
+  2. Steam API       — купленные игры (без никогда не запускавшихся F2P)
+  3. Steam CM        — все лицензии аккаунта (требует логин, самый полный)
 
 Использование:
     python scripts/scan.py  # читает config.yaml, пишет all_ids.txt
@@ -28,9 +24,7 @@ os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 from app.config import load_config
 from app.logging_setup import setup_logging
 from app.steam_local import (
-    find_steam_path, read_installed_app_ids, read_library_app_ids,
-    read_registry_app_ids, read_shared_app_ids, read_steam_username,
-    read_userdata_app_ids,
+    find_steam_path, read_library_app_ids, read_steam_username,
 )
 from app.cache import ALL_IDS_FILE
 
@@ -56,7 +50,7 @@ def main() -> None:
                 combined.append(gid)
         log.info("%s: %d ID (новых: %d)", source, len(new_ids), added)
 
-    # 1. localconfig.vdf
+    # 1. localconfig.vdf — основной источник
     if steam_path:
         try:
             _merge(read_library_app_ids(steam_path, cfg.steam_id), "localconfig.vdf")
@@ -65,34 +59,7 @@ def main() -> None:
     else:
         log.warning("Папка Steam не найдена. Укажи steam_path в config.yaml")
 
-    # 2. sharedconfig.vdf
-    if steam_path:
-        try:
-            _merge(read_shared_app_ids(steam_path, cfg.steam_id), "sharedconfig.vdf")
-        except Exception as e:
-            log.warning("sharedconfig.vdf: %s", e)
-
-    # 3. appmanifest_*.acf — все установленные приложения (все диски)
-    if steam_path:
-        try:
-            _merge(read_installed_app_ids(steam_path), "appmanifest (установленные)")
-        except Exception as e:
-            log.warning("appmanifest: %s", e)
-
-    # 4. userdata/<id3>/ — папки приложений с пользовательскими данными
-    if steam_path:
-        try:
-            _merge(read_userdata_app_ids(steam_path, cfg.steam_id), "userdata")
-        except Exception as e:
-            log.warning("userdata: %s", e)
-
-    # 5. Windows Registry — полный список владения (всё что видно в Steam)
-    try:
-        _merge(read_registry_app_ids(), "Windows Registry")
-    except Exception as e:
-        log.warning("Windows Registry: %s", e)
-
-    # 6. Steam API
+    # 2. Steam API
     if cfg.steam_api_key:
         try:
             from app.steam_api import fetch_all_game_ids
@@ -102,7 +69,7 @@ def main() -> None:
     else:
         log.info("steam_api_key не задан — пропускаю Steam API")
 
-    # 7. Steam CM — все лицензии аккаунта (самый полный источник, требует логин)
+    # 3. Steam CM — все лицензии аккаунта (самый полный источник, требует логин)
     if steam_path:
         try:
             username = read_steam_username()
