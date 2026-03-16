@@ -6,7 +6,7 @@
   3. Разворачиваем пакеты → App ID через локальный packageinfo.vdf
   4. После успешного входа предлагается сохранить данные на диск
 
-Примечание: при сохранении пароль хранится в открытом виде в локальном файле.
+Пароль хранится в Windows Credential Manager через keyring (DPAPI-шифрование).
 """
 
 from __future__ import annotations
@@ -17,49 +17,78 @@ import os
 from getpass import getpass
 from pathlib import Path
 
+import keyring
+import keyring.errors
+
 # steam использует protobuf 3.x API; при наличии protobuf 4.x нужен python-режим
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 log = logging.getLogger("sam_automation")
 
 _CRED_DIR = Path.home() / "AppData" / "Roaming" / "steamctl"
-_SESSION_FILE = _CRED_DIR / "steam_helper_session.json"
+# Хранит только имя пользователя — пароль идёт в Credential Manager
+_USERNAME_FILE = _CRED_DIR / "username.txt"
+# Старый файл — нужен для однократной миграции
+_LEGACY_SESSION_FILE = _CRED_DIR / "steam_helper_session.json"
+_KEYRING_SERVICE = "sam-automation"
 
 
 def _save_session(username: str, password: str) -> None:
-    """Сохраняет username+password на диск для следующих запусков."""
+    """Сохраняет username на диск, пароль — в Windows Credential Manager."""
     _CRED_DIR.mkdir(parents=True, exist_ok=True)
-    _SESSION_FILE.write_text(
-        json.dumps({"username": username, "password": password}),
-        encoding="utf-8",
-    )
+    _USERNAME_FILE.write_text(username, encoding="utf-8")
+    keyring.set_password(_KEYRING_SERVICE, username, password)
 
 
 def _load_session() -> tuple[str, str] | None:
-    """Загружает сохранённые данные входа. Возвращает (username, password) или None."""
-    if not _SESSION_FILE.exists():
+    """Загружает сохранённые данные входа. Возвращает (username, password) или None.
+
+    При наличии старого JSON-файла автоматически мигрирует в Credential Manager.
+    """
+    # Однократная миграция: старый plaintext JSON → keyring
+    if _LEGACY_SESSION_FILE.exists():
+        try:
+            data = json.loads(_LEGACY_SESSION_FILE.read_text(encoding="utf-8"))
+            u = data.get("username", "")
+            p = data.get("password", "")
+            if u and p:
+                _save_session(u, p)
+                _LEGACY_SESSION_FILE.unlink()
+                log.info("Steam CM: учётные данные перенесены в Credential Manager")
+                return u, p
+        except Exception:
+            pass
+        _LEGACY_SESSION_FILE.unlink(missing_ok=True)
+
+    if not _USERNAME_FILE.exists():
+        return None
+    username = _USERNAME_FILE.read_text(encoding="utf-8").strip()
+    if not username:
         return None
     try:
-        data = json.loads(_SESSION_FILE.read_text(encoding="utf-8"))
-        u = data.get("username", "")
-        p = data.get("password", "")
-        if u and p:
-            return u, p
+        password = keyring.get_password(_KEYRING_SERVICE, username)
     except Exception:
-        pass
-    return None
+        return None
+    return (username, password) if password else None
 
 
 def _clear_session() -> None:
-    """Удаляет только файл сессии (пароль). Sentry-файл сохраняется."""
-    if _SESSION_FILE.exists():
-        _SESSION_FILE.unlink()
-        log.info("Steam CM: файл сессии удалён (%s)", _SESSION_FILE)
+    """Удаляет пароль из Credential Manager и username-файл. Sentry сохраняется."""
+    if _USERNAME_FILE.exists():
+        username = _USERNAME_FILE.read_text(encoding="utf-8").strip()
+        if username:
+            try:
+                keyring.delete_password(_KEYRING_SERVICE, username)
+            except keyring.errors.PasswordDeleteError:
+                pass
+        _USERNAME_FILE.unlink()
+        log.info("Steam CM: учётные данные удалены из Credential Manager")
 
 
 def _clear_credentials() -> None:
     """Удаляет все данные Steam CM (сессия + sentry)."""
     import shutil
+    _clear_session()
     if _CRED_DIR.exists():
         shutil.rmtree(_CRED_DIR, ignore_errors=True)
         log.info("Steam CM: все данные удалены (%s)", _CRED_DIR)
@@ -283,7 +312,7 @@ def read_steam_cm_app_ids(
 
     if first_login and want_to_save and captured_password:
         _save_session(client.username or username, captured_password)
-        log.info("Steam CM: данные сохранены (%s)", _SESSION_FILE)
+        log.info("Steam CM: данные сохранены (%s)", _USERNAME_FILE)
 
     client.disconnect()
 

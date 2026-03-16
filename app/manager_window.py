@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -121,10 +122,22 @@ def _wait_for_status(game_window, timeout: float = 8.0, settle: float = 0.5) -> 
     return last
 
 
-def _has_load_error(game_window) -> bool:
-    """True если статус-бар SAM.Game показывает ошибку загрузки достижений."""
+def _check_game_status(game_window) -> tuple[str | None, int]:
+    """Читает статус-бар SAM.Game. Возвращает (skip_reason | None, achievement_count).
+
+    skip_reason:
+        None             — OK, достижения загружены
+        "no achievements" — у игры нет достижений (постоянный пропуск)
+        "error"          — SAM не смог загрузить достижения (временная ошибка, можно повторить)
+    """
     status = _wait_for_status(game_window, timeout=3.0, settle=0.5)
-    return "error" in status
+    match = re.search(r'(\d+)\s+achievement', status)
+    if match:
+        count = int(match.group(1))
+        return (None, count) if count > 0 else ("no achievements", 0)
+    if "error" in status:
+        return "error", 0
+    return "no achievements", 0
 
 
 # Глобальный кэш — живёт весь процесс
@@ -162,9 +175,10 @@ def process_game(
         raise SAMGameError(game_id, "Окно Manager не появилось")
 
     # Ранний выход: нет достижений или SAM не смог их загрузить
-    if _has_load_error(game_window):
-        log.info("[%d] Пропуск: статус-бар содержит ошибку (нет достижений)", game_id)
-        return UnlockResult(game_id=game_id, skipped=True, skip_reason="no achievements")
+    skip_reason, total = _check_game_status(game_window)
+    if skip_reason:
+        log.info("[%d] Пропуск: %s", game_id, skip_reason)
+        return UnlockResult(game_id=game_id, skipped=True, skip_reason=skip_reason)
 
     # Калибровка кэша (только первый раз — ~1с, потом 0с)
     if not _cache.ready:
@@ -192,6 +206,10 @@ def process_game(
     time.sleep(0.05)
     keyboard.send_keys("{ENTER}")
 
-    result.newly_unlocked = 1
+    if post_commit_delay > 0:
+        time.sleep(post_commit_delay)
+
+    result.total = total
+    result.newly_unlocked = total
     log.info("[%d] Done", game_id)
     return result

@@ -2,64 +2,19 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 from pathlib import Path
 
 log = logging.getLogger("sam_automation")
 
-CACHE_DIR = Path(".cache")
-SCAN_CACHE_FILE = CACHE_DIR / "scan_results.json"
-
-DATA_DIR = Path("data")
+_PROJECT_ROOT = Path(__file__).parent.parent
+DATA_DIR = _PROJECT_ROOT / "data"
 
 # Текстовые файлы состояния
 ALL_IDS_FILE = DATA_DIR / "all_ids.txt"
 DONE_IDS_FILE = DATA_DIR / "done_ids.txt"
 ERROR_IDS_FILE = DATA_DIR / "error_ids.txt"
 NO_ACHIEVEMENTS_FILE = DATA_DIR / "no_achievements_ids.txt"
-
-# Кэш сканирования живёт 1 час
-SCAN_CACHE_TTL = 3600
-
-
-def _ensure_cache_dir():
-    CACHE_DIR.mkdir(exist_ok=True)
-
-
-def load_scan_cache(scan_all: bool = False) -> list[int] | None:
-    """Загружает кэшированный список игр.
-
-    Returns:
-        Список app_id или None если кэш устарел/отсутствует/режим не совпадает.
-    """
-    if not SCAN_CACHE_FILE.exists():
-        return None
-
-    try:
-        data = json.loads(SCAN_CACHE_FILE.read_text(encoding="utf-8"))
-        ts = data.get("timestamp", 0)
-        if time.time() - ts > SCAN_CACHE_TTL:
-            log.debug("Кэш сканирования устарел")
-            return None
-        # Инвалидируем кэш если режим изменился
-        if data.get("scan_all", False) != scan_all:
-            log.debug("Кэш сканирования не подходит (другой режим)")
-            return None
-        ids = data.get("game_ids", [])
-        log.info("Загружен кэш сканирования: %d игр (возраст: %dс)", len(ids), int(time.time() - ts))
-        return ids
-    except Exception:
-        return None
-
-
-def save_scan_cache(game_ids: list[int], scan_all: bool = False) -> None:
-    """Сохраняет результат сканирования в кэш."""
-    _ensure_cache_dir()
-    data = {"timestamp": time.time(), "game_ids": game_ids, "scan_all": scan_all}
-    SCAN_CACHE_FILE.write_text(json.dumps(data), encoding="utf-8")
-    log.debug("Кэш сканирования сохранён: %d игр", len(game_ids))
 
 
 # ---------------------------------------------------------------------------
