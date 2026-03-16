@@ -1,12 +1,24 @@
-.venv/
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
-*.pyc
+*.py[cod]
 .mypy_cache/
-logs/
-config.yaml
-SAM/
-.cache/
-data/
-Options
+.venv/
+
+# ── Secrets / Local Config ────────────────────────────────────────────────────
 .env
+config.yaml
+
+# ── Runtime State ─────────────────────────────────────────────────────────────
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# ── SAM Binaries (auto-downloaded on first run) ───────────────────────────────
+SAM/*
+!SAM/.gitkeep
+
+# ── Tooling ───────────────────────────────────────────────────────────────────
+.cache/
 *.orig
+Options

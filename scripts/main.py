@@ -1,30 +1,33 @@
 """SAM Automation — автоматическая разблокировка всех достижений Steam.
 
 Использование:
-    python main.py              # полный автопилот
-    python main.py --list       # только показать какие игры будут обработаны
-    python main.py --reset      # сбросить прогресс и начать заново
+    python scripts/main.py              # полный автопилот
+    python scripts/main.py --list       # только показать какие игры будут обработаны
+    python scripts/main.py --reset      # сбросить прогресс и начать заново
 """
 
 from __future__ import annotations
 
-import argparse
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import argparse
 import time
 import logging
 
-from sam_automation.cache import (
+from app.cache import (
     clear_progress, load_done_ids, load_error_ids, load_no_achievements_ids,
     mark_done, mark_error_id, mark_no_achievements,
 )
-from sam_automation.config import load_config
-from sam_automation.exceptions import SAMError, SAMTooManyErrors
-from sam_automation.game_list import load_game_ids
-from sam_automation.launcher import close_game, kill_process, launch_picker
-from sam_automation.logging_setup import setup_logging
-from sam_automation.manager_window import UnlockResult, process_game
-from sam_automation.safety import ErrorTracker
-from sam_automation.setup import check_steam_running, ensure_sam
+from app.config import load_config
+from app.exceptions import SAMError, SAMTooManyErrors
+from app.game_list import load_game_ids
+from app.launcher import close_game, kill_process, launch_picker
+from app.logging_setup import setup_logging
+from app.manager_window import UnlockResult, process_game
+from app.safety import ErrorTracker
+from app.setup import check_steam_running, ensure_sam
 
 
 def main():
@@ -118,18 +121,26 @@ def main():
                 results.append(result)
                 tracker.record_success()
 
-                if result.skipped and result.skip_reason == "no achievements":
-                    mark_no_achievements(game_id)
+                if result.skipped:
+                    if result.skip_reason == "no achievements":
+                        mark_no_achievements(game_id)
+                    else:
+                        mark_error_id(game_id)
                 else:
                     mark_done(game_id)
 
             except SAMTooManyErrors:
                 log.error("Аварийная остановка: слишком много ошибок подряд!")
                 raise
-            except (SAMError, Exception) as e:
+            except SAMError as e:
                 errors += 1
-                if not isinstance(e, SAMError):
-                    log.error("[%d] Ошибка: %s", game_id, e, exc_info=True)
+                log.warning("[%d] %s", game_id, e)
+                tracker.record_error(game_id, e)
+                results.append(UnlockResult(game_id=game_id, skipped=True, skip_reason=str(e)))
+                mark_error_id(game_id)
+            except Exception as e:
+                errors += 1
+                log.error("[%d] Ошибка: %s", game_id, e, exc_info=True)
                 tracker.record_error(game_id, e)
                 results.append(UnlockResult(game_id=game_id, skipped=True, skip_reason=str(e)))
                 mark_error_id(game_id)
