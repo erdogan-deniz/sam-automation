@@ -52,4 +52,3 @@ between_games_delay: 0.1
 
 # Порог последовательных ошибок для аварийной остановки
 max_consecutive_errors: 100
-
