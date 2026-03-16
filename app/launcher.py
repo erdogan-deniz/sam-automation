@@ -110,6 +110,26 @@ def _find_picker_dialog(picker_pid: int, main_hwnd: int) -> int:
     return found[0] if found else 0
 
 
+def _close_picker_modal(picker_hwnd: int, picker_pid: int, wait_timeout: float = 3.0) -> bool:
+    """Ищет и закрывает modal dialog Picker. Возвращает True если диалог был закрыт.
+
+    После клика ждёт пока Picker снова станет enabled (до wait_timeout секунд).
+    """
+    popup = _user32.GetWindow(picker_hwnd, _GW_ENABLEDPOPUP)
+    if not popup or popup == picker_hwnd:
+        popup = _find_picker_dialog(picker_pid, picker_hwnd)
+    if not popup:
+        return False
+    log.debug("Modal диалог SAM найден: hwnd=%d", popup)
+    _click_first_button(popup)
+    deadline = time.time() + wait_timeout
+    while time.time() < deadline:
+        time.sleep(0.05)
+        if _user32.IsWindowEnabled(picker_hwnd):
+            break
+    return True
+
+
 class PickerSession:
     """Кэширует Picker окно и все его элементы на весь процесс."""
 
@@ -144,28 +164,17 @@ class PickerSession:
         self._edit.set_edit_text(str(game_id))
         self._add_btn.click_input()
 
-        # Ждём появления игры в списке.
+        # Ждём появления игры в списке (до 1с).
         # ВАЖНО: проверяем IsWindowEnabled ДО вызова UIA —
         # когда открыт modal dialog, Picker становится disabled и UIA зависает.
         items = []
         dialog_closed = False
-        for _ in range(10):
+        deadline_items = time.time() + 1.0
+        while time.time() < deadline_items:
             time.sleep(0.1)
             if not _user32.IsWindowEnabled(picker_hwnd):
-                # Picker заблокирован modal dialog'ом — ищем и закрываем его
                 log.debug("Picker disabled — ищем modal dialog")
-                popup = _user32.GetWindow(picker_hwnd, _GW_ENABLEDPOPUP)
-                if not popup or popup == picker_hwnd:
-                    popup = _find_picker_dialog(self.picker_pid, picker_hwnd)
-                if popup:
-                    log.debug("Диалог SAM найден (early): hwnd=%d", popup)
-                    _click_first_button(popup)
-                    # Ждём пока Picker снова станет enabled
-                    for _ in range(30):
-                        time.sleep(0.1)
-                        if _user32.IsWindowEnabled(picker_hwnd):
-                            break
-                dialog_closed = True
+                dialog_closed = _close_picker_modal(picker_hwnd, self.picker_pid)
                 break
             try:
                 items = [c for c in self._listview.children()
@@ -179,22 +188,15 @@ class PickerSession:
             if not dialog_closed:
                 # Диалог мог появиться после цикла — даём ещё 2с
                 try:
-                    for _ in range(20):
+                    dialog_appeared = False
+                    deadline_dialog = time.time() + 2.0
+                    while time.time() < deadline_dialog:
                         time.sleep(0.1)
                         if not _user32.IsWindowEnabled(picker_hwnd):
-                            popup = _user32.GetWindow(picker_hwnd, _GW_ENABLEDPOPUP)
-                            if not popup or popup == picker_hwnd:
-                                popup = _find_picker_dialog(self.picker_pid, picker_hwnd)
-                            if popup:
-                                log.debug("Диалог SAM найден (delayed): hwnd=%d", popup)
-                                _click_first_button(popup)
-                                # Ждём пока Picker снова станет enabled
-                                for _ in range(30):
-                                    time.sleep(0.1)
-                                    if _user32.IsWindowEnabled(picker_hwnd):
-                                        break
+                            _close_picker_modal(picker_hwnd, self.picker_pid)
+                            dialog_appeared = True
                             break
-                    else:
+                    if not dialog_appeared:
                         log.debug("Диалог не появился за 2с")
                 except Exception:
                     log.exception("Ошибка при закрытии диалога SAM")

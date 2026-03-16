@@ -32,10 +32,7 @@ class Config:
     steam_path: str = ""  # путь к папке Steam (автоопределяется если пусто)
 
     # Поведение
-    skip_already_unlocked: bool = False
-    close_on_error: bool = True
     max_consecutive_errors: int = 100
-    scan_all_games: bool = True  # получить все игры одним запросом без проверки достижений
 
 
 def load_config(config_path: str = "config.yaml") -> Config:
@@ -70,10 +67,6 @@ def load_config(config_path: str = "config.yaml") -> Config:
     for float_key in ("launch_delay", "load_timeout", "post_commit_delay", "between_games_delay"):
         if float_key in raw:
             setattr(cfg, float_key, float(raw[float_key]))
-
-    for bool_key in ("skip_already_unlocked", "close_on_error", "scan_all_games"):
-        if bool_key in raw:
-            setattr(cfg, bool_key, bool(raw[bool_key]))
 
     if "max_consecutive_errors" in raw:
         cfg.max_consecutive_errors = int(raw["max_consecutive_errors"])

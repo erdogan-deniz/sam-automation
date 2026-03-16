@@ -10,26 +10,29 @@
   7. Steam CM         — все лицензии аккаунта (требует логин, самый полный)
 
 Использование:
-    python scan.py          # читает config.yaml, пишет all_ids.txt
+    python scripts/scan.py  # читает config.yaml, пишет all_ids.txt
 """
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import logging
 import os
-import sys
 
 # Должно быть до любого импорта protobuf (используется steam библиотекой)
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
-from sam_automation.config import load_config
-from sam_automation.logging_setup import setup_logging
-from sam_automation.steam_local import (
+from app.config import load_config
+from app.logging_setup import setup_logging
+from app.steam_local import (
     find_steam_path, read_installed_app_ids, read_library_app_ids,
     read_registry_app_ids, read_shared_app_ids, read_steam_username,
     read_userdata_app_ids,
 )
-from sam_automation.cache import ALL_IDS_FILE
+from app.cache import ALL_IDS_FILE
 
 
 def main() -> None:
@@ -92,7 +95,7 @@ def main() -> None:
     # 6. Steam API
     if cfg.steam_api_key:
         try:
-            from sam_automation.steam_api import fetch_all_game_ids
+            from app.steam_api import fetch_all_game_ids
             _merge(fetch_all_game_ids(cfg.steam_api_key, cfg.steam_id), "Steam API")
         except Exception as e:
             log.warning("Steam API: %s", e)
@@ -108,7 +111,7 @@ def main() -> None:
             username = None
         if username:
             try:
-                from sam_automation.steam_cm import read_steam_cm_app_ids
+                from app.steam_cm import read_steam_cm_app_ids
                 _merge(read_steam_cm_app_ids(steam_path, username, interactive=True), "Steam CM")
             except KeyboardInterrupt:
                 log.info("Steam CM: отменено пользователем")
