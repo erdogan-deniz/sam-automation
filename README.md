@@ -109,7 +109,7 @@ sam-automation/
 │   ├── steam_cm.py         # Steam CM protocol login (credentials via keyring)
 │   └── steam_local.py      # Parse local Steam library folders
 ├── scripts/
-│   ├── scan.py             # Collect App IDs from 7 sources → data/all_ids.txt
+│   ├── scan.py             # Collect App IDs from 3 sources → data/all_ids.txt
 │   └── main.py             # Main automation loop
 ├── data/                   # Runtime state (gitignored)
 ├── logs/                   # Session logs (gitignored)
