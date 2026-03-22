@@ -16,7 +16,7 @@ class SAMConnectionError(SAMError):
 class SAMGameError(SAMError):
     """Ошибка от SAM при работе с конкретной игрой (игра не куплена, нет достижений)."""
 
-    def __init__(self, game_id: int, message: str):
+    def __init__(self, game_id: int, message: str) -> None:
         self.game_id = game_id
         super().__init__(f"Game {game_id}: {message}")
 

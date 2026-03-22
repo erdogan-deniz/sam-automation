@@ -10,11 +10,14 @@ log = logging.getLogger("sam_automation")
 _PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = _PROJECT_ROOT / "data"
 
+_ACHIEVEMENTS_DIR = DATA_DIR / "achievements"
+_CARDS_DIR = DATA_DIR / "cards"
+
 # Текстовые файлы состояния
-ALL_IDS_FILE = DATA_DIR / "all_ids.txt"
-DONE_IDS_FILE = DATA_DIR / "done_ids.txt"
-ERROR_IDS_FILE = DATA_DIR / "error_ids.txt"
-NO_ACHIEVEMENTS_FILE = DATA_DIR / "no_achievements_ids.txt"
+ALL_IDS_FILE = _ACHIEVEMENTS_DIR / "ids.txt"
+DONE_IDS_FILE = _ACHIEVEMENTS_DIR / "done_ids.txt"
+ERROR_IDS_FILE = _ACHIEVEMENTS_DIR / "error_ids.txt"
+NO_ACHIEVEMENTS_FILE = _ACHIEVEMENTS_DIR / "no_achievements_ids.txt"
 
 
 # ---------------------------------------------------------------------------
@@ -82,3 +85,27 @@ def clear_progress() -> None:
         if path.exists():
             path.unlink()
             log.debug("Удалён файл прогресса: %s", path)
+
+
+# ---------------------------------------------------------------------------
+# Card farming state
+# ---------------------------------------------------------------------------
+
+CARD_DONE_IDS_FILE = _CARDS_DIR / "card_done_ids.txt"
+
+
+def load_card_done_ids() -> set[int]:
+    """Читает card_done_ids.txt → set[int] (игры без оставшихся card drops)."""
+    return _load_ids_file(CARD_DONE_IDS_FILE)
+
+
+def mark_card_done(game_id: int) -> None:
+    """Дозаписывает game_id в card_done_ids.txt."""
+    _append_id(CARD_DONE_IDS_FILE, game_id)
+
+
+def clear_card_progress() -> None:
+    """Удаляет card_done_ids.txt (для нового запуска card farming)."""
+    if CARD_DONE_IDS_FILE.exists():
+        CARD_DONE_IDS_FILE.unlink()
+        log.debug("Удалён файл прогресса: %s", CARD_DONE_IDS_FILE)
