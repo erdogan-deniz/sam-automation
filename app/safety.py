@@ -12,7 +12,7 @@ log = logging.getLogger("sam_automation")
 class ErrorTracker:
     """Отслеживает последовательные ошибки и останавливает выполнение при превышении лимита."""
 
-    def __init__(self, max_consecutive: int = 3):
+    def __init__(self, max_consecutive: int = 3) -> None:
         self.max_consecutive = max_consecutive
         self._consecutive = 0
         self._total_errors = 0
