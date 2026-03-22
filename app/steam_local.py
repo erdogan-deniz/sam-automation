@@ -133,8 +133,11 @@ def read_library_app_ids(steam_path: str, steam_id: str) -> list[int]:
             f"Убедись что Steam Path указан верно и ты входил в Steam с этого аккаунта."
         )
 
-    log.info("Читаю библиотеку из %s", vdf_path)
+    log.info("Читаем игры библиотеки из файла: %s", vdf_path)
+
     content = vdf_path.read_text(encoding="utf-8", errors="replace")
     app_ids = _extract_app_ids_from_vdf(content)
+
     log.info("Найдено %d приложений в локальной библиотеке Steam", len(app_ids))
+
     return app_ids

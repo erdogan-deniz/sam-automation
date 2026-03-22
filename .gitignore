@@ -15,8 +15,11 @@ logs/*
 !logs/.gitkeep
 
 # ── SAM Binaries (auto-downloaded on first run) ───────────────────────────────
-SAM/*
-!SAM/.gitkeep
+external/SAM/*
+!external/SAM/.gitkeep
+
+# ── Debug dumps ───────────────────────────────────────────────────────────────
+*.html
 
 # ── Tooling ───────────────────────────────────────────────────────────────────
 .cache/
