@@ -13,7 +13,7 @@ steam_id: ""
 # ── SAM ───────────────────────────────────────────────────────────────────────
 
 # Путь к SAM.Game.exe. Если файл не найден — скачается автоматически с GitHub.
-sam_game_exe_path: "./SAM/SAM.Game.exe"
+sam_game_exe_path: "./external/SAM/SAM.Game.exe"
 
 # ── Фильтрация игр ────────────────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ sam_game_exe_path: "./SAM/SAM.Game.exe"
 launch_delay: 3
 
 # Максимальное время ожидания загрузки игры в SAM (сек)
-load_timeout: 15
+load_timeout: 10
 
 # Пауза после Commit Changes (сек)
 post_commit_delay: 0.2
@@ -52,3 +52,11 @@ between_games_delay: 0.1
 
 # Порог последовательных ошибок для аварийной остановки
 max_consecutive_errors: 100
+
+# ── Карточки (card_farming.py) ────────────────────────────────────────────────
+
+# Сколько игр идлить одновременно (SAM.Game.exe запускается N раз параллельно)
+max_concurrent_games: 1
+
+# Минут между проверками количества оставшихся card drops
+card_check_interval: 30

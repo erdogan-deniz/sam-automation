@@ -94,6 +94,6 @@ def ensure_sam(exe_path: str) -> str:
 
     log.warning("SAM.Game.exe не найден по пути: %s", exe_path)
 
-    # Скачиваем в папку SAM/ рядом с проектом
+    # Скачиваем в папку external/SAM/ рядом с проектом
     sam_dir = Path(exe_path).parent
     return download_sam(str(sam_dir))
