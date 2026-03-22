@@ -1,9 +1,9 @@
 """SAM Automation — автоматическая разблокировка всех достижений Steam.
 
 Использование:
-    python scripts/main.py              # полный автопилот
-    python scripts/main.py --list       # только показать какие игры будут обработаны
-    python scripts/main.py --reset      # сбросить прогресс и начать заново
+    python scripts/unlock_achievements.py              # полный автопилот
+    python scripts/unlock_achievements.py --list       # только показать какие игры будут обработаны
+    python scripts/unlock_achievements.py --reset      # сбросить прогресс и начать заново
 """
 
 from __future__ import annotations
@@ -38,18 +38,18 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
-    log = setup_logging(verbose=args.verbose, name="unlock")
+    log = setup_logging(verbose=args.verbose, name="unlock_achievements", category="achievements/unlock")
     cfg = load_config()
-
-    if args.reset:
-        clear_progress()
-        log.info("Прогресс сброшен")
 
     # Валидация
     if not cfg.steam_api_key or not cfg.steam_id:
         log.error("Заполни steam_api_key и steam_id в config.yaml")
         log.error("API ключ: https://steamcommunity.com/dev/apikey")
         sys.exit(1)
+
+    if args.reset:
+        clear_progress()
+        log.info("Прогресс сброшен")
 
     # Проверяем Steam
     if not check_steam_running():
@@ -92,7 +92,6 @@ def main():
         sys.exit(0)
 
     # Запускаем SAM.Picker.exe — session кэширует окно и элементы на весь процесс
-    log.info("Запуск SAM.Picker.exe ...")
     proc, session = launch_picker(cfg.sam_game_exe_path, launch_delay=cfg.launch_delay)
 
     total = len(game_ids)

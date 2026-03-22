@@ -133,7 +133,7 @@ def _close_picker_modal(picker_hwnd: int, picker_pid: int, wait_timeout: float =
 class PickerSession:
     """Кэширует Picker окно и все его элементы на весь процесс."""
 
-    def __init__(self, app: Application):
+    def __init__(self, app: Application) -> None:
         self.app = app
         self.win = app.window(auto_id="GamePicker")
         self.win.wait("exists", timeout=5)
@@ -145,7 +145,7 @@ class PickerSession:
         self._listview = self.win.child_window(auto_id="_GameListView")
         self._cache_toolbar_controls()
 
-    def _cache_toolbar_controls(self):
+    def _cache_toolbar_controls(self) -> None:
         for c in self.toolbar.children():
             cls = c.friendly_class_name()
             if cls == "Edit" and self._edit is None:
@@ -188,19 +188,26 @@ class PickerSession:
             if not dialog_closed:
                 # Диалог мог появиться после цикла — даём ещё 2с
                 try:
-                    dialog_appeared = False
                     deadline_dialog = time.time() + 2.0
                     while time.time() < deadline_dialog:
                         time.sleep(0.1)
                         if not _user32.IsWindowEnabled(picker_hwnd):
                             _close_picker_modal(picker_hwnd, self.picker_pid)
-                            dialog_appeared = True
                             break
-                    if not dialog_appeared:
+                    else:
                         log.debug("Диалог не появился за 2с")
                 except Exception:
                     log.exception("Ошибка при закрытии диалога SAM")
-            raise SAMGameError(game_id, "SAM: игра недоступна")
+
+            # Перепроверяем список после закрытия диалога
+            try:
+                items = [c for c in self._listview.children()
+                         if c.friendly_class_name() == "ListItem"]
+            except Exception:
+                items = []
+
+            if not items:
+                raise SAMGameError(game_id, "SAM: игра недоступна")
 
         # PID'ы до двойного клика (Win32 — <1мс)
         existing_pids = _get_sam_game_pids()
