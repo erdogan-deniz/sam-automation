@@ -37,7 +37,7 @@ class _ButtonCache:
     потом кликаем напрямую по координатам — мгновенно.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.unlock_all_dx: int = 0
         self.unlock_all_dy: int = 0
         self.commit_dx: int = 0
@@ -122,7 +122,7 @@ def _wait_for_status(game_window, timeout: float = 8.0, settle: float = 0.5) -> 
     return last
 
 
-def _check_game_status(game_window) -> tuple[str | None, int]:
+def _check_game_status(game_window, timeout: float = 3.0) -> tuple[str | None, int]:
     """Читает статус-бар SAM.Game. Возвращает (skip_reason | None, achievement_count).
 
     skip_reason:
@@ -130,14 +130,14 @@ def _check_game_status(game_window) -> tuple[str | None, int]:
         "no achievements" — у игры нет достижений (постоянный пропуск)
         "error"          — SAM не смог загрузить достижения (временная ошибка, можно повторить)
     """
-    status = _wait_for_status(game_window, timeout=3.0, settle=0.5)
-    match = re.search(r'(\d+)\s+achievement', status)
-    if match:
-        count = int(match.group(1))
-        return (None, count) if count > 0 else ("no achievements", 0)
+    status = _wait_for_status(game_window, timeout=timeout, settle=1.0)
     if "error" in status:
-        return "error", 0
-    return "no achievements", 0
+        return "no achievements", 0
+    if "retrieved" in status:
+        match = re.search(r'(\d+)', status)
+        count = int(match.group(1)) if match else 0
+        return None, count
+    return "error", 0
 
 
 # Глобальный кэш — живёт весь процесс
@@ -175,7 +175,7 @@ def process_game(
         raise SAMGameError(game_id, "Окно Manager не появилось")
 
     # Ранний выход: нет достижений или SAM не смог их загрузить
-    skip_reason, total = _check_game_status(game_window)
+    skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
     if skip_reason:
         log.info("[%d] Пропуск: %s", game_id, skip_reason)
         return UnlockResult(game_id=game_id, skipped=True, skip_reason=skip_reason)

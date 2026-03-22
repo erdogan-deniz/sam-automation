@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
 import yaml
 
 
@@ -19,7 +17,7 @@ class Config:
     steam_id: str = ""
 
     game_ids: list[int] = field(default_factory=list)
-    game_ids_file: Optional[str] = None
+    game_ids_file: str | None = None
     exclude_ids: list[int] = field(default_factory=list)
 
     # Таймауты (секунды)
@@ -33,6 +31,10 @@ class Config:
 
     # Поведение
     max_consecutive_errors: int = 100
+
+    # Card farming
+    max_concurrent_games: int = 1   # сколько игр идлить одновременно
+    card_check_interval: int = 10   # минут между проверками card drops
 
 
 def load_config(config_path: str = "config.yaml") -> Config:
@@ -70,6 +72,12 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     if "max_consecutive_errors" in raw:
         cfg.max_consecutive_errors = int(raw["max_consecutive_errors"])
+
+    if "max_concurrent_games" in raw:
+        cfg.max_concurrent_games = int(raw["max_concurrent_games"])
+
+    if "card_check_interval" in raw:
+        cfg.card_check_interval = int(raw["card_check_interval"])
 
     # Резолвим относительный путь к exe от директории конфига
     if cfg.sam_game_exe_path and not os.path.isabs(cfg.sam_game_exe_path):
