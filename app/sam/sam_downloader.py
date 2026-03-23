@@ -24,16 +24,36 @@ def _fetch_latest_release() -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def check_for_update(sam_dir: Path) -> tuple[bool, str]:
-    """Проверяет, доступна ли новая версия SAM.
+def check_for_update(exe_path: str) -> str | None:
+    """Проверяет наличие обновления SAM на GitHub и предлагает обновить.
 
     Returns:
-        (needs_update, latest_tag)
+        Новый путь к SAM.Game.exe если обновление установлено, иначе None.
     """
+    exe_dir = Path(exe_path).parent
+    installed = _read_installed_version(exe_dir)
     release = _fetch_latest_release()
-    latest_tag = release.get("tag_name", "")
-    installed = _read_installed_version(sam_dir)
-    return installed != latest_tag, latest_tag
+    latest = release["tag_name"]
+
+    if installed == latest:
+        log.debug("SAM %s — последняя версия", latest)
+        return None
+
+    if installed is None:
+        log.info("Версия SAM неизвестна. Последняя: %s", latest)
+    else:
+        log.info("Доступна новая версия SAM: %s (текущая: %s)", latest, installed)
+
+    try:
+        answer = input("Обновить SAM? [y/n]: ").strip().lower()
+    except EOFError:
+        log.info("Не интерактивный режим — пропускаю обновление SAM")
+        return None
+
+    if answer != "y":
+        return None
+
+    return download_sam(str(exe_dir), release=release)
 
 
 def _save_version(sam_dir: Path, tag_name: str) -> None:

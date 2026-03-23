@@ -128,3 +128,64 @@ def test_download_sam_uses_provided_release(tmp_path):
         download_sam(str(tmp_path), release=release)
         mock_fetch.assert_not_called()
     assert (tmp_path / ".sam_version").read_text(encoding="utf-8") == "r69"
+
+
+# ── check_for_update ──────────────────────────────────────────────────────────
+
+
+def test_check_for_update_returns_none_when_up_to_date(tmp_path):
+    exe = _setup_sam_dir(tmp_path, "r68")
+    with patch("app.sam.sam_downloader._fetch_latest_release",
+               return_value=_make_release("r68")):
+        assert check_for_update(str(exe)) is None
+
+
+def test_check_for_update_returns_none_when_user_declines(tmp_path):
+    exe = _setup_sam_dir(tmp_path, "r68")
+    with patch("app.sam.sam_downloader._fetch_latest_release",
+               return_value=_make_release("r69")), \
+         patch("builtins.input", return_value="n"):
+        assert check_for_update(str(exe)) is None
+
+
+def test_check_for_update_returns_new_path_when_user_accepts(tmp_path):
+    exe = _setup_sam_dir(tmp_path, "r68")
+    new_exe = str(exe)
+    release = _make_release("r69")
+    with patch("app.sam.sam_downloader._fetch_latest_release", return_value=release), \
+         patch("builtins.input", return_value="y"), \
+         patch("app.sam.sam_downloader.download_sam", return_value=new_exe) as mock_dl:
+        result = check_for_update(str(exe))
+    assert result == new_exe
+    mock_dl.assert_called_once_with(str(tmp_path), release=release)
+
+
+def test_check_for_update_returns_none_on_eof(tmp_path):
+    exe = _setup_sam_dir(tmp_path, "r68")
+    with patch("app.sam.sam_downloader._fetch_latest_release",
+               return_value=_make_release("r69")), \
+         patch("builtins.input", side_effect=EOFError):
+        assert check_for_update(str(exe)) is None
+
+
+def test_check_for_update_prompts_when_version_unknown(tmp_path):
+    """Если .sam_version отсутствует — всё равно спрашивает пользователя."""
+    exe = _setup_sam_dir(tmp_path, None)
+    with patch("app.sam.sam_downloader._fetch_latest_release",
+               return_value=_make_release("r69")), \
+         patch("builtins.input", return_value="n") as mock_input:
+        check_for_update(str(exe))
+    mock_input.assert_called_once_with("Обновить SAM? [y/n]: ")
+
+
+def test_check_for_update_returns_new_path_when_version_unknown_and_accepts(tmp_path):
+    """Версия неизвестна + пользователь согласился → возвращает новый путь."""
+    exe = _setup_sam_dir(tmp_path, None)
+    new_exe = str(exe)
+    release = _make_release("r69")
+    with patch("app.sam.sam_downloader._fetch_latest_release", return_value=release), \
+         patch("builtins.input", return_value="y"), \
+         patch("app.sam.sam_downloader.download_sam", return_value=new_exe) as mock_dl:
+        result = check_for_update(str(exe))
+    assert result == new_exe
+    mock_dl.assert_called_once_with(str(tmp_path), release=release)
