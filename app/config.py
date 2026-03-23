@@ -37,17 +37,8 @@ class Config:
     max_concurrent_games: int = 1  # сколько игр идлить одновременно
     card_check_interval: int = 30  # минут между проверками card drops
 
-    def validate(self) -> None:
-        """Проверяет обязательные поля конфига. Завершает процесс при ошибке."""
-        import logging
-        import sys
-
-        if not self.steam_api_key or not self.steam_id:
-            log = logging.getLogger("sam_automation")
-            log.error("Заполни steam_api_key и steam_id в config.yaml")
-            log.error("API ключ: https://steamcommunity.com/dev/apikey")
-            sys.exit(1)
-
+    # Playtime boosting
+    playtime_idle_duration: int = 120  # секунд идлить каждую игру
 
 def load_config(config_path: str = "config.yaml") -> Config:
     """Загружает конфигурацию из YAML-файла.
@@ -95,6 +86,9 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     if "card_check_interval" in raw:
         cfg.card_check_interval = int(raw["card_check_interval"])
+
+    if "playtime_idle_duration" in raw:
+        cfg.playtime_idle_duration = int(raw["playtime_idle_duration"])
 
     # Резолвим относительный путь к exe от директории конфига
     if cfg.sam_game_exe_path and not os.path.isabs(cfg.sam_game_exe_path):
