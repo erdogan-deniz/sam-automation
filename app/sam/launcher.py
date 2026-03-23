@@ -9,10 +9,8 @@ from pathlib import Path
 
 from pywinauto import Application
 
-from .exceptions import SAMConnectionError, SAMLaunchError
-from .picker_session import (
-    PickerSession,  # noqa: F401 — re-export для внешних импортов
-)
+from ..exceptions import SAMConnectionError, SAMLaunchError
+from .picker_session import PickerSession
 from .win32_utils import _kill_pid
 
 log = logging.getLogger("sam_automation")

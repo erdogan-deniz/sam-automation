@@ -27,7 +27,10 @@ class ErrorTracker:
         self._total_errors += 1
         log.warning(
             "[%d] Ошибка (%d подряд / %d всего): %s",
-            game_id, self._consecutive, self._total_errors, error,
+            game_id,
+            self._consecutive,
+            self._total_errors,
+            error,
         )
 
         if self._consecutive >= self.max_consecutive:

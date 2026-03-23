@@ -7,11 +7,9 @@ import time
 
 from pywinauto import Application, keyboard, mouse
 
-from .exceptions import SAMGameError
+from ..exceptions import SAMGameError
+from ..unlock_result import UnlockResult
 from .sam_status import _check_game_status
-from .unlock_result import (
-    UnlockResult,  # noqa: F401 — re-export для внешних импортов
-)
 
 log = logging.getLogger("sam_automation")
 
