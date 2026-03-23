@@ -125,16 +125,27 @@ def download_sam(target_dir: str, release: dict | None = None) -> str:
 
 def ensure_sam(exe_path: str) -> str:
     """Проверяет наличие SAM.Game.exe. Если нет — скачивает.
+    Если есть — проверяет наличие обновлений на GitHub.
 
     Returns:
         Актуальный путь к SAM.Game.exe
     """
-    if Path(exe_path).exists():
-        return exe_path
+    if not Path(exe_path).exists():
+        log.warning("SAM.Game.exe не найден по пути: %s", exe_path)
+        sam_dir = Path(exe_path).parent
+        return download_sam(str(sam_dir))
 
-    log.warning("SAM.Game.exe не найден по пути: %s", exe_path)
-    sam_dir = Path(exe_path).parent
-    return download_sam(str(sam_dir))
+    try:
+        updated_path = check_for_update(exe_path)
+        if updated_path:
+            return updated_path
+    except Exception as e:  # broad catch: network, API, or unexpected errors are all non-fatal here
+        # Trade-off: a programming error in check_for_update (e.g. KeyError on API response)
+        # is also caught and logged as a warning instead of crashing. This is acceptable
+        # because the update check is a best-effort operation — the script must continue.
+        log.warning("Не удалось проверить обновления SAM: %s", e)
+
+    return exe_path
 
 
 def check_steam_running() -> bool:
