@@ -1,12 +1,11 @@
-"""Получение списка игр пользователя через Steam Web API."""
+"""Получение данных через Steam Web API."""
 
 from __future__ import annotations
 
 import json
 import logging
-import re
-import urllib.request
 import urllib.error
+import urllib.request
 
 log = logging.getLogger("sam_automation")
 
@@ -31,44 +30,8 @@ def _api_get(url: str) -> dict:
         raise RuntimeError(f"Ошибка подключения к Steam API: {e.reason}") from e
 
 
-def resolve_vanity_url(api_key: str, vanity_name: str) -> str:
-    """Резолвит vanity URL (кастомное имя профиля) в Steam ID 64.
-
-    Пример: 'gabelogannewell' → '76561197960287930'
-    """
-    url = (
-        f"{BASE_URL}/ISteamUser/ResolveVanityURL/v1/"
-        f"?key={api_key}&vanityurl={vanity_name}"
-    )
-    data = _api_get(url)
-    resp = data.get("response", {})
-
-    if resp.get("success") != 1:
-        raise RuntimeError(
-            f"Не удалось резолвить vanity URL '{vanity_name}': "
-            f"{resp.get('message', 'unknown error')}"
-        )
-
-    return resp["steamid"]
-
-
-def resolve_steam_id(api_key: str, steam_id_or_url: str) -> str:
-    """Принимает Steam ID 64, vanity name или полный URL профиля → возвращает Steam ID 64."""
-    # Уже числовой Steam ID 64
-    if re.fullmatch(r"\d{17}", steam_id_or_url):
-        return steam_id_or_url
-
-    # URL вида steamcommunity.com/id/vanityname или /profiles/76561...
-    m = re.search(r"steamcommunity\.com/id/([^/?\s]+)", steam_id_or_url)
-    if m:
-        return resolve_vanity_url(api_key, m.group(1))
-
-    m = re.search(r"steamcommunity\.com/profiles/(\d{17})", steam_id_or_url)
-    if m:
-        return m.group(1)
-
-    # Считаем vanity name
-    return resolve_vanity_url(api_key, steam_id_or_url)
+# Re-export для обратной совместимости (импорты в скриптах не трогаем)
+from .steam_id import resolve_steam_id, resolve_vanity_url  # noqa: F401, E402
 
 
 def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
@@ -91,10 +54,11 @@ def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
     if not games:
         count = resp.get("game_count", 0)
         if count == 0:
-            log.warning("У аккаунта %s нет игр (или профиль приватный)", steam_id)
+            log.warning(
+                "У аккаунта %s нет игр (или профиль приватный)", steam_id
+            )
         return []
 
-    log.info("Получено %d игр для аккаунта %s", len(games), steam_id)
     return games
 
 
@@ -105,12 +69,29 @@ def fetch_all_game_ids(api_key: str, steam_id_or_url: str) -> list[int]:
     Не проверяет достижения — обработка займёт секунды вместо минут.
     """
     steam_id = resolve_steam_id(api_key, steam_id_or_url)
-    log.info("Steam ID: %s", steam_id)
 
     games = fetch_owned_games(api_key, steam_id)
     if not games:
         return []
 
     ids = [g["appid"] for g in games]
-    log.info("Получено %d игр из библиотеки (без проверки достижений)", len(ids))
+    log.info("Найдено %d ID приложений библиотеки Steam через Steam API", len(ids))
     return ids
+
+
+def fetch_badge_app_ids(api_key: str, steam_id: str) -> set[int]:
+    """Возвращает appid всех игр, для которых у аккаунта есть хоть какой-то значок.
+
+    Использует IPlayerService/GetBadges. Нужен для метода A в detect_card_drops.py.
+    """
+    url = (
+        f"{BASE_URL}/IPlayerService/GetBadges/v1"
+        f"?key={api_key}&steamid={steam_id}"
+    )
+    try:
+        data = _api_get(url)
+        badges = data.get("response", {}).get("badges", [])
+        return {b["appid"] for b in badges if "appid" in b}
+    except Exception as e:
+        log.warning("IPlayerService/GetBadges: %s", e)
+        return set()
