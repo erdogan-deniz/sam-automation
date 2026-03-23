@@ -30,6 +30,7 @@ Options
 # IDE / local tooling
 .claude/
 .vscode/
+.superpowers/
 
 # ── Git worktrees ──────────────────────────────────────────────────────────────
 .worktrees/
