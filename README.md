@@ -40,62 +40,68 @@ steam_id:      "YOUR_STEAM_ID"
 
 ## Usage
 
-### Achievements
+### GUI
+
+```bash
+python run.py
+```
+
+### Achievements (CLI)
 
 ```bash
 # 1. Scan your Steam library → writes data/achievements/ids.txt
-python scripts/scan_achievements.py
+python scripts/achievements/scan.py
 
 # 2. Preview which games will be processed (no changes made)
-python scripts/unlock_achievements.py --list
+python scripts/achievements/unlock.py --list
 
 # 3. Run (resumes automatically if previously interrupted)
-python scripts/unlock_achievements.py
+python scripts/achievements/unlock.py
 
 # Reset progress and start over
-python scripts/unlock_achievements.py --reset
+python scripts/achievements/unlock.py --reset
 ```
 
-### Card farming
+### Card farming (CLI)
 
 ```bash
 # Show games with remaining card drops
-python scripts/card_farming.py --list
+python scripts/cards/farm.py --list
 
 # Start farming (idles games until all drops are collected)
-python scripts/card_farming.py
+python scripts/cards/farm.py
 
 # Detect games with remaining drops (two methods: fast + exact)
-python scripts/detect_card_drops.py
+python scripts/cards/detect_drops.py
 ```
 
 ## Configuration (`config.yaml`)
 
-| Parameter                | Default                          | Description |
-|--------------------------|----------------------------------|-------------|
-| `steam_api_key`          | *(required)*                     | Steam Web API key |
-| `steam_id`               | *(required)*                     | Steam ID, vanity name, or full profile URL |
-| `sam_game_exe_path`      | `./external/SAM/SAM.Game.exe`    | Path to SAM.Game.exe; downloaded automatically if missing |
-| `steam_path`             | *(auto)*                         | Steam installation directory; auto-detected from the registry if omitted |
-| `exclude_ids`            | —                                | List of App IDs to skip (DLC, tools, demos) |
-| `game_ids_file`          | —                                | Path to a text file with App IDs (one per line) |
-| `game_ids`               | —                                | Explicit list of App IDs; overrides `scan_achievements.py` and `game_ids_file` |
-| `launch_delay`           | `3`                              | Seconds to wait after launching SAM.Picker.exe |
-| `load_timeout`           | `10`                             | Max seconds to wait for a game to load in SAM |
-| `post_commit_delay`      | `0.2`                            | Pause after Commit Changes (seconds) |
-| `between_games_delay`    | `0.1`                            | Pause between games (seconds) |
-| `max_consecutive_errors` | `100`                            | Consecutive error threshold before emergency stop |
-| `max_concurrent_games`   | `1`                              | How many games to idle simultaneously (card farming) |
-| `card_check_interval`    | `30`                             | Minutes between card drop checks (card farming) |
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `steam_api_key` | *(required)* | Steam Web API key |
+| `steam_id` | *(required)* | Steam ID, vanity name, or full profile URL |
+| `sam_game_exe_path` | `./external/SAM/SAM.Game.exe` | Path to SAM.Game.exe; downloaded automatically if missing |
+| `steam_path` | *(auto)* | Steam installation directory; auto-detected from the registry if omitted |
+| `exclude_ids` | — | List of App IDs to skip (DLC, tools, demos) |
+| `game_ids_file` | — | Path to a text file with App IDs (one per line) |
+| `game_ids` | — | Explicit list of App IDs; overrides `scan.py` and `game_ids_file` |
+| `launch_delay` | `3` | Seconds to wait after launching SAM.Picker.exe |
+| `load_timeout` | `10` | Max seconds to wait for a game to load in SAM |
+| `post_commit_delay` | `0.2` | Pause after Commit Changes (seconds) |
+| `between_games_delay` | `0.1` | Pause between games (seconds) |
+| `max_consecutive_errors` | `100` | Consecutive error threshold before emergency stop |
+| `max_concurrent_games` | `1` | How many games to idle simultaneously (card farming) |
+| `card_check_interval` | `30` | Minutes between card drop checks (card farming) |
 
 ## Getting a Steam API Key and Steam ID
 
-**Steam API Key**
+### Steam API Key
 
 1. Go to <https://steamcommunity.com/dev/apikey>
 2. Log in and register a key (any domain works, e.g. `localhost`)
 
-**Steam ID**
+### Steam ID
 
 Your Steam ID is the 17-digit number in your profile URL, a vanity name, or the full URL.
 All three formats are accepted:
@@ -113,38 +119,38 @@ Find your Steam ID at <https://www.steamidfinder.com> or in Steam → your usern
 ```text
 sam-automation/
 ├── app/                    # Core library
-│   ├── cache.py            # State file helpers (done / error / no_achievements / cards)
-│   ├── card_checker.py     # Fetch card drop counts via Steam Community pages
-│   ├── card_store.py       # Check trading card availability via Store API
+│   ├── auth/               # Steam authentication (TOTP, JWT, keyring)
+│   ├── cards/              # Card drop tracking and farming logic
+│   ├── cookies/            # Steam web cookie extraction
+│   ├── sam/                # SAM process automation (launcher, UI)
+│   ├── steam/              # Steam data access (API, CM, local files)
+│   ├── cache.py            # State file helpers
 │   ├── config.py           # config.yaml loader
 │   ├── exceptions.py       # Custom exception hierarchy
-│   ├── game_list.py        # Merge and deduplicate App ID sources
-│   ├── launcher.py         # SAM.Picker.exe lifecycle and UIA-based game addition
-│   ├── logging_setup.py    # File + console logging with per-feature folders
-│   ├── manager_window.py   # SAM.Game window automation (Unlock All → Commit)
-│   ├── safety.py           # Consecutive-error tracker (emergency stop)
-│   ├── setup.py            # First-run: check Steam, auto-download SAM
-│   ├── steam_api.py        # Steam Web API calls
-│   ├── steam_cm.py         # Steam CM protocol login (credentials via keyring)
-│   └── steam_local.py      # Parse local Steam library (localconfig.vdf)
+│   ├── game_list.py        # App ID source merging
+│   ├── id_file.py          # Text file ID list helpers
+│   ├── logging_setup.py    # File + console logging
+│   ├── safety.py           # Consecutive-error tracker
+│   └── unlock_result.py    # Achievement unlock result type
+├── gui/                    # GUI (CustomTkinter)
+│   ├── app.py              # Main window
+│   ├── runner.py           # Script subprocess runner
+│   └── tabs/               # Tab components (achievements, cards, settings)
 ├── scripts/
-│   ├── scan_achievements.py   # Collect App IDs from 3 sources → data/achievements/ids.txt
-│   ├── unlock_achievements.py # Main achievement unlock loop
-│   ├── card_farming.py        # Idle games to collect trading card drops
-│   └── detect_card_drops.py   # Detect games with remaining card drops
+│   ├── achievements/
+│   │   ├── scan.py         # Collect App IDs → data/achievements/ids.txt
+│   │   └── unlock.py       # Main achievement unlock loop
+│   └── cards/
+│       ├── detect_drops.py # Detect games with remaining card drops
+│       └── farm.py         # Idle games to collect card drops
 ├── data/                   # Runtime state (gitignored)
 │   ├── achievements/       # ids.txt, done_ids.txt, error_ids.txt, no_achievements_ids.txt
 │   └── cards/              # has_cards_ids.txt, no_cards_ids.txt, card_done_ids.txt
 ├── logs/                   # Session logs (gitignored)
-│   ├── achievements/
-│   │   ├── scan/
-│   │   └── unlock/
-│   └── cards/
-│       ├── farming/
-│       └── detect_drops/
 ├── external/
 │   └── SAM/                # SAM binaries (auto-downloaded on first run)
 ├── config.example.yaml
+├── run.py                  # GUI entry point
 └── requirements.txt
 ```
 
@@ -155,19 +161,19 @@ Delete or edit them manually if needed.
 
 **Achievements** (`data/achievements/`)
 
-| File                    | Purpose |
-|-------------------------|---------|
-| `ids.txt`               | App IDs collected by `scan_achievements.py` |
-| `done_ids.txt`          | Successfully processed games |
-| `error_ids.txt`         | Games that errored out (retryable) |
+| File | Purpose |
+| --- | --- |
+| `ids.txt` | App IDs collected by `scripts/achievements/scan.py` |
+| `done_ids.txt` | Successfully processed games |
+| `error_ids.txt` | Games that errored out (retryable) |
 | `no_achievements_ids.txt` | Games with no achievements (skipped permanently) |
 
 **Cards** (`data/cards/`)
 
-| File                | Purpose |
-|---------------------|---------|
+| File | Purpose |
+| --- | --- |
 | `has_cards_ids.txt` | Games confirmed to have trading cards |
-| `no_cards_ids.txt`  | Games confirmed to have no trading cards |
+| `no_cards_ids.txt` | Games confirmed to have no trading cards |
 | `card_done_ids.txt` | Games with no remaining card drops |
 
 Session logs are written to `logs/` with timestamps (`YYYY-MM-DD_HH-MM-SS.log`).

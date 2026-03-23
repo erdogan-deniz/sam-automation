@@ -1,6 +1,6 @@
 """HTML парсеры для Steam Community страниц карточек.
 
-Используются в app.card_checker для разбора страниц:
+Используются в app.cards.card_checker для разбора страниц:
   /profiles/{steamid}/badges/     → _BadgesPageParser
   /profiles/{steamid}/gamecards/  → _GameCardsParser
 """

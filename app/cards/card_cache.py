@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from .cache import CARDS_DIR
-from .id_file import _append_id, load_ids_file
+from ..cache import CARDS_DIR
+from ..id_file import _append_id, load_ids_file
 
 log = logging.getLogger("sam_automation")
 

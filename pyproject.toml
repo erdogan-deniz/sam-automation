@@ -8,12 +8,3 @@ ignore = [
     "E501",   # line too long — handled by formatter
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"app/steam_auth.py"     = ["F401"]        # facade re-exports
-"app/steam_cookies.py"  = ["F401"]
-"app/steam_local.py"    = ["F401"]
-"app/cache.py"          = ["F401"]
-"app/launcher.py"       = ["F401"]
-"app/manager_window.py" = ["F401"]
-"app/setup.py"          = ["E402"]        # re-export после log = ...
-"app/steam_cm.py"       = ["E402"]        # import после os.environ (protobuf)

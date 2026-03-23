@@ -30,8 +30,7 @@ def _api_get(url: str) -> dict:
         raise RuntimeError(f"Ошибка подключения к Steam API: {e.reason}") from e
 
 
-# Re-export для обратной совместимости (импорты в скриптах не трогаем)
-from .steam_id import resolve_steam_id, resolve_vanity_url  # noqa: F401, E402
+from .steam_id import resolve_steam_id  # noqa: E402
 
 
 def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
