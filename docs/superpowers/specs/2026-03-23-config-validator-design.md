@@ -91,13 +91,21 @@ validate(cfg)          # exits if any check fails
 
 Scripts affected:
 
-| Script | Currently calls |
+| Script | Change |
 | --- | --- |
-| `scripts/achievements/unlock.py` | `cfg.validate()` → replace |
-| `scripts/achievements/scan.py` | nothing → add |
-| `scripts/cards/farm.py` | `cfg.validate()` → replace |
-| `scripts/cards/detect_drops.py` | `cfg.validate()` → replace |
-| `scripts/playtime/boost.py` | `cfg.validate()` → replace |
+| `scripts/achievements/unlock.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+| `scripts/achievements/scan.py` | Add `validator.validate(cfg)`; remove the existing manual `if not cfg.steam_id: sys.exit(1)` guard (lines 88–90) which is now superseded |
+| `scripts/cards/farm.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+| `scripts/cards/detect_drops.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+| `scripts/playtime/boost.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+
+### Existing per-script `check_steam_running()` calls
+
+`unlock.py`, `farm.py`, and `boost.py` each call `check_steam_running()` mid-execution (before
+launching SAM or idling a game). These are **operational checks** — they verify Steam is still
+running at the moment a game is about to be processed. They serve a different purpose from the
+validator's pre-flight check and must **not** be removed. The validator's Phase 2 check and the
+per-script checks are complementary: one fires before the run begins, the others fire during it.
 
 ## Dependencies
 
