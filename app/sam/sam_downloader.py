@@ -60,11 +60,7 @@ def download_sam(target_dir: str) -> str:
     target.mkdir(parents=True, exist_ok=True)
 
     log.info("Скачиваю SAM с GitHub (%s) ...", SAM_REPO)
-
-    req = urllib.request.Request(SAM_API_URL)
-    req.add_header("User-Agent", "SAM-Automation")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        release = json.loads(resp.read().decode("utf-8"))
+    release = _fetch_latest_release()
 
     zip_url = None
     for asset in release.get("assets", []):
