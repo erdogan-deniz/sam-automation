@@ -91,3 +91,92 @@ def test_file_paths_all_unset():
     # Nothing set = nothing to check
     cfg = Config()
     assert _check_file_paths(cfg) == []
+
+
+from unittest.mock import MagicMock, patch
+
+from app.validator import _check_steam_api, _check_steam_process
+
+
+# ── _check_steam_process ──────────────────────────────────────────────────
+
+
+def test_steam_process_running():
+    proc = MagicMock()
+    proc.name.return_value = "steam.exe"
+    with patch("psutil.process_iter", return_value=[proc]):
+        assert _check_steam_process() == []
+
+
+def test_steam_process_not_running():
+    proc = MagicMock()
+    proc.name.return_value = "chrome.exe"
+    with patch("psutil.process_iter", return_value=[proc]):
+        errors = _check_steam_process()
+        assert any("Steam is not running" in e for e in errors)
+
+
+def test_steam_process_psutil_raises():
+    with patch("psutil.process_iter", side_effect=RuntimeError("access denied")):
+        errors = _check_steam_process()
+        assert any("Could not check Steam process" in e for e in errors)
+
+
+# ── _check_steam_api ──────────────────────────────────────────────────────
+
+
+def _make_response(status: int, body: bytes):
+    resp = MagicMock()
+    resp.status = status
+    resp.read.return_value = body
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    return resp
+
+
+def test_steam_api_valid():
+    body = b'{"response":{"players":[{"steamid":"76561198000000000"}]}}'
+    cfg = Config(steam_api_key="key", steam_id="76561198000000000")
+    with patch("urllib.request.urlopen", return_value=_make_response(200, body)):
+        assert _check_steam_api(cfg) == []
+
+
+def test_steam_api_empty_players():
+    body = b'{"response":{"players":[]}}'
+    cfg = Config(steam_api_key="badkey", steam_id="76561198000000000")
+    with patch("urllib.request.urlopen", return_value=_make_response(200, body)):
+        errors = _check_steam_api(cfg)
+        assert any("invalid or Steam ID not found" in e for e in errors)
+
+
+def test_steam_api_rate_limited():
+    import urllib.error
+    cfg = Config(steam_api_key="key", steam_id="76561198000000000")
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.HTTPError(None, 429, "Too Many Requests", {}, None),
+    ):
+        errors = _check_steam_api(cfg)
+        assert any("rate limited" in e for e in errors)
+
+
+def test_steam_api_unexpected_status():
+    import urllib.error
+    cfg = Config(steam_api_key="key", steam_id="76561198000000000")
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.HTTPError(None, 500, "Internal Server Error", {}, None),
+    ):
+        errors = _check_steam_api(cfg)
+        assert any("HTTP 500" in e for e in errors)
+
+
+def test_steam_api_network_error():
+    import urllib.error
+    cfg = Config(steam_api_key="key", steam_id="76561198000000000")
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.URLError("connection refused"),
+    ):
+        errors = _check_steam_api(cfg)
+        assert any("Could not reach Steam API" in e for e in errors)
