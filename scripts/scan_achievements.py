@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import logging
@@ -21,80 +22,132 @@ import os
 # Должно быть до любого импорта protobuf (используется steam библиотекой)
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
-from app.config import load_config
-from app.logging_setup import setup_logging
-from app.steam_local import (
-    find_steam_path, read_library_app_ids, read_steam_username,
-)
 from app.cache import ALL_IDS_FILE
+from app.config import load_config
+from app.id_file import read_ids_ordered
+from app.logging_setup import setup_logging
+from app.steam_local import find_steam_path, read_library_app_ids
+
+log = logging.getLogger("sam_automation")
+
+
+def _read_vdf_ids(steam_path: str | None, steam_id: str) -> list[int]:
+    """Читает App ID из localconfig.vdf."""
+    if not steam_path:
+        log.warning("Папка Steam не найдена. Укажи steam_path в config.yaml")
+        return []
+    try:
+        return read_library_app_ids(steam_path, steam_id)
+    except Exception as e:
+        log.warning("localconfig.vdf: %s", e)
+        return []
+
+
+def _read_api_ids(api_key: str | None, steam_id: str) -> list[int]:
+    """Читает App ID из Steam API (IPlayerService/GetOwnedGames)."""
+    if not api_key:
+        log.info("steam_api_key не задан — пропускаю Steam API")
+
+        return []
+
+    log.info("Получение ID приложений библиотеки Steam через Steam API")
+
+    try:
+        from app.steam_api import fetch_all_game_ids
+
+        return fetch_all_game_ids(api_key, steam_id)
+    except Exception as e:
+        log.warning("Steam API: %s", e)
+        return []
+
+
+def _read_cm_ids(steam_path: str | None) -> list[int]:
+    """Читает App ID через Steam CM (все лицензии аккаунта)."""
+    if not steam_path:
+        return []
+    try:
+        from app.steam_cm import read_steam_cm_app_ids
+
+        return read_steam_cm_app_ids(steam_path, "", interactive=True)
+    except KeyboardInterrupt:
+        log.info("Steam CM: отменено пользователем")
+        return []
+    except Exception as e:
+        log.warning("Steam CM: %s", e)
+        return []
 
 
 def main() -> None:
-    log = setup_logging(verbose=False, name="scan_achievements", category="achievements/scan")
+    print()
+
+    log = setup_logging(
+        verbose=False, name="scan_achievements", category="achievements/scan"
+    )
     cfg = load_config()
 
     if not cfg.steam_id:
         log.error("Заполни steam_id в config.yaml")
         sys.exit(1)
 
+    log.info("Ваш Steam ID: %s", cfg.steam_id)
     steam_path = cfg.steam_path or find_steam_path()
+
+    prev_ids = (
+        set(read_ids_ordered(ALL_IDS_FILE)) if ALL_IDS_FILE.exists() else set()
+    )
 
     combined: list[int] = []
     seen: set[int] = set()
 
-    def _merge(new_ids: list[int], source: str) -> None:
-        added = sum(1 for gid in new_ids if gid not in seen)
+    def _merge(new_ids: list[int]) -> None:
         for gid in new_ids:
             if gid not in seen:
                 seen.add(gid)
                 combined.append(gid)
-        log.info("%s: %d ID (новых: %d)", source, len(new_ids), added)
 
-    # 1. localconfig.vdf — основной источник
-    if steam_path:
-        try:
-            _merge(read_library_app_ids(steam_path, cfg.steam_id), "localconfig.vdf")
-        except Exception as e:
-            log.warning("localconfig.vdf: %s", e)
-    else:
-        log.warning("Папка Steam не найдена. Укажи steam_path в config.yaml")
+    log.info("─" * 60)
+    _merge(_read_vdf_ids(steam_path, cfg.steam_id))
+    new_before_cm = sum(1 for gid in combined if gid not in prev_ids)
+    log.info(
+        "Найдено %d новых ID приложений библиотеки Steam из локального файла",
+        new_before_cm,
+    )
 
-    # 2. Steam API
-    if cfg.steam_api_key:
-        try:
-            from app.steam_api import fetch_all_game_ids
-            _merge(fetch_all_game_ids(cfg.steam_api_key, cfg.steam_id), "Steam API")
-        except Exception as e:
-            log.warning("Steam API: %s", e)
-    else:
-        log.info("steam_api_key не задан — пропускаю Steam API")
+    log.info("─" * 60)
+    _merge(_read_api_ids(cfg.steam_api_key, cfg.steam_id))
+    new_after_api = sum(1 for gid in combined if gid not in prev_ids)
+    log.info(
+        "Найдено %d новых ID приложений библиотеки Steam через Steam API",
+        new_after_api - new_before_cm,
+    )
 
-    # 3. Steam CM — все лицензии аккаунта (самый полный источник, требует логин)
-    if steam_path:
-        try:
-            username = read_steam_username()
-        except Exception as e:
-            log.warning("Steam CM (определение username): %s", e)
-            username = None
-        if username:
-            try:
-                from app.steam_cm import read_steam_cm_app_ids
-                _merge(read_steam_cm_app_ids(steam_path, username, interactive=True), "Steam CM")
-            except KeyboardInterrupt:
-                log.info("Steam CM: отменено пользователем")
-            except Exception as e:
-                log.warning("Steam CM: %s", e)
-        else:
-            log.info("Steam CM: не удалось определить username")
+    log.info("─" * 60)
+    cm_ids = _read_cm_ids(steam_path)
+    cm_new = sum(1 for gid in cm_ids if gid not in prev_ids)
+    _merge(cm_ids)
+
+    new_count = sum(1 for gid in combined if gid not in prev_ids)
+    log.info(
+        "Найдено %d новых ID приложений библиотеки Steam через Steam Client Master",
+        cm_new,
+    )
 
     if not combined:
         log.error("Ни один источник не вернул ID. Проверь steam_id и конфиг.")
         sys.exit(1)
 
-    log.info("Итого: %d уникальных ID", len(combined))
+    log.info("─" * 60)
+    log.info("Итого: найдено %d ID приложений библиотеки Steam", len(combined))
+    log.info(
+        "Итого: найдено %d новых ID приложений библиотеки Steam",
+        new_count
+    )
+    
     ALL_IDS_FILE.parent.mkdir(exist_ok=True)
-    ALL_IDS_FILE.write_text("\n".join(str(i) for i in combined) + "\n", encoding="utf-8")
-    log.info("Записано в %s", ALL_IDS_FILE)
+    ALL_IDS_FILE.write_text(
+        "\n".join(str(i) for i in combined) + "\n", encoding="utf-8"
+    )
+    log.info("Полученые ID приложений библиотеки Steam записаны в локальный файл: %s", ALL_IDS_FILE)
 
 
 if __name__ == "__main__":
