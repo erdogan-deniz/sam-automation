@@ -34,12 +34,22 @@ def send_telegram(text: str, cfg: Config) -> None
 
 ### Config additions (`app/config.py`)
 
+Two new string fields with empty-string defaults — follow the existing `raw.get()` pattern used
+for `steam_api_key`, `steam_id`, and `steam_path`:
+
 ```python
 telegram_bot_token: str = ""
 telegram_chat_id: str = ""
 ```
 
-Loaded in `load_config()` via `raw.get(...)`.
+In `load_config()`, loaded as:
+
+```python
+cfg.telegram_bot_token = raw.get("telegram_bot_token", "")
+cfg.telegram_chat_id = str(raw.get("telegram_chat_id", ""))
+```
+
+(`str()` cast handles the case where `chat_id` is written as a bare integer in YAML.)
 
 ### `config.example.yaml` addition
 
@@ -52,16 +62,83 @@ Loaded in `load_config()` via `raw.get(...)`.
 
 ## Notification Points
 
-Each script gets exactly 2 additions — both in already-existing `try/finally` or `except` blocks:
+### `scripts/cards/farm.py`
 
-| Script | Event | Message |
-|--------|-------|---------|
-| `cards/farm.py` | Completion (after `_farm_loop`) | `✅ Card farming завершён: N игр` |
-| `cards/farm.py` | Unhandled exception in `main()` | `❌ Card farming упал: {type}: {msg}` |
-| `playtime/boost.py` | Completion (after `_boost_loop`) | `✅ Playtime boost завершён: N / M игр` |
-| `playtime/boost.py` | Unhandled exception in `main()` | `❌ Playtime boost упал: {type}: {msg}` |
-| `achievements/unlock.py` | Completion | `✅ Achievements unlock завершён: N игр` |
-| `achievements/unlock.py` | Unhandled exception in `main()` | `❌ Achievements unlock упал: {type}: {msg}` |
+`main()` currently calls `_farm_loop(...)` with no surrounding `try/except`. A new wrapper is
+added around that call:
+
+```python
+try:
+    _farm_loop(games_with_drops, cfg, cookies, steam_id)
+    notify.send_telegram(
+        f"✅ Card farming завершён: {len(games_with_drops)} игр в очереди",
+        cfg,
+    )
+except Exception as e:
+    notify.send_telegram(f"❌ Card farming упал: {type(e).__name__}: {e}", cfg)
+    raise
+```
+
+`KeyboardInterrupt` is caught **inside** `_farm_loop` and does not propagate to `main()`, so it
+is handled silently (no notification on Ctrl+C — this is intentional).
+
+### `scripts/playtime/boost.py`
+
+Same pattern — `_boost_loop(games, cfg)` in `main()` has no surrounding `try/except`:
+
+```python
+try:
+    _boost_loop(games, cfg)
+    notify.send_telegram(
+        f"✅ Playtime boost завершён: {len(games)} игр в очереди",
+        cfg,
+    )
+except Exception as e:
+    notify.send_telegram(f"❌ Playtime boost упал: {type(e).__name__}: {e}", cfg)
+    raise
+```
+
+`KeyboardInterrupt` is caught inside `_boost_loop`; same reasoning applies.
+
+### `scripts/achievements/unlock.py`
+
+`main()` already has a `try/except SAMTooManyErrors / except KeyboardInterrupt / finally` block
+(lines 207–222). A `completed_cleanly` flag gates the completion notification so it fires only
+on a clean run — not after `SAMTooManyErrors` or `KeyboardInterrupt`:
+
+```python
+completed_cleanly = False
+try:
+    for i, game_id in enumerate(game_ids, 1):
+        ...
+    completed_cleanly = True   # reached only if no exception was raised
+except SAMTooManyErrors:
+    log.error("Прервано. Перезапусти скрипт — продолжит с места остановки.")
+    notify.send_telegram(
+        f"❌ Achievements unlock: слишком много ошибок подряд, остановлено ({errors} ошибок)",
+        cfg,
+    )
+except KeyboardInterrupt:
+    log.info("Прервано (Ctrl+C). Перезапусти — продолжит с места остановки.")
+finally:
+    kill_process(proc)
+
+_log_summary(results, errors)
+if completed_cleanly:
+    ok_count = len([r for r in results if not r.skipped])
+    notify.send_telegram(
+        f"✅ Achievements unlock завершён: {ok_count} unlocked, {errors} errors"
+        f" ({len(results)} of {total} processed)",
+        cfg,
+    )
+```
+
+Two notification points total:
+
+1. **Error** — inside `except SAMTooManyErrors:` (fires only on emergency stop).
+2. **Completion** — after `_log_summary`, gated by `completed_cleanly` (fires only on clean finish).
+
+`Ctrl+C` produces no notification — consistent with the behavior of `farm.py` and `boost.py`.
 
 ## Error Handling
 
@@ -78,10 +155,10 @@ Each script gets exactly 2 additions — both in already-existing `try/finally` 
 ## Files Changed
 
 | File | Change |
-|------|--------|
+| ---- | ------ |
 | `app/notify.py` | New module |
-| `app/config.py` | 2 new fields + loading |
+| `app/config.py` | 2 new fields + loading via `raw.get()` |
 | `config.example.yaml` | New commented section |
-| `scripts/cards/farm.py` | 2 `send_telegram` calls |
-| `scripts/playtime/boost.py` | 2 `send_telegram` calls |
-| `scripts/achievements/unlock.py` | 2 `send_telegram` calls |
+| `scripts/cards/farm.py` | `try/except` wrapper around `_farm_loop(...)` call in `main()` |
+| `scripts/playtime/boost.py` | `try/except` wrapper around `_boost_loop(...)` call in `main()` |
+| `scripts/achievements/unlock.py` | 1 call in `except SAMTooManyErrors`, 1 call after `_log_summary` |
