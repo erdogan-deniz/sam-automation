@@ -35,6 +35,11 @@ One public function:
 def validate(cfg: Config) -> None
 ```
 
+`validate()` calls `sys.exit(1)` directly when errors are found — it does not raise an
+exception. This is intentional: the function is a CLI guard, not a library helper. Tests that
+need to verify validation behaviour should use `unittest.mock.patch("sys.exit")` or call the
+individual private check functions directly.
+
 Internally structured as two phases:
 
 **Phase 1 — Local checks** (filesystem only, no network):
@@ -42,7 +47,8 @@ Internally structured as two phases:
 2. `steam_id` is non-empty
 3. `game_ids_file` — if set, the file must exist on disk
 4. `steam_path` — if set, the directory must exist on disk
-5. `sam_game_exe_path` — if set to a non-default value, the file must exist on disk
+5. `sam_game_exe_path` — if non-empty (the default in `Config` is `""`), the file must exist on
+   disk; an empty string means "auto-download on first run" and is not checked here
 
 **Phase 2 — External checks** (process + network, only runs if Phase 1 passes):
 6. `steam.exe` process is running — checked via `psutil.process_iter()`
@@ -51,7 +57,7 @@ Internally structured as two phases:
    `players` list confirms both
 
 If Phase 1 has any errors, Phase 2 is skipped entirely — no point hitting the network with a
-broken config.
+broken config. The summary line count reflects only Phase 1 errors in that case.
 
 ### Error output format
 
@@ -102,8 +108,12 @@ The Steam API call uses `urllib.request` (stdlib) — same approach as `app/noti
 - Local checks: pure logic, no exceptions expected
 - `psutil.process_iter()`: wrapped in `try/except Exception` → treated as "Steam not running"
   if it raises (e.g. permissions error)
-- API call: `urllib.error.URLError` / `OSError` caught → treated as a network error, reported
-  as `[CONFIG ERROR] Could not reach Steam API: <reason>`
+- API call HTTP responses:
+  - `URLError` / `OSError` (network unreachable) → `[CONFIG ERROR] Could not reach Steam API: <reason>`
+  - HTTP 200 with empty `players` list → `[CONFIG ERROR] Steam API key is invalid or Steam ID not found`
+  - HTTP 403 → `[CONFIG ERROR] Steam API key rejected (HTTP 403)`
+  - HTTP 429 → `[CONFIG ERROR] Steam API rate limited (HTTP 429) — try again in a moment`
+  - Any other non-200 status → `[CONFIG ERROR] Steam API returned unexpected status: HTTP <code>`
 
 ## Files Changed
 
