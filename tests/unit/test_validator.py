@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import urllib.error
+from unittest.mock import MagicMock, patch
+
 from app.config import Config
-from app.validator import _check_file_paths, _check_required_fields
+from app.validator import _check_file_paths, _check_required_fields, _check_steam_api, _check_steam_process
 
 
 # ── _check_required_fields ────────────────────────────────────────────────
@@ -93,11 +96,6 @@ def test_file_paths_all_unset():
     assert _check_file_paths(cfg) == []
 
 
-from unittest.mock import MagicMock, patch
-
-from app.validator import _check_steam_api, _check_steam_process
-
-
 # ── _check_steam_process ──────────────────────────────────────────────────
 
 
@@ -125,9 +123,8 @@ def test_steam_process_psutil_raises():
 # ── _check_steam_api ──────────────────────────────────────────────────────
 
 
-def _make_response(status: int, body: bytes):
+def _make_response(body: bytes):
     resp = MagicMock()
-    resp.status = status
     resp.read.return_value = body
     resp.__enter__ = lambda s: s
     resp.__exit__ = MagicMock(return_value=False)
@@ -137,20 +134,19 @@ def _make_response(status: int, body: bytes):
 def test_steam_api_valid():
     body = b'{"response":{"players":[{"steamid":"76561198000000000"}]}}'
     cfg = Config(steam_api_key="key", steam_id="76561198000000000")
-    with patch("urllib.request.urlopen", return_value=_make_response(200, body)):
+    with patch("urllib.request.urlopen", return_value=_make_response(body)):
         assert _check_steam_api(cfg) == []
 
 
 def test_steam_api_empty_players():
     body = b'{"response":{"players":[]}}'
     cfg = Config(steam_api_key="badkey", steam_id="76561198000000000")
-    with patch("urllib.request.urlopen", return_value=_make_response(200, body)):
+    with patch("urllib.request.urlopen", return_value=_make_response(body)):
         errors = _check_steam_api(cfg)
         assert any("invalid or Steam ID not found" in e for e in errors)
 
 
 def test_steam_api_rate_limited():
-    import urllib.error
     cfg = Config(steam_api_key="key", steam_id="76561198000000000")
     with patch(
         "urllib.request.urlopen",
@@ -161,7 +157,6 @@ def test_steam_api_rate_limited():
 
 
 def test_steam_api_unexpected_status():
-    import urllib.error
     cfg = Config(steam_api_key="key", steam_id="76561198000000000")
     with patch(
         "urllib.request.urlopen",
@@ -172,7 +167,6 @@ def test_steam_api_unexpected_status():
 
 
 def test_steam_api_network_error():
-    import urllib.error
     cfg = Config(steam_api_key="key", steam_id="76561198000000000")
     with patch(
         "urllib.request.urlopen",
