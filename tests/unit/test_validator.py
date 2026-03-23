@@ -5,8 +5,10 @@ from __future__ import annotations
 import urllib.error
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.config import Config
-from app.validator import _check_file_paths, _check_required_fields, _check_steam_api, _check_steam_process
+from app.validator import _check_file_paths, _check_required_fields, _check_steam_api, _check_steam_process, validate
 
 
 # ── _check_required_fields ────────────────────────────────────────────────
@@ -174,3 +176,73 @@ def test_steam_api_network_error():
     ):
         errors = _check_steam_api(cfg)
         assert any("Could not reach Steam API" in e for e in errors)
+
+
+# ── validate() orchestrator ───────────────────────────────────────────────
+
+
+def _valid_cfg():
+    return Config(steam_api_key="key", steam_id="76561198000000000")
+
+
+def _steam_running():
+    proc = MagicMock()
+    proc.name.return_value = "steam.exe"
+    return patch("psutil.process_iter", return_value=[proc])
+
+
+def _api_ok():
+    body = b'{"response":{"players":[{"steamid":"76561198000000000"}]}}'
+    return patch("urllib.request.urlopen", return_value=_make_response(body))
+
+
+def test_validate_passes_with_valid_config():
+    cfg = _valid_cfg()
+    with _steam_running(), _api_ok():
+        validate(cfg)  # must not raise or exit
+
+
+def test_validate_exits_on_missing_api_key():
+    cfg = Config(steam_id="76561198000000000")
+    with pytest.raises(SystemExit):
+        validate(cfg)
+
+
+def test_validate_exits_on_missing_steam_id():
+    cfg = Config(steam_api_key="key")
+    with pytest.raises(SystemExit):
+        validate(cfg)
+
+
+def test_validate_phase2_skipped_when_phase1_fails():
+    cfg = Config()
+    with (
+        patch("psutil.process_iter") as mock_psutil,
+        patch("urllib.request.urlopen") as mock_urlopen,
+        pytest.raises(SystemExit),
+    ):
+        validate(cfg)
+    mock_psutil.assert_not_called()
+    mock_urlopen.assert_not_called()
+
+
+def test_validate_exits_when_steam_not_running():
+    cfg = _valid_cfg()
+    proc = MagicMock()
+    proc.name.return_value = "explorer.exe"
+    with (
+        patch("psutil.process_iter", return_value=[proc]),
+        pytest.raises(SystemExit),
+    ):
+        validate(cfg)
+
+
+def test_validate_exits_on_invalid_api_key():
+    cfg = _valid_cfg()
+    body = b'{"response":{"players":[]}}'
+    with (
+        _steam_running(),
+        patch("urllib.request.urlopen", return_value=_make_response(body)),
+        pytest.raises(SystemExit),
+    ):
+        validate(cfg)
