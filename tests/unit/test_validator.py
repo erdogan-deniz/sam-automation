@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.config import Config
 from app.validator import _check_file_paths, _check_required_fields
 
@@ -61,6 +59,12 @@ def test_file_paths_steam_path_missing(tmp_path):
 
 def test_file_paths_steam_path_exists(tmp_path):
     cfg = Config(steam_path=str(tmp_path))
+    assert _check_file_paths(cfg) == []
+
+
+def test_file_paths_steam_path_empty_string_skipped():
+    # Empty string = auto-detect, must not be checked
+    cfg = Config(steam_path="")
     assert _check_file_paths(cfg) == []
 
 
