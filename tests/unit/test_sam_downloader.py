@@ -189,3 +189,39 @@ def test_check_for_update_returns_new_path_when_version_unknown_and_accepts(tmp_
         result = check_for_update(str(exe))
     assert result == new_exe
     mock_dl.assert_called_once_with(str(tmp_path), release=release)
+
+
+# ── ensure_sam ────────────────────────────────────────────────────────────────
+
+
+def test_ensure_sam_returns_updated_path_after_update(tmp_path):
+    exe = tmp_path / "SAM.Game.exe"
+    exe.write_bytes(b"fake")
+    new_path = str(tmp_path / "sub" / "SAM.Game.exe")
+    with patch("app.sam.sam_downloader.check_for_update", return_value=new_path):
+        assert ensure_sam(str(exe)) == new_path
+
+
+def test_ensure_sam_returns_original_path_when_no_update(tmp_path):
+    exe = tmp_path / "SAM.Game.exe"
+    exe.write_bytes(b"fake")
+    with patch("app.sam.sam_downloader.check_for_update", return_value=None):
+        assert ensure_sam(str(exe)) == str(exe)
+
+
+def test_ensure_sam_continues_on_network_error(tmp_path):
+    """Ошибка сети при проверке обновлений — скрипт продолжает работу."""
+    exe = tmp_path / "SAM.Game.exe"
+    exe.write_bytes(b"fake")
+    with patch("app.sam.sam_downloader.check_for_update",
+               side_effect=urllib.error.URLError("timeout")):
+        assert ensure_sam(str(exe)) == str(exe)
+
+
+def test_ensure_sam_downloads_when_exe_missing(tmp_path):
+    exe_path = str(tmp_path / "SAM.Game.exe")
+    expected = str(tmp_path / "SAM.Game.exe")
+    with patch("app.sam.sam_downloader.download_sam", return_value=expected) as mock_dl:
+        result = ensure_sam(exe_path)
+    assert result == expected
+    mock_dl.assert_called_once_with(str(tmp_path))
