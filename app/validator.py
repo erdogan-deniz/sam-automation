@@ -50,6 +50,9 @@ def _check_file_paths(cfg: Config) -> list[str]:
 
 def _check_steam_process() -> list[str]:
     try:
+        # Use p.name() (method) rather than p.info["name"] (attrs accessor);
+        # the attrs pattern requires process_iter to be called with attrs=["name"],
+        # but method access works regardless of which attrs were requested.
         names = {p.name().lower() for p in psutil.process_iter(["name"])}
         if "steam.exe" not in names:
             return ["Steam is not running — start Steam and try again"]
@@ -94,7 +97,7 @@ def _report_and_exit(errors: list[str]) -> None:
 
 
 def validate(cfg: Config) -> None:
-    """Run all pre-flight checks. Calls sys.exit(1) if any check fails."""
+    """Run all pre-flight checks. Calls sys.exit(1) if any check fails. Never raises."""
     # Phase 1 — local (fast, no network)
     errors: list[str] = []
     errors.extend(_check_required_fields(cfg))
