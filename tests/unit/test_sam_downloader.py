@@ -105,3 +105,26 @@ def test_fetch_latest_release_raises_on_network_error():
                side_effect=urllib.error.URLError("timeout")):
         with pytest.raises(urllib.error.URLError):
             _fetch_latest_release()
+
+
+# ── download_sam ──────────────────────────────────────────────────────────────
+
+
+def test_download_sam_saves_version(tmp_path):
+    release = _make_release("r68")
+    with patch("app.sam.sam_downloader._fetch_latest_release", return_value=release), \
+         patch("app.sam.sam_downloader.urllib.request.urlopen",
+               return_value=_make_url_mock(_make_zip_bytes())):
+        download_sam(str(tmp_path))
+    assert (tmp_path / ".sam_version").read_text(encoding="utf-8") == "r68"
+
+
+def test_download_sam_uses_provided_release(tmp_path):
+    """Если release передан — _fetch_latest_release не вызывается."""
+    release = _make_release("r69")
+    with patch("app.sam.sam_downloader._fetch_latest_release") as mock_fetch, \
+         patch("app.sam.sam_downloader.urllib.request.urlopen",
+               return_value=_make_url_mock(_make_zip_bytes())):
+        download_sam(str(tmp_path), release=release)
+        mock_fetch.assert_not_called()
+    assert (tmp_path / ".sam_version").read_text(encoding="utf-8") == "r69"

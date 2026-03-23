@@ -50,9 +50,13 @@ def _read_installed_version(sam_dir: Path) -> str | None:
         return None
 
 
-def download_sam(target_dir: str) -> str:
+def download_sam(target_dir: str, release: dict | None = None) -> str:
     """Скачивает SAM с GitHub и распаковывает.
 
+    Args:
+        target_dir: Директория для распаковки.
+        release:    Уже полученный dict релиза (опционально).
+                    Если None — запрашивается с GitHub.
     Returns:
         Путь к SAM.Game.exe
     """
@@ -60,7 +64,8 @@ def download_sam(target_dir: str) -> str:
     target.mkdir(parents=True, exist_ok=True)
 
     log.info("Скачиваю SAM с GitHub (%s) ...", SAM_REPO)
-    release = _fetch_latest_release()
+    if release is None:
+        release = _fetch_latest_release()
 
     zip_url = None
     for asset in release.get("assets", []):
@@ -89,6 +94,7 @@ def download_sam(target_dir: str) -> str:
             if f.lower() == "sam.game.exe":
                 exe_path = os.path.join(root, f)
                 log.info("SAM скачан: %s", exe_path)
+                _save_version(target, release["tag_name"])
                 return exe_path
 
     raise RuntimeError(
