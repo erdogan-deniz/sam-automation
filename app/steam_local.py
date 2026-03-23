@@ -6,58 +6,13 @@ import logging
 import re
 from pathlib import Path
 
+from .steam_registry import (  # noqa: F401
+    find_steam_path,
+    read_steam_username,
+    steamid64_to_id3,
+)
+
 log = logging.getLogger("sam_automation")
-
-STEAM_ID64_BASE = 76561197960265728
-
-
-def find_steam_path() -> str | None:
-    """Ищет путь установки Steam через реестр Windows и стандартные пути."""
-    try:
-        import winreg
-        for hive, key_path in [
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam"),
-            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam"),
-            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Valve\Steam"),
-        ]:
-            try:
-                with winreg.OpenKey(hive, key_path) as key:
-                    path, _ = winreg.QueryValueEx(key, "InstallPath")
-                    if Path(path).exists():
-                        log.debug("Steam найден в реестре: %s", path)
-                        return path
-            except FileNotFoundError:
-                continue
-    except ImportError:
-        pass
-
-    for path in [
-        r"C:\Program Files (x86)\Steam",
-        r"C:\Program Files\Steam",
-        r"D:\Steam",
-        r"D:\Program Files (x86)\Steam",
-    ]:
-        if Path(path).exists():
-            log.debug("Steam найден по стандартному пути: %s", path)
-            return path
-
-    return None
-
-
-def read_steam_username() -> str | None:
-    """Читает имя последнего залогиненного пользователя из реестра Windows."""
-    try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
-            username, _ = winreg.QueryValueEx(key, "AutoLoginUser")
-            return username or None
-    except Exception:
-        return None
-
-
-def steamid64_to_id3(steam_id64: str) -> int:
-    """Конвертирует Steam ID64 в ID3 (используется в папке userdata)."""
-    return int(steam_id64) - STEAM_ID64_BASE
 
 
 def _extract_app_ids_from_vdf(content: str) -> list[int]:
@@ -94,13 +49,13 @@ def _extract_app_ids_from_vdf(content: str) -> list[int]:
     depth = 1
     pos = start
     while pos < len(content) and depth > 0:
-        if content[pos] == '{':
+        if content[pos] == "{":
             depth += 1
-        elif content[pos] == '}':
+        elif content[pos] == "}":
             depth -= 1
         pos += 1
 
-    apps_block = content[start:pos - 1]
+    apps_block = content[start : pos - 1]
 
     # App ID — числовые ключи верхнего уровня (глубина depth=1 внутри apps)
     # { может быть на следующей строке
@@ -125,19 +80,24 @@ def read_library_app_ids(steam_path: str, steam_id: str) -> list[int]:
         Список всех App ID из библиотеки.
     """
     id3 = steamid64_to_id3(steam_id)
-    vdf_path = Path(steam_path) / "userdata" / str(id3) / "config" / "localconfig.vdf"
+    vdf_path = (
+        Path(steam_path) / "userdata" / str(id3) / "config" / "localconfig.vdf"
+    )
 
     if not vdf_path.exists():
         raise FileNotFoundError(
-            f"localconfig.vdf не найден: {vdf_path}\n"
-            f"Убедись что Steam Path указан верно и ты входил в Steam с этого аккаунта."
+            f"Локальный Steam файл localconfig.vdf не найден: {vdf_path}\n"
+            f"Убедись, что: путь к Steam файлу указан верно и Вы вошли в Steam."
         )
 
-    log.info("Читаем игры библиотеки из файла: %s", vdf_path)
+    log.info(
+        "Получение ID приложений библиотеки Steam из локального файла: %s",
+        vdf_path,
+    )
 
     content = vdf_path.read_text(encoding="utf-8", errors="replace")
     app_ids = _extract_app_ids_from_vdf(content)
 
-    log.info("Найдено %d приложений в локальной библиотеке Steam", len(app_ids))
+    log.info("Найдено %d ID приложений библиотеки Steam из локального файла", len(app_ids))
 
     return app_ids

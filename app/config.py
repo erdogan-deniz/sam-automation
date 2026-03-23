@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
 import yaml
 
 
@@ -22,7 +23,7 @@ class Config:
 
     # Таймауты (секунды)
     launch_delay: float = 3.0
-    load_timeout: float = 45.0
+    load_timeout: float = 10.0
     post_commit_delay: float = 0.2
     between_games_delay: float = 0.1
 
@@ -33,8 +34,19 @@ class Config:
     max_consecutive_errors: int = 100
 
     # Card farming
-    max_concurrent_games: int = 1   # сколько игр идлить одновременно
-    card_check_interval: int = 10   # минут между проверками card drops
+    max_concurrent_games: int = 1  # сколько игр идлить одновременно
+    card_check_interval: int = 30  # минут между проверками card drops
+
+    def validate(self) -> None:
+        """Проверяет обязательные поля конфига. Завершает процесс при ошибке."""
+        import logging
+        import sys
+
+        if not self.steam_api_key or not self.steam_id:
+            log = logging.getLogger("sam_automation")
+            log.error("Заполни steam_api_key и steam_id в config.yaml")
+            log.error("API ключ: https://steamcommunity.com/dev/apikey")
+            sys.exit(1)
 
 
 def load_config(config_path: str = "config.yaml") -> Config:
@@ -66,7 +78,12 @@ def load_config(config_path: str = "config.yaml") -> Config:
     if "exclude_ids" in raw and isinstance(raw["exclude_ids"], list):
         cfg.exclude_ids = [int(gid) for gid in raw["exclude_ids"]]
 
-    for float_key in ("launch_delay", "load_timeout", "post_commit_delay", "between_games_delay"):
+    for float_key in (
+        "launch_delay",
+        "load_timeout",
+        "post_commit_delay",
+        "between_games_delay",
+    ):
         if float_key in raw:
             setattr(cfg, float_key, float(raw[float_key]))
 
