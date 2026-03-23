@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .id_file import _append_id, load_ids_file  # noqa: F401 — re-export
+from .id_file import _append_id, load_ids_file
 
 log = logging.getLogger("sam_automation")
 
@@ -58,3 +58,24 @@ def clear_progress() -> None:
         if path.exists():
             path.unlink()
             log.debug("Удалён файл прогресса: %s", path)
+
+
+PLAYTIME_DIR = DATA_DIR / "playtime"
+PLAYTIME_DONE_FILE = PLAYTIME_DIR / "done_ids.txt"
+
+
+def load_playtime_done_ids() -> set[int]:
+    """Читает data/playtime/done_ids.txt → set[int]."""
+    return load_ids_file(PLAYTIME_DONE_FILE)
+
+
+def mark_playtime_done(appid: int) -> None:
+    """Дозаписывает appid в data/playtime/done_ids.txt."""
+    _append_id(PLAYTIME_DONE_FILE, appid)
+
+
+def clear_playtime_progress() -> None:
+    """Удаляет done_ids.txt для playtime boosting."""
+    if PLAYTIME_DONE_FILE.exists():
+        PLAYTIME_DONE_FILE.unlink()
+        log.debug("Удалён файл прогресса: %s", PLAYTIME_DONE_FILE)

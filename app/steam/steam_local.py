@@ -6,11 +6,7 @@ import logging
 import re
 from pathlib import Path
 
-from .steam_registry import (  # noqa: F401
-    find_steam_path,
-    read_steam_username,
-    steamid64_to_id3,
-)
+from .steam_registry import find_steam_path, steamid64_to_id3  # noqa: F401
 
 log = logging.getLogger("sam_automation")
 

@@ -60,3 +60,8 @@ max_concurrent_games: 1
 
 # Минут между проверками количества оставшихся card drops
 card_check_interval: 30
+
+# ── Boost Playtime (scripts/playtime/boost.py) ────────────────────────────────
+
+# Секунд идлить каждую игру. 120 = гарантированно Steam запишет >1 мин.
+playtime_idle_duration: 120

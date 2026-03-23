@@ -8,7 +8,9 @@ from pathlib import Path
 LOG_DIR = Path(__file__).parent.parent / "logs"
 
 
-def setup_logging(verbose: bool = False, name: str = "sam", category: str = "") -> logging.Logger:
+def setup_logging(
+    verbose: bool = False, name: str = "sam", category: str = ""
+) -> logging.Logger:
     """Настраивает корневой логгер с выводом в консоль и файл.
 
     Файл создаётся в logs/<category>/<name>_TIMESTAMP.log.

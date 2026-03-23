@@ -9,11 +9,11 @@
 Пароль хранится в Windows Credential Manager через keyring (DPAPI-шифрование).
 
 Публичный API:
-  get_web_cookies       →  re-export из app.steam_cookies
+  get_web_cookies       →  re-export из app.cookies
   read_steam_cm_app_ids →  определена в этом модуле
 
-Детали аутентификации (TOTP, JWT, keyring) — в app.steam_auth.
-Получение веб-кук через браузер  — в app.steam_cookies.
+Детали аутентификации (TOTP, JWT, keyring) — в app.auth.
+Получение веб-кук через браузер  — в app.cookies.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ from app.auth import (
     _save_session,
 )
 from app.cookies import get_web_cookies  # noqa: F401
-from app.packageinfo import expand_packages_to_apps
+from .packageinfo import expand_packages_to_apps
 
 
 def read_steam_cm_app_ids(
