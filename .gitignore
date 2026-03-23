@@ -29,3 +29,6 @@ Options
 # IDE / local tooling
 .claude/
 .vscode/
+
+# ── Git worktrees ──────────────────────────────────────────────────────────────
+.worktrees/
