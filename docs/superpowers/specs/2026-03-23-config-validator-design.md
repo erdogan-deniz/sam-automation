@@ -57,7 +57,9 @@ Internally structured as two phases:
    `players` list confirms both
 
 If Phase 1 has any errors, Phase 2 is skipped entirely — no point hitting the network with a
-broken config. The summary line count reflects only Phase 1 errors in that case.
+broken config. The summary line always shows the total count of errors collected across whichever
+phases ran (e.g. "2 config errors found" when Phase 1 produced 2 errors and Phase 2 was skipped;
+"1 config error found" when Phase 1 passed but Phase 2 produced 1 error).
 
 ### Error output format
 
@@ -108,10 +110,10 @@ The Steam API call uses `urllib.request` (stdlib) — same approach as `app/noti
 - Local checks: pure logic, no exceptions expected
 - `psutil.process_iter()`: wrapped in `try/except Exception` → treated as "Steam not running"
   if it raises (e.g. permissions error)
-- API call HTTP responses:
+- API call HTTP responses (`GetPlayerSummaries` always returns 200 for well-formed requests;
+  non-200 responses indicate infrastructure-level failures, not bad credentials):
   - `URLError` / `OSError` (network unreachable) → `[CONFIG ERROR] Could not reach Steam API: <reason>`
   - HTTP 200 with empty `players` list → `[CONFIG ERROR] Steam API key is invalid or Steam ID not found`
-  - HTTP 403 → `[CONFIG ERROR] Steam API key rejected (HTTP 403)`
   - HTTP 429 → `[CONFIG ERROR] Steam API rate limited (HTTP 429) — try again in a moment`
   - Any other non-200 status → `[CONFIG ERROR] Steam API returned unexpected status: HTTP <code>`
 
@@ -126,3 +128,9 @@ The Steam API call uses `urllib.request` (stdlib) — same approach as `app/noti
 | `scripts/cards/farm.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
 | `scripts/cards/detect_drops.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
 | `scripts/playtime/boost.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+| `tests/test_validator.py` | New test file — unit tests for each private check function, `sys.exit` patched via `unittest.mock.patch` |
+
+## Preconditions for Implementation
+
+- `Config.sam_game_exe_path` defaults to `""` in `app/config.py`. Verify this before implementing
+  check 5 — if the default changes, the check logic must be updated accordingly.
