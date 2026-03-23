@@ -86,3 +86,22 @@ def test_read_installed_version_missing_returns_none(tmp_path):
 def test_read_installed_version_strips_whitespace(tmp_path):
     (tmp_path / ".sam_version").write_text("  r68  \n", encoding="utf-8")
     assert _read_installed_version(tmp_path) == "r68"
+
+
+# ── _fetch_latest_release ─────────────────────────────────────────────────────
+
+
+def test_fetch_latest_release_returns_dict():
+    release = _make_release("r68")
+    mock_resp = _make_url_mock(json.dumps(release).encode())
+    with patch("app.sam.sam_downloader.urllib.request.urlopen", return_value=mock_resp):
+        result = _fetch_latest_release()
+    assert result["tag_name"] == "r68"
+    assert len(result["assets"]) == 1
+
+
+def test_fetch_latest_release_raises_on_network_error():
+    with patch("app.sam.sam_downloader.urllib.request.urlopen",
+               side_effect=urllib.error.URLError("timeout")):
+        with pytest.raises(urllib.error.URLError):
+            _fetch_latest_release()
