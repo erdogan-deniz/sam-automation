@@ -18,6 +18,7 @@ import logging
 import time
 
 from app.cache import (
+    clear_error_ids,
     clear_progress,
     load_done_ids,
     load_error_ids,
@@ -151,6 +152,11 @@ def main() -> None:
         action="store_true",
         help="Не пропускать уже обработанные игры",
     )
+    parser.add_argument(
+        "--retry-errors",
+        action="store_true",
+        help="Повторить только игры из error_ids.txt",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -177,15 +183,24 @@ def main() -> None:
         log.error(str(e))
         sys.exit(1)
 
-    game_ids = load_game_ids(cfg)
-    if not game_ids:
-        log.info("Все достижения уже на 100%% — нечего обрабатывать!")
-        sys.exit(0)
+    if args.retry_errors:
+        error_ids = sorted(load_error_ids())
+        if not error_ids:
+            log.info("Нет игр с ошибками для повтора.")
+            sys.exit(0)
+        log.info("Повтор %d игр из error_ids.txt", len(error_ids))
+        clear_error_ids()
+        game_ids = error_ids
+    else:
+        game_ids = load_game_ids(cfg)
+        if not game_ids:
+            log.info("Все достижения уже на 100%% — нечего обрабатывать!")
+            sys.exit(0)
 
-    if not args.no_resume:
-        game_ids = _apply_resume_filter(game_ids)
+        if not args.no_resume:
+            game_ids = _apply_resume_filter(game_ids)
 
-    if not game_ids:
+    if not args.retry_errors and not game_ids:
         log.info(
             "Все игры уже обработаны! Используй --reset для повторного запуска."
         )
