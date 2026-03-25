@@ -81,15 +81,16 @@ def _process_one_game(
     except SAMTooManyErrors:
         raise
     except SAMError as e:
-        log.warning("[%d] %s", game_id, e)
+        reason = e.message if hasattr(e, "message") else str(e)
+        log.warning("[%d] STATUS: ERROR — %s", game_id, reason)
         tracker.record_error(game_id, e)
         results.append(
-            UnlockResult(game_id=game_id, skipped=True, skip_reason=str(e))
+            UnlockResult(game_id=game_id, skipped=True, skip_reason=reason)
         )
         mark_error_id(game_id)
         return True
     except Exception as e:
-        log.error("[%d] Ошибка: %s", game_id, e, exc_info=True)
+        log.error("[%d] STATUS: ERROR — %s", game_id, e, exc_info=True)
         tracker.record_error(game_id, e)
         results.append(
             UnlockResult(game_id=game_id, skipped=True, skip_reason=str(e))
@@ -127,12 +128,17 @@ def _log_summary(results: list[UnlockResult], errors: int) -> None:
         errors,
     )
     for r in results:
-        status = "OK" if not r.skipped else "ПРОПУСК"
-        detail = f"+{r.newly_unlocked}" if not r.skipped else r.skip_reason
-        log.info("  %d: %s — %s", r.game_id, status, detail)
+        if not r.skipped:
+            log.info("  %d: STATUS: UNLOCK +%d", r.game_id, r.newly_unlocked)
+        elif r.skip_reason == "no achievements":
+            log.info("  %d: STATUS: NO ACHIEVEMENTS", r.game_id)
+        else:
+            reason = f" — {r.skip_reason}" if r.skip_reason != "error" else ""
+            log.info("  %d: STATUS: ERROR%s", r.game_id, reason)
 
 
 def main() -> None:
+    """Точка входа: парсит аргументы CLI и запускает цикл разблокировки достижений."""
     parser = argparse.ArgumentParser(description="SAM Automation")
     parser.add_argument(
         "--list", action="store_true", help="Показать список игр и выйти"

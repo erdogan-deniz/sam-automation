@@ -33,7 +33,7 @@ log = logging.getLogger("sam_automation")
 
 
 def _read_vdf_ids(steam_path: str | None, steam_id: str) -> list[int]:
-    """Читает App ID из localconfig.vdf."""
+    """Читает App ID из localconfig.vdf (локальная история запуска игр)."""
     if not steam_path:
         log.warning("Папка Steam не найдена. Укажи steam_path в config.yaml")
         return []
@@ -79,6 +79,7 @@ def _read_cm_ids(steam_path: str | None) -> list[int]:
 
 
 def main() -> None:
+    """Сканирует библиотеку Steam из трёх источников и записывает ids.txt."""
     print()
 
     log = setup_logging(
@@ -98,6 +99,7 @@ def main() -> None:
     seen: set[int] = set()
 
     def _merge(new_ids: list[int]) -> None:
+        """Добавляет новые ID в combined, исключая дубликаты."""
         for gid in new_ids:
             if gid not in seen:
                 seen.add(gid)

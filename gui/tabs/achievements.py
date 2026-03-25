@@ -21,6 +21,8 @@ _PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
 
 
 class AchievementsTab(ctk.CTkFrame):
+    """Вкладка управления достижениями: сканирование библиотеки и массовая разблокировка."""
+
     def __init__(self, master: ctk.CTkTabview, **kwargs) -> None:
         super().__init__(master, **kwargs)
         self._runner = ScriptRunner()
@@ -35,6 +37,7 @@ class AchievementsTab(ctk.CTkFrame):
     # UI
 
     def _build_ui(self) -> None:
+        """Строит все виджеты вкладки: статистику, кнопки, прогресс-бар, лог."""
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)  # log expands
 
@@ -115,21 +118,26 @@ class AchievementsTab(ctk.CTkFrame):
     # Button handlers
 
     def _scan(self) -> None:
+        """Запускает скрипт сканирования библиотеки Steam."""
         self._start_script(_SCAN_SCRIPT, [])
 
     def _unlock(self) -> None:
+        """Запускает скрипт разблокировки достижений."""
         self._start_script(_UNLOCK_SCRIPT, [])
 
     def _reset(self) -> None:
+        """Сбрасывает прогресс и запускает скрипт разблокировки заново."""
         self._start_script(_UNLOCK_SCRIPT, ["--reset"])
 
     def _stop(self) -> None:
+        """Останавливает текущий запущенный скрипт."""
         self._runner.stop()
 
     # ------------------------------------------------------------------
     # Script lifecycle
 
     def _start_script(self, script: Path, args: list[str]) -> None:
+        """Запускает скрипт, переводит кнопки в disabled и начинает polling вывода."""
         if self._runner.is_running:
             return
         self._clear_log()
@@ -141,14 +149,17 @@ class AchievementsTab(ctk.CTkFrame):
         self._schedule_poll()
 
     def _schedule_poll(self) -> None:
+        """Планирует следующий вызов _poll через 100 мс."""
         self._poll_id = self.after(100, self._poll)
 
     def _poll(self) -> None:
+        """Забирает накопленный вывод и перезапускает polling если скрипт ещё работает."""
         self._runner.poll_output()
         if self._runner.is_running:
             self._schedule_poll()
 
     def _on_output(self, line: str) -> None:
+        """Добавляет строку в лог и обновляет прогресс-бар если найден паттерн [N/M]."""
         self._append_log(line)
         m = _PROGRESS_RE.search(line)
         if m:
@@ -158,6 +169,7 @@ class AchievementsTab(ctk.CTkFrame):
                 self._lbl_progress.configure(text=f"{current} / {total}")
 
     def _on_finish(self, returncode: int) -> None:
+        """Вызывается по завершении скрипта: логирует код возврата, восстанавливает кнопки."""
         self._append_log(f"\n--- exit code: {returncode} ---")
         self._set_buttons_state("normal")
         self._btn_stop.grid_remove()
@@ -167,16 +179,19 @@ class AchievementsTab(ctk.CTkFrame):
     # Log helpers
 
     def _append_log(self, text: str) -> None:
+        """Добавляет строку текста в лог-виджет и прокручивает вниз."""
         self._log.configure(state="normal")
         self._log.insert("end", text + "\n")
         self._log.see("end")
         self._log.configure(state="disabled")
 
     def _clear_log(self) -> None:
+        """Очищает содержимое лог-виджета."""
         self._log.configure(state="normal")
         self._log.delete("1.0", "end")
         self._log.configure(state="disabled")
 
     def _set_buttons_state(self, state: str) -> None:
+        """Устанавливает состояние ("normal"/"disabled") для основных кнопок действий."""
         for btn in (self._btn_scan, self._btn_unlock, self._btn_reset):
             btn.configure(state=state)

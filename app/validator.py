@@ -1,9 +1,9 @@
-"""Pre-flight validation for config.yaml.
+"""Предстартовая валидация config.yaml.
 
-Usage in scripts:
+Использование в скриптах:
     from app.validator import validate
     cfg = load_config()
-    validate(cfg)   # sys.exit(1) if any check fails
+    validate(cfg)   # завершает процесс с sys.exit(1) при любой ошибке
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ log = logging.getLogger("sam_automation")
 
 
 def _check_required_fields(cfg: Config) -> list[str]:
+    """Проверяет наличие обязательных полей конфига."""
     errors: list[str] = []
     if not cfg.steam_api_key:
         errors.append("steam_api_key is missing")
@@ -35,6 +36,7 @@ def _check_required_fields(cfg: Config) -> list[str]:
 
 
 def _check_file_paths(cfg: Config) -> list[str]:
+    """Проверяет существование путей к файлам, указанных в конфиге."""
     errors: list[str] = []
     if cfg.game_ids_file and not Path(cfg.game_ids_file).exists():
         errors.append(f"game_ids_file not found: {cfg.game_ids_file}")
@@ -49,6 +51,7 @@ def _check_file_paths(cfg: Config) -> list[str]:
 
 
 def _check_steam_process() -> list[str]:
+    """Проверяет, запущен ли процесс steam.exe."""
     try:
         # Use p.name() (method) rather than p.info["name"] (attrs accessor);
         # the attrs pattern requires process_iter to be called with attrs=["name"],
@@ -62,6 +65,7 @@ def _check_steam_process() -> list[str]:
 
 
 def _check_steam_api(cfg: Config) -> list[str]:
+    """Делает тестовый запрос к Steam API, проверяет ключ и Steam ID."""
     url = (
         "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/"
         f"?key={cfg.steam_api_key}&steamids={cfg.steam_id}"
@@ -88,6 +92,7 @@ def _check_steam_api(cfg: Config) -> list[str]:
 
 
 def _report_and_exit(errors: list[str]) -> None:
+    """Логирует все ошибки и завершает процесс с кодом 1."""
     for err in errors:
         log.error("[CONFIG ERROR] %s", err)
     count = len(errors)
@@ -97,7 +102,7 @@ def _report_and_exit(errors: list[str]) -> None:
 
 
 def validate(cfg: Config) -> None:
-    """Run all pre-flight checks. Calls sys.exit(1) if any check fails. Never raises."""
+    """Запускает все pre-flight проверки. Вызывает sys.exit(1) при ошибке. Никогда не бросает исключений."""
     # Phase 1 — local (fast, no network)
     errors: list[str] = []
     errors.extend(_check_required_fields(cfg))

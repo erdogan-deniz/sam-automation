@@ -18,6 +18,7 @@ class SAMGameError(SAMError):
 
     def __init__(self, game_id: int, message: str) -> None:
         self.game_id = game_id
+        self.message = message
         super().__init__(f"Game {game_id}: {message}")
 
 
