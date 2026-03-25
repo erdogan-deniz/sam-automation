@@ -32,6 +32,17 @@ class SettingsTab(ctk.CTkScrollableFrame):
         """Строит форму настроек: секции Required, Paths, Timeouts, Behaviour, Card Farming."""
         row = 0
 
+        # ── Banner (first-run) ─────────────────────────────────────────
+        self._banner = ctk.CTkLabel(
+            self,
+            text="⚠ Заполните обязательные поля и нажмите Save перед запуском.",
+            text_color="#f0a500",
+            anchor="w",
+        )
+        self._banner.grid(row=row, column=0, columnspan=3, padx=8, pady=(8, 0), sticky="w")
+        self._banner.grid_remove()
+        row += 1
+
         # ── Required ──────────────────────────────────────────────────
         row = self._section("Required", row)
 
@@ -120,6 +131,21 @@ class SettingsTab(ctk.CTkScrollableFrame):
         btn.grid(row=row, column=2, padx=(0, 8), pady=2)
         return entry, row + 1
 
+    def is_configured(self) -> bool:
+        """Возвращает True если обязательные поля (steam_api_key, steam_id) заполнены."""
+        return bool(
+            self._steam_api_key.get().strip()
+            and self._steam_id.get().strip()
+        )
+
+    def show_banner(self) -> None:
+        """Показывает предупреждающий баннер о незаполненных обязательных полях."""
+        self._banner.grid()
+
+    def hide_banner(self) -> None:
+        """Скрывает баннер."""
+        self._banner.grid_remove()
+
     # ------------------------------------------------------------------
     # Browse
 
@@ -194,6 +220,8 @@ class SettingsTab(ctk.CTkScrollableFrame):
             yaml.dump(data, allow_unicode=True, default_flow_style=False),
             encoding="utf-8",
         )
+        if self.is_configured():
+            self.hide_banner()
         self._lbl_saved.configure(text="Saved!")
         self.after(2000, lambda: self._lbl_saved.configure(text=""))
 

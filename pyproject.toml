@@ -19,3 +19,11 @@ ignore_missing_imports = true
 module = "pywinauto"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "customtkinter"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true
+

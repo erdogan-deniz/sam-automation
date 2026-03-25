@@ -44,4 +44,9 @@ class SAMAutomationApp(ctk.CTk):
         settings_tab = tabs.tab("Settings")
         settings_tab.grid_columnconfigure(0, weight=1)
         settings_tab.grid_rowconfigure(0, weight=1)
-        SettingsTab(settings_tab).grid(row=0, column=0, sticky="nsew")
+        self._settings = SettingsTab(settings_tab)
+        self._settings.grid(row=0, column=0, sticky="nsew")
+
+        if not self._settings.is_configured():
+            self._settings.show_banner()
+            tabs.set("Settings")
