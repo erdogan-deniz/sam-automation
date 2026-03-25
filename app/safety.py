@@ -41,4 +41,5 @@ class ErrorTracker:
 
     @property
     def total_errors(self) -> int:
+        """Общее количество зафиксированных ошибок."""
         return self._total_errors

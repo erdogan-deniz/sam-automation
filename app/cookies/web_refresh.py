@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.cookiejar
 import logging
 
 from .storage import _REMEMBER_LOGIN_FILE, _save_manual_cookie
@@ -9,7 +10,7 @@ from .storage import _REMEMBER_LOGIN_FILE, _save_manual_cookie
 log = logging.getLogger("sam_automation")
 
 
-def _make_cookie(domain: str, name: str, value: str):
+def _make_cookie(domain: str, name: str, value: str) -> http.cookiejar.Cookie:
     """Создаёт объект http.cookiejar.Cookie для ручной установки."""
     import http.cookiejar as cj
 

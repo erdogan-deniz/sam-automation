@@ -8,24 +8,24 @@ from app.exceptions import SAMTooManyErrors
 from app.safety import ErrorTracker
 
 
-def test_initial_state():
+def test_initial_state() -> None:
     tracker = ErrorTracker(max_consecutive=3)
     assert tracker.total_errors == 0
 
 
-def test_record_success_no_raise():
+def test_record_success_no_raise() -> None:
     tracker = ErrorTracker(max_consecutive=3)
     tracker.record_success()  # не должно бросать исключений
 
 
-def test_record_error_increments_total():
+def test_record_error_increments_total() -> None:
     tracker = ErrorTracker(max_consecutive=10)
     tracker.record_error(730, ValueError("oops"))
     tracker.record_error(730, ValueError("again"))
     assert tracker.total_errors == 2
 
 
-def test_record_success_resets_consecutive():
+def test_record_success_resets_consecutive() -> None:
     tracker = ErrorTracker(max_consecutive=5)
     tracker.record_error(730, ValueError("err1"))
     tracker.record_error(730, ValueError("err2"))
@@ -34,7 +34,7 @@ def test_record_success_resets_consecutive():
     tracker.record_error(730, ValueError("err3"))
 
 
-def test_raises_at_limit():
+def test_raises_at_limit() -> None:
     tracker = ErrorTracker(max_consecutive=3)
     tracker.record_error(730, ValueError("e1"))
     tracker.record_error(730, ValueError("e2"))
@@ -42,13 +42,13 @@ def test_raises_at_limit():
         tracker.record_error(730, ValueError("e3"))
 
 
-def test_does_not_raise_below_limit():
+def test_does_not_raise_below_limit() -> None:
     tracker = ErrorTracker(max_consecutive=3)
     tracker.record_error(730, ValueError("e1"))
     tracker.record_error(730, ValueError("e2"))  # 2 подряд — OK
 
 
-def test_reset_after_success_allows_more_errors():
+def test_reset_after_success_allows_more_errors() -> None:
     tracker = ErrorTracker(max_consecutive=2)
     tracker.record_error(730, ValueError("e1"))
     tracker.record_success()
@@ -58,7 +58,7 @@ def test_reset_after_success_allows_more_errors():
         tracker.record_error(730, ValueError("e3"))
 
 
-def test_total_errors_not_reset_by_success():
+def test_total_errors_not_reset_by_success() -> None:
     tracker = ErrorTracker(max_consecutive=10)
     tracker.record_error(730, ValueError("e1"))
     tracker.record_error(730, ValueError("e2"))

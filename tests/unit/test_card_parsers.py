@@ -9,7 +9,7 @@ from app.cards.card_parsers import _BadgesPageParser, _GameCardsParser
 
 
 def _badges_html(appid: int, drops: int) -> str:
-    """Минимальный HTML блока badge_title_stats_drops с заданными значениями."""
+    """Строит минимальный HTML блока badge_title_stats_drops для тестирования парсера."""
     plural = "s" if drops != 1 else ""
     return (
         '<div class="badge_title_stats_drops">'
@@ -21,7 +21,7 @@ def _badges_html(appid: int, drops: int) -> str:
 
 
 def _game_cards_html(drops: int | None) -> str:
-    """HTML span для страницы /gamecards/."""
+    """Строит HTML span прогресса для страницы /gamecards/ с заданным числом дропов."""
     if drops is None:
         text = "No card drops remaining"
     else:
@@ -33,13 +33,13 @@ def _game_cards_html(drops: int | None) -> str:
 # ── _BadgesPageParser ──────────────────────────────────────────────────────
 
 
-def test_badges_parser_single_game():
+def test_badges_parser_single_game() -> None:
     parser = _BadgesPageParser()
     parser.feed(_badges_html(730, 3))
     assert (730, 3) in parser.games
 
 
-def test_badges_parser_multiple_games():
+def test_badges_parser_multiple_games() -> None:
     parser = _BadgesPageParser()
     parser.feed(_badges_html(730, 3))
     parser.feed(_badges_html(440, 1))
@@ -47,13 +47,13 @@ def test_badges_parser_multiple_games():
     assert set(parser.games) == {(730, 3), (440, 1), (10, 5)}
 
 
-def test_badges_parser_one_drop():
+def test_badges_parser_one_drop() -> None:
     parser = _BadgesPageParser()
     parser.feed(_badges_html(440, 1))
     assert (440, 1) in parser.games
 
 
-def test_badges_parser_no_drops_text_skipped():
+def test_badges_parser_no_drops_text_skipped() -> None:
     """Span без паттерна 'N card drop' не должен добавлять запись."""
     html = (
         '<div class="badge_title_stats_drops">'
@@ -68,13 +68,13 @@ def test_badges_parser_no_drops_text_skipped():
     assert parser.games == []
 
 
-def test_badges_parser_empty_html():
+def test_badges_parser_empty_html() -> None:
     parser = _BadgesPageParser()
     parser.feed("<html><body></body></html>")
     assert parser.games == []
 
 
-def test_badges_parser_counts_badge_rows():
+def test_badges_parser_counts_badge_rows() -> None:
     html = (
         '<div class="badge_row">' + _badges_html(730, 2) + "</div>"
         '<div class="badge_row">' + _badges_html(440, 1) + "</div>"
@@ -87,31 +87,31 @@ def test_badges_parser_counts_badge_rows():
 # ── _GameCardsParser ───────────────────────────────────────────────────────
 
 
-def test_game_cards_parser_n_drops():
+def test_game_cards_parser_n_drops() -> None:
     parser = _GameCardsParser()
     parser.feed(_game_cards_html(5))
     assert parser.cards_remaining == 5
 
 
-def test_game_cards_parser_one_drop():
+def test_game_cards_parser_one_drop() -> None:
     parser = _GameCardsParser()
     parser.feed(_game_cards_html(1))
     assert parser.cards_remaining == 1
 
 
-def test_game_cards_parser_no_drops():
+def test_game_cards_parser_no_drops() -> None:
     parser = _GameCardsParser()
     parser.feed(_game_cards_html(None))
     assert parser.cards_remaining == 0
 
 
-def test_game_cards_parser_default_when_no_span():
+def test_game_cards_parser_default_when_no_span() -> None:
     parser = _GameCardsParser()
     parser.feed("<p>nothing relevant</p>")
     assert parser.cards_remaining == -1
 
 
-def test_game_cards_parser_case_insensitive():
+def test_game_cards_parser_case_insensitive() -> None:
     """Парсер должен распознавать 'Card Drop' с любым регистром."""
     html = '<span class="progress_info_bold">3 Card Drops Remaining</span>'
     parser = _GameCardsParser()

@@ -15,3 +15,7 @@ python_version = "3.12"
 module = "psutil"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "pywinauto"
+ignore_missing_imports = true
+
