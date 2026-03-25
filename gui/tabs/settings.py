@@ -197,8 +197,68 @@ class SettingsTab(ctk.CTkScrollableFrame):
         if cfg.exclude_ids:
             self._exclude_ids.insert("1.0", "\n".join(str(i) for i in cfg.exclude_ids))
 
+    # ------------------------------------------------------------------
+    # Validation
+
+    def _validate(self) -> list[str]:
+        """Проверяет поля формы. Возвращает список сообщений об ошибках."""
+        errors: list[str] = []
+
+        if not self._steam_api_key.get().strip():
+            errors.append("steam_api_key: обязателен")
+        if not self._steam_id.get().strip():
+            errors.append("steam_id: обязателен")
+
+        # (entry, name, type, min_value)
+        numeric_fields: list[tuple[ctk.CTkEntry, str, str, float]] = [
+            (self._launch_delay,          "launch_delay",          "float", 0.0),
+            (self._load_timeout,          "load_timeout",          "float", 0.1),
+            (self._post_commit_delay,     "post_commit_delay",     "float", 0.0),
+            (self._between_games_delay,   "between_games_delay",   "float", 0.0),
+            (self._max_consecutive_errors,"max_consecutive_errors","int",   1.0),
+            (self._max_concurrent_games,  "max_concurrent_games",  "int",   1.0),
+            (self._card_check_interval,   "card_check_interval",   "int",   1.0),
+            (self._playtime_idle_duration,"playtime_idle_duration","int",   1.0),
+        ]
+        for entry, name, kind, min_val in numeric_fields:
+            raw = entry.get().strip()
+            try:
+                val = float(raw) if kind == "float" else int(raw)
+                if val < min_val:
+                    errors.append(f"{name}: должно быть ≥ {min_val:g}")
+            except ValueError:
+                errors.append(f"{name}: ожидается число, получено {raw!r}")
+
+        return errors
+
+    def _path_warnings(self) -> list[str]:
+        """Возвращает предупреждения о несуществующих путях (не блокируют сохранение)."""
+        warnings: list[str] = []
+        checks = [
+            (self._sam_exe,      "sam_game_exe_path", False),
+            (self._steam_path,   "steam_path",        True),
+            (self._game_ids_file,"game_ids_file",     False),
+        ]
+        for entry, name, is_dir in checks:
+            raw = entry.get().strip()
+            if not raw:
+                continue
+            p = Path(raw)
+            if is_dir and not p.is_dir():
+                warnings.append(f"{name}: папка не найдена")
+            elif not is_dir and not p.exists():
+                warnings.append(f"{name}: файл не найден")
+        return warnings
+
     def _save(self) -> None:
         """Сохраняет текущие значения формы в config.yaml."""
+        errors = self._validate()
+        if errors:
+            self._lbl_saved.configure(
+                text="Ошибки:\n" + "\n".join(errors), text_color="#e05555",
+            )
+            return
+
         exclude_raw = self._exclude_ids.get("1.0", "end").strip()
         exclude = []
         for line in exclude_raw.splitlines():
@@ -214,15 +274,15 @@ class SettingsTab(ctk.CTkScrollableFrame):
             "steam_id": self._steam_id.get().strip(),
             "sam_game_exe_path": self._sam_exe.get().strip(),
             "steam_path": self._steam_path.get().strip(),
-            "launch_delay": self._float(self._launch_delay, 3.0),
-            "load_timeout": self._float(self._load_timeout, 10.0),
-            "post_commit_delay": self._float(self._post_commit_delay, 0.2),
-            "between_games_delay": self._float(self._between_games_delay, 0.1),
-            "max_consecutive_errors": self._int(self._max_consecutive_errors, 100),
-            "max_concurrent_games": self._int(self._max_concurrent_games, 1),
-            "card_check_interval": self._int(self._card_check_interval, 30),
+            "launch_delay": float(self._launch_delay.get()),
+            "load_timeout": float(self._load_timeout.get()),
+            "post_commit_delay": float(self._post_commit_delay.get()),
+            "between_games_delay": float(self._between_games_delay.get()),
+            "max_consecutive_errors": int(self._max_consecutive_errors.get()),
+            "max_concurrent_games": int(self._max_concurrent_games.get()),
+            "card_check_interval": int(self._card_check_interval.get()),
             "game_ids_file": self._game_ids_file.get().strip(),
-            "playtime_idle_duration": self._int(self._playtime_idle_duration, 120),
+            "playtime_idle_duration": int(self._playtime_idle_duration.get()),
         }
 
         if exclude:
@@ -237,8 +297,14 @@ class SettingsTab(ctk.CTkScrollableFrame):
         )
         if self.is_configured():
             self.hide_banner()
-        self._lbl_saved.configure(text="Saved!")
-        self.after(2000, lambda: self._lbl_saved.configure(text=""))
+
+        warnings = self._path_warnings()
+        if warnings:
+            msg = "Сохранено (предупреждения):\n" + "\n".join(warnings)
+            self._lbl_saved.configure(text=msg, text_color="#f0a500")
+        else:
+            self._lbl_saved.configure(text="Saved!", text_color="green")
+        self.after(4000, lambda: self._lbl_saved.configure(text=""))
 
     # ------------------------------------------------------------------
     # Helpers
@@ -248,16 +314,3 @@ class SettingsTab(ctk.CTkScrollableFrame):
         widget.delete(0, "end")
         widget.insert(0, value)
 
-    @staticmethod
-    def _float(entry: ctk.CTkEntry, default: float) -> float:
-        try:
-            return float(entry.get())
-        except ValueError:
-            return default
-
-    @staticmethod
-    def _int(entry: ctk.CTkEntry, default: int) -> int:
-        try:
-            return int(entry.get())
-        except ValueError:
-            return default
