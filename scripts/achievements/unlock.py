@@ -22,6 +22,7 @@ from app.cache import (
     clear_progress,
     load_done_ids,
     load_error_ids,
+    load_game_names,
     load_no_achievements_ids,
     mark_done,
     mark_error_id,
@@ -216,6 +217,7 @@ def main() -> None:
         cfg.sam_game_exe_path, launch_delay=cfg.launch_delay
     )
 
+    game_names = load_game_names()
     total = len(game_ids)
     log.info("=" * 60)
     log.info("SAM Automation — начало работы")
@@ -228,7 +230,9 @@ def main() -> None:
 
     try:
         for i, game_id in enumerate(game_ids, 1):
-            log.info("[%d/%d] Игра: %d", i, total, game_id)
+            name = game_names.get(game_id, "")
+            label = f"{game_id} — {name}" if name else str(game_id)
+            log.info("[%d/%d] Игра: %s", i, total, label)
             if _process_one_game(session, game_id, cfg, tracker, results):
                 errors += 1
             if i < total:
