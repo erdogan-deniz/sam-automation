@@ -10,6 +10,8 @@ import customtkinter as ctk
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from collections.abc import Callable
+
 from app.cards.card_cache import load_card_done_ids
 from gui.runner import ScriptRunner
 
@@ -22,8 +24,14 @@ _PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
 class CardsTab(ctk.CTkFrame):
     """Вкладка управления trading cards: обнаружение дропов и запуск фарма."""
 
-    def __init__(self, master: ctk.CTkTabview, **kwargs) -> None:
+    def __init__(
+        self,
+        master: ctk.CTkTabview,
+        check_config: Callable[[], bool] | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(master, **kwargs)
+        self._check_config = check_config or (lambda: True)
         self._runner = ScriptRunner()
         self._runner.on_output = self._on_output
         self._runner.on_finish = self._on_finish
@@ -142,6 +150,8 @@ class CardsTab(ctk.CTkFrame):
     def _start_script(self, script: Path, args: list[str]) -> None:
         """Запускает скрипт, переводит кнопки в disabled и начинает polling вывода."""
         if self._runner.is_running:
+            return
+        if not self._check_config():
             return
         self._clear_log()
         self._progress.set(0)
