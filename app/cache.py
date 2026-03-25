@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -20,6 +21,27 @@ ALL_IDS_FILE = _ACHIEVEMENTS_DIR / "ids.txt"
 DONE_IDS_FILE = _ACHIEVEMENTS_DIR / "done_ids.txt"
 ERROR_IDS_FILE = _ACHIEVEMENTS_DIR / "error_ids.txt"
 NO_ACHIEVEMENTS_FILE = _ACHIEVEMENTS_DIR / "no_achievements_ids.txt"
+GAME_NAMES_FILE = _ACHIEVEMENTS_DIR / "game_names.json"
+
+
+def load_game_names() -> dict[int, str]:
+    """Читает game_names.json → {appid: name}. Возвращает пустой dict если файл отсутствует."""
+    try:
+        raw: dict[str, str] = json.loads(GAME_NAMES_FILE.read_text(encoding="utf-8"))
+        return {int(k): v for k, v in raw.items()}
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def save_game_names(names: dict[int, str]) -> None:
+    """Сохраняет {appid: name} в game_names.json (merge с существующими)."""
+    existing = load_game_names()
+    existing.update(names)
+    GAME_NAMES_FILE.parent.mkdir(exist_ok=True)
+    GAME_NAMES_FILE.write_text(
+        json.dumps({str(k): v for k, v in sorted(existing.items())}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def load_done_ids() -> set[int]:
