@@ -33,6 +33,7 @@ class PickerSession:
         self._cache_toolbar_controls()
 
     def _cache_toolbar_controls(self) -> None:
+        """Сканирует дочерние элементы тулбара и кэширует Edit и кнопку Add."""
         for c in self.toolbar.children():
             cls = c.friendly_class_name()
             if cls == "Edit" and self._edit is None:
@@ -80,22 +81,27 @@ class PickerSession:
             if items:
                 break
 
-        if not items:
-            if not dialog_closed:
-                # Диалог мог появиться после цикла — даём ещё 2с
-                try:
-                    deadline_dialog = time.time() + 2.0
-                    while time.time() < deadline_dialog:
-                        time.sleep(0.1)
-                        if not _is_window_enabled(picker_hwnd):
-                            _close_picker_modal(picker_hwnd, self.picker_pid)
-                            break
-                    else:
-                        log.debug("Диалог не появился за 2с")
-                except Exception:
-                    log.exception("Ошибка при закрытии диалога SAM")
+        # Диалог = SAM отверг игру (например "You don't own the game").
+        # Список может содержать предыдущую игру — не трогаем его.
+        if dialog_closed:
+            raise SAMGameError(game_id, "SAM: ошибка добавления игры")
 
-            # Перепроверяем список после закрытия диалога
+        if not items:
+            # Диалог мог появиться после цикла — даём ещё 2с
+            try:
+                deadline_dialog = time.time() + 2.0
+                while time.time() < deadline_dialog:
+                    time.sleep(0.1)
+                    if not _is_window_enabled(picker_hwnd):
+                        _close_picker_modal(picker_hwnd, self.picker_pid)
+                        raise SAMGameError(game_id, "SAM: ошибка добавления игры")
+                log.debug("Диалог не появился за 2с")
+            except SAMGameError:
+                raise
+            except Exception:
+                log.exception("Ошибка при закрытии диалога SAM")
+
+            # Без диалога и без игры — игра просто недоступна
             try:
                 items = [
                     c

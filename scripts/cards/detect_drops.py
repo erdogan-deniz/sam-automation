@@ -80,6 +80,7 @@ def method_b(cookies: dict, steam_id: str) -> list[tuple[int, int]]:
 
 
 def main() -> None:
+    """Точка входа: определяет игры с оставшимися card drops одним или двумя методами."""
     parser = argparse.ArgumentParser(description="Обнаружение игр с card drops")
     parser.add_argument(
         "--fast",

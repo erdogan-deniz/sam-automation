@@ -7,12 +7,13 @@ card_store.py, game_list.py.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 
 log = logging.getLogger("sam_automation")
 
 
-def _iter_ids(path: Path):
+def _iter_ids(path: Path) -> Iterator[int]:
     """Итерирует валидные int-ID из текстового файла (строки с # — комментарии)."""
     if not path.exists():
         return
@@ -39,7 +40,10 @@ def read_ids_ordered(path: Path) -> list[int]:
 
 
 def _append_id(path: Path, game_id: int) -> None:
-    """Дозаписывает один ID в конец файла."""
+    """Добавляет ID в файл, сохраняя числовую сортировку."""
     path.parent.mkdir(exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(f"{game_id}\n")
+    ids = set(_iter_ids(path))
+    ids.add(game_id)
+    path.write_text(
+        "\n".join(str(i) for i in sorted(ids)) + "\n", encoding="utf-8"
+    )

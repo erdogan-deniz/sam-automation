@@ -20,6 +20,7 @@ import argparse
 import logging
 import subprocess
 import time
+from typing import Any
 
 from app.cache import (
     clear_playtime_progress,
@@ -35,7 +36,7 @@ from app.steam import fetch_owned_games, resolve_steam_id
 log = logging.getLogger("sam_automation")
 
 
-def _fetch_unplayed(cfg, steam_id: str) -> list[dict]:
+def _fetch_unplayed(cfg: Any, steam_id: str) -> list[dict]:
     """Возвращает игры с playtime_forever == 0, не из done_ids и не из exclude_ids."""
     games = fetch_owned_games(cfg.steam_api_key, steam_id)
     done = load_playtime_done_ids()
@@ -49,7 +50,7 @@ def _fetch_unplayed(cfg, steam_id: str) -> list[dict]:
     ]
 
 
-def _boost_loop(games: list[dict], cfg) -> None:
+def _boost_loop(games: list[dict], cfg: Any) -> None:
     """Batch-цикл: запустить N игр → ждать playtime_idle_duration → убить всех → следующий батч."""
     total = len(games)
     done_count = 0
@@ -103,6 +104,7 @@ def _boost_loop(games: list[dict], cfg) -> None:
 
 
 def main() -> None:
+    """Точка входа: парсит аргументы CLI и запускает цикл набивки playtime."""
     parser = argparse.ArgumentParser(
         description="Boost Playtime — набивает 1+ мин в играх с нулевым playtime"
     )

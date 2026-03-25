@@ -10,6 +10,8 @@ from gui.tabs.settings import SettingsTab
 
 
 class SAMAutomationApp(ctk.CTk):
+    """Главное окно SAM Automation с вкладками Achievements, Cards, Settings."""
+
     def __init__(self) -> None:
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")

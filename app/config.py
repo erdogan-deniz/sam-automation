@@ -11,6 +11,8 @@ import yaml
 
 @dataclass
 class Config:
+    """Конфигурация SAM Automation, загружаемая из config.yaml."""
+
     sam_game_exe_path: str = ""
 
     # Steam API

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import Any
 
 from .credentials import _load_shared_secret
 from .totp import _compute_steam_totp
@@ -12,7 +13,7 @@ log = logging.getLogger("sam_automation")
 
 
 def _getpass_stars(prompt: str) -> str:
-    """Ввод пароля с отображением * вместо символов (Windows)."""
+    """Запрашивает пароль с отображением * вместо символов (только Windows)."""
     import msvcrt
 
     sys.stdout.write(prompt)
@@ -41,8 +42,8 @@ _LOGIN_TIMEOUT = 60  # секунд на попытку входа
 
 
 def _do_interactive_login(
-    client, username: str
-) -> tuple[object, str, str]:
+    client: Any, username: str
+) -> tuple[Any, str, str]:
     """Интерактивный логин с захватом логина и пароля.
 
     Возвращает (result, username, password).

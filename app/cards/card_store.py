@@ -23,6 +23,7 @@ _LOG_EVERY = 25  # логировать прогресс каждые N игр
 
 
 def _load_cache() -> dict[int, bool]:
+    """Читает кэш из has_cards_ids.txt и no_cards_ids.txt → {appid: bool}."""
     cache: dict[int, bool] = {}
     for appid in load_ids_file(_HAS_CARDS_FILE):
         cache[appid] = True
@@ -32,6 +33,7 @@ def _load_cache() -> dict[int, bool]:
 
 
 def _save_cache(cache: dict[int, bool]) -> None:
+    """Сохраняет кэш trading cards в два отдельных txt-файла."""
     CARDS_DIR.mkdir(exist_ok=True)
     has = sorted(k for k, v in cache.items() if v)
     no = sorted(k for k, v in cache.items() if not v)

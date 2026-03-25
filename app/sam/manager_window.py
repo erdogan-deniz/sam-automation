@@ -66,6 +66,7 @@ class _ButtonCache:
 
     @property
     def ready(self) -> bool:
+        """True если калибровка выполнена и координаты кнопок известны."""
         return self._calibrated
 
 
@@ -107,7 +108,8 @@ def process_game(
     # Ранний выход: нет достижений или SAM не смог их загрузить
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
     if skip_reason:
-        log.info("[%d] Пропуск: %s", game_id, skip_reason)
+        status = "NO ACHIEVEMENTS" if skip_reason == "no achievements" else "ERROR"
+        log.info("[%d] STATUS: %s", game_id, status)
         return UnlockResult(
             game_id=game_id, skipped=True, skip_reason=skip_reason
         )
@@ -147,7 +149,11 @@ def process_game(
     if post_commit_delay > 0:
         time.sleep(post_commit_delay)
 
+    if total == 0:
+        log.info("[%d] STATUS: NO ACHIEVEMENTS", game_id)
+        return UnlockResult(game_id=game_id, skipped=True, skip_reason="no achievements")
+
     result.total = total
     result.newly_unlocked = total
-    log.info("[%d] Done", game_id)
+    log.info("[%d] STATUS: UNLOCK +%d", game_id, total)
     return result

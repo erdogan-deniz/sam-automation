@@ -22,6 +22,7 @@ import logging
 import subprocess
 import time
 from collections import deque
+from typing import Any
 
 from app.cards import (
     check_cards_remaining,
@@ -48,7 +49,7 @@ def _kill_game(appid: int, proc: subprocess.Popen) -> None:
     log.info("[%d] SAM.Game.exe закрыт", appid)
 
 
-def _open_next(queue: deque, active: dict, cfg) -> None:
+def _open_next(queue: deque[tuple[int, int]], active: dict[int, subprocess.Popen], cfg: Any) -> None:
     """Открывает следующую игру из очереди если есть место."""
     while queue and len(active) < cfg.max_concurrent_games:
         appid, cnt = queue.popleft()
@@ -61,8 +62,8 @@ def _open_next(queue: deque, active: dict, cfg) -> None:
 
 def _farm_loop(
     games_with_drops: list[tuple[int, int]],
-    cfg,
-    cookies: dict,
+    cfg: Any,
+    cookies: dict[str, str],
     steam_id: str,
 ) -> None:
     """Основной цикл фарма: открывает игры, периодически проверяет дропы."""
@@ -143,6 +144,7 @@ def _farm_loop(
 
 
 def main() -> None:
+    """Точка входа: парсит аргументы CLI и запускает цикл фарма trading cards."""
     parser = argparse.ArgumentParser(description="SAM Card Farming")
     parser.add_argument(
         "--list",
