@@ -6,6 +6,8 @@ import io
 import json
 import logging
 import os
+import shutil
+import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -122,16 +124,39 @@ def download_sam(target_dir: str, release: dict | None = None) -> str:
         data = resp.read()
 
     log.info("Распаковываю в %s ...", target)
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        zf.extractall(target)
+    exe_path: str | None = None
 
-    for root, dirs, files in os.walk(target):
-        for f in files:
-            if f.lower() == "sam.game.exe":
-                exe_path = os.path.join(root, f)
-                log.info("SAM скачан: %s", exe_path)
-                _save_version(target, release["tag_name"])
-                return exe_path
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            zf.extractall(tmp)
+
+        locked: list[str] = []
+        for src in tmp.rglob("*"):
+            if not src.is_file():
+                continue
+            rel = src.relative_to(tmp)
+            dst = target / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.move(str(src), str(dst))
+            except PermissionError:
+                locked.append(str(rel))
+                log.warning("Файл залочен, пропускаю: %s", rel)
+            if dst.name.lower() == "sam.game.exe":
+                exe_path = str(dst)
+
+        if locked:
+            log.warning(
+                "Обновление частичное — %d файл(ов) не заменено (залочены):\n  %s",
+                len(locked),
+                "\n  ".join(locked),
+            )
+
+    if exe_path:
+        log.info("SAM скачан: %s", exe_path)
+        _save_version(target, release["tag_name"])
+        return exe_path
 
     raise RuntimeError(
         f"SAM.Game.exe не найден после распаковки в {target}. "
