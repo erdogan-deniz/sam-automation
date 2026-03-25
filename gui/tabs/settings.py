@@ -17,6 +17,8 @@ _CONFIG_PATH = Path("config.yaml")
 
 
 class SettingsTab(ctk.CTkScrollableFrame):
+    """Вкладка настроек: редактирование полей config.yaml через GUI."""
+
     def __init__(self, master: ctk.CTkTabview, **kwargs) -> None:
         super().__init__(master, **kwargs)
         self.grid_columnconfigure(1, weight=1)
@@ -27,6 +29,7 @@ class SettingsTab(ctk.CTkScrollableFrame):
     # UI
 
     def _build_ui(self) -> None:
+        """Строит форму настроек: секции Required, Paths, Timeouts, Behaviour, Card Farming."""
         row = 0
 
         # ── Required ──────────────────────────────────────────────────
@@ -121,6 +124,7 @@ class SettingsTab(ctk.CTkScrollableFrame):
     # Browse
 
     def _browse(self, entry: ctk.CTkEntry, kind: str) -> None:
+        """Открывает диалог выбора файла или директории и вставляет путь в entry."""
         if kind == "file":
             path = filedialog.askopenfilename(
                 filetypes=[("Executable", "*.exe"), ("All", "*.*")]
@@ -135,6 +139,7 @@ class SettingsTab(ctk.CTkScrollableFrame):
     # Load / Save
 
     def _load(self) -> None:
+        """Загружает значения из config.yaml и заполняет поля формы."""
         cfg = load_config(str(_CONFIG_PATH))
 
         self._set(self._steam_api_key, cfg.steam_api_key)
@@ -154,6 +159,7 @@ class SettingsTab(ctk.CTkScrollableFrame):
             self._exclude_ids.insert("1.0", "\n".join(str(i) for i in cfg.exclude_ids))
 
     def _save(self) -> None:
+        """Сохраняет текущие значения формы в config.yaml."""
         exclude_raw = self._exclude_ids.get("1.0", "end").strip()
         exclude = []
         for line in exclude_raw.splitlines():

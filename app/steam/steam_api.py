@@ -13,7 +13,7 @@ BASE_URL = "https://api.steampowered.com"
 
 
 class _RateLimitError(RuntimeError):
-    """Steam API rate limit (429)."""
+    """Исключение при превышении лимита запросов к Steam API (HTTP 429)."""
 
 
 def _api_get(url: str) -> dict:

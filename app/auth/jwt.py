@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 from ._constants import _CRED_DIR, _JWT_REFRESH_FILE
 
@@ -89,8 +90,8 @@ def _jwt_from_refresh_token() -> dict | None:
 
 
 def _cm_login_with_jwt(
-    client, username: str, access_token: str, connect_timeout: int
-):
+    client: Any, username: str, access_token: str, connect_timeout: int
+) -> Any:
     """Логинится в Steam CM используя JWT access_token (без пароля и 2FA)."""
     import gevent
     from gevent.event import Event as GEvent

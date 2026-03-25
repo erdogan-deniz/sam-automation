@@ -15,7 +15,7 @@ from app.steam.steam_local import _extract_app_ids_from_vdf
 
 
 def _make_vdf(*app_ids: int) -> str:
-    """Строит минимальный localconfig.vdf с заданными App ID."""
+    """Строит минимальный localconfig.vdf с заданными App ID для тестирования парсера."""
     inner = ""
     for appid in app_ids:
         inner += f'\t\t\t\t\t\t"{appid}"\n\t\t\t\t\t\t{{\n\t\t\t\t\t\t}}\n'
@@ -34,34 +34,34 @@ def _make_vdf(*app_ids: int) -> str:
 # ── Тесты ──────────────────────────────────────────────────────────────────
 
 
-def test_extract_single_app():
+def test_extract_single_app() -> None:
     ids = _extract_app_ids_from_vdf(_make_vdf(730))
     assert ids == [730]
 
 
-def test_extract_multiple_apps():
+def test_extract_multiple_apps() -> None:
     ids = _extract_app_ids_from_vdf(_make_vdf(10, 440, 730))
     assert set(ids) == {10, 440, 730}
 
 
-def test_extract_empty_apps_section():
+def test_extract_empty_apps_section() -> None:
     vdf = _make_vdf()
     ids = _extract_app_ids_from_vdf(vdf)
     assert ids == []
 
 
-def test_extract_missing_apps_section():
+def test_extract_missing_apps_section() -> None:
     ids = _extract_app_ids_from_vdf("no apps here at all")
     assert ids == []
 
 
-def test_extract_preserves_large_app_ids():
+def test_extract_preserves_large_app_ids() -> None:
     large_id = 2167760
     ids = _extract_app_ids_from_vdf(_make_vdf(large_id))
     assert large_id in ids
 
 
-def test_extract_does_not_return_nested_non_app_keys():
+def test_extract_does_not_return_nested_non_app_keys() -> None:
     """Вложенные числовые ключи внутри блока приложения не должны приниматься за App ID."""
     # Создаём VDF с одним приложением и числовым подключом внутри него
     vdf = (
