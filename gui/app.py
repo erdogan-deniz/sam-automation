@@ -6,6 +6,7 @@ import customtkinter as ctk
 
 from gui.tabs.achievements import AchievementsTab
 from gui.tabs.cards import CardsTab
+from gui.tabs.playtime import PlaytimeTab
 from gui.tabs.settings import SettingsTab
 
 
@@ -29,6 +30,7 @@ class SAMAutomationApp(ctk.CTk):
 
         tabs.add("Achievements")
         tabs.add("Cards")
+        tabs.add("Playtime")
         tabs.add("Settings")
 
         settings_tab = tabs.tab("Settings")
@@ -53,6 +55,11 @@ class SAMAutomationApp(ctk.CTk):
         cards_tab.grid_columnconfigure(0, weight=1)
         cards_tab.grid_rowconfigure(0, weight=1)
         CardsTab(cards_tab, check_config=check_config).grid(row=0, column=0, sticky="nsew")
+
+        playtime_tab = tabs.tab("Playtime")
+        playtime_tab.grid_columnconfigure(0, weight=1)
+        playtime_tab.grid_rowconfigure(0, weight=1)
+        PlaytimeTab(playtime_tab, check_config=check_config).grid(row=0, column=0, sticky="nsew")
 
         if not self._settings.is_configured():
             self._settings.show_banner()
