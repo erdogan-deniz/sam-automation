@@ -27,6 +27,7 @@ from app.cache import (
     load_playtime_done_ids,
     mark_playtime_done,
 )
+from app.notify import toast
 from app.config import load_config
 from app.logging_setup import setup_logging
 from app.validator import validate
@@ -101,6 +102,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     log.info("=" * 60)
     log.info("Boost Playtime завершён. Обработано: %d / %d", done_count, total)
     log.info("=" * 60)
+    toast("SAM Automation — Playtime", f"Готово: {done_count} / {total} игр обработано")
 
 
 def main() -> None:

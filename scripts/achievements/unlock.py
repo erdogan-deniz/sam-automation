@@ -42,6 +42,7 @@ from app.sam import (
     launch_picker,
     process_game,
 )
+from app.notify import toast
 from app.unlock_result import UnlockResult
 
 log = logging.getLogger("sam_automation")
@@ -250,6 +251,12 @@ def main() -> None:
     log.info("=" * 60)
     log.info("ИТОГИ")
     _log_summary(results, errors)
+
+    ok = sum(1 for r in results if not r.skipped)
+    toast(
+        "SAM Automation — Achievements",
+        f"Готово: {ok} разблокировано, {errors} ошибок из {total} игр",
+    )
 
 
 if __name__ == "__main__":
