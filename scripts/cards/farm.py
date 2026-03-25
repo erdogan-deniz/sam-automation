@@ -30,6 +30,7 @@ from app.cards import (
     fetch_games_with_card_drops,
     mark_card_done,
 )
+from app.notify import toast
 from app.config import load_config
 from app.logging_setup import setup_logging
 from app.validator import validate
@@ -141,6 +142,7 @@ def _farm_loop(
     log.info("=" * 60)
     log.info("Card farming завершён")
     log.info("=" * 60)
+    toast("SAM Automation — Cards", "Card farming завершён")
 
 
 def main() -> None:
