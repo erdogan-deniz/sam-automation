@@ -29,7 +29,7 @@ class SettingsTab(ctk.CTkScrollableFrame):
     # UI
 
     def _build_ui(self) -> None:
-        """Строит форму настроек: секции Required, Paths, Timeouts, Behaviour, Card Farming."""
+        """Строит форму настроек: секции Required, Paths, Timeouts, Behaviour, Card Farming, Playtime."""
         row = 0
 
         # ── Banner (first-run) ─────────────────────────────────────────
@@ -56,6 +56,7 @@ class SettingsTab(ctk.CTkScrollableFrame):
 
         self._sam_exe, row = self._path_field("sam_game_exe_path", row, kind="file")
         self._steam_path, row = self._path_field("steam_path", row, kind="dir")
+        self._game_ids_file, row = self._path_field("game_ids_file", row, kind="txt")
 
         # ── Timeouts ──────────────────────────────────────────────────
         row = self._section("Timeouts (seconds)", row)
@@ -81,6 +82,12 @@ class SettingsTab(ctk.CTkScrollableFrame):
         self._max_concurrent_games = self._field("max_concurrent_games", row)
         row += 1
         self._card_check_interval = self._field("card_check_interval", row)
+        row += 1
+
+        # ── Playtime ──────────────────────────────────────────────────
+        row = self._section("Playtime", row)
+
+        self._playtime_idle_duration = self._field("playtime_idle_duration (seconds)", row)
         row += 1
 
         # ── Exclude IDs ───────────────────────────────────────────────
@@ -155,6 +162,10 @@ class SettingsTab(ctk.CTkScrollableFrame):
             path = filedialog.askopenfilename(
                 filetypes=[("Executable", "*.exe"), ("All", "*.*")]
             )
+        elif kind == "txt":
+            path = filedialog.askopenfilename(
+                filetypes=[("Text files", "*.txt"), ("All", "*.*")]
+            )
         else:
             path = filedialog.askdirectory()
         if path:
@@ -179,6 +190,8 @@ class SettingsTab(ctk.CTkScrollableFrame):
         self._set(self._max_consecutive_errors, str(cfg.max_consecutive_errors))
         self._set(self._max_concurrent_games, str(cfg.max_concurrent_games))
         self._set(self._card_check_interval, str(cfg.card_check_interval))
+        self._set(self._game_ids_file, cfg.game_ids_file or "")
+        self._set(self._playtime_idle_duration, str(cfg.playtime_idle_duration))
 
         self._exclude_ids.delete("1.0", "end")
         if cfg.exclude_ids:
@@ -208,6 +221,8 @@ class SettingsTab(ctk.CTkScrollableFrame):
             "max_consecutive_errors": self._int(self._max_consecutive_errors, 100),
             "max_concurrent_games": self._int(self._max_concurrent_games, 1),
             "card_check_interval": self._int(self._card_check_interval, 30),
+            "game_ids_file": self._game_ids_file.get().strip(),
+            "playtime_idle_duration": self._int(self._playtime_idle_duration, 120),
         }
 
         if exclude:
