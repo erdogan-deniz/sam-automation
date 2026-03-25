@@ -52,6 +52,13 @@ def mark_no_achievements(game_id: int) -> None:
     _append_id(NO_ACHIEVEMENTS_FILE, game_id)
 
 
+def clear_error_ids() -> None:
+    """Удаляет error_ids.txt (для retry-errors)."""
+    if ERROR_IDS_FILE.exists():
+        ERROR_IDS_FILE.unlink()
+        log.debug("Удалён файл прогресса: %s", ERROR_IDS_FILE)
+
+
 def clear_progress() -> None:
     """Удаляет done_ids.txt, error_ids.txt и no_achievements_ids.txt."""
     for path in (DONE_IDS_FILE, ERROR_IDS_FILE, NO_ACHIEVEMENTS_FILE):
