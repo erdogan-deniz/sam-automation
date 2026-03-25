@@ -22,7 +22,7 @@ import os
 # Должно быть до любого импорта protobuf (используется steam библиотекой)
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
-from app.cache import ALL_IDS_FILE
+from app.cache import ALL_IDS_FILE, save_game_names
 from app.config import load_config
 from app.id_file import read_ids_ordered
 from app.validator import validate
@@ -45,18 +45,22 @@ def _read_vdf_ids(steam_path: str | None, steam_id: str) -> list[int]:
 
 
 def _read_api_ids(api_key: str | None, steam_id: str) -> list[int]:
-    """Читает App ID из Steam API (IPlayerService/GetOwnedGames)."""
+    """Читает App ID из Steam API (IPlayerService/GetOwnedGames), сохраняет имена игр."""
     if not api_key:
         log.info("steam_api_key не задан — пропускаю Steam API")
-
         return []
 
     log.info("Получение ID приложений библиотеки Steam через Steam API")
 
     try:
-        from app.steam import fetch_all_game_ids
+        from app.steam import fetch_owned_games
 
-        return fetch_all_game_ids(api_key, steam_id)
+        games = fetch_owned_games(api_key, steam_id)
+        names = {g["appid"]: g["name"] for g in games if g.get("name")}
+        if names:
+            save_game_names(names)
+            log.info("Сохранено имён игр: %d", len(names))
+        return [g["appid"] for g in games]
     except Exception as e:
         log.warning("Steam API: %s", e)
         return []
