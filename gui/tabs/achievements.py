@@ -62,7 +62,7 @@ class AchievementsTab(ctk.CTkFrame):
         # Buttons
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.grid(row=1, column=0, padx=16, pady=4, sticky="ew")
-        btn_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        btn_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
 
         self._btn_scan = ctk.CTkButton(btn_frame, text="Scan Library", command=self._scan)
         self._btn_scan.grid(row=0, column=0, padx=4, sticky="ew")
@@ -70,17 +70,23 @@ class AchievementsTab(ctk.CTkFrame):
         self._btn_unlock = ctk.CTkButton(btn_frame, text="Unlock All", command=self._unlock)
         self._btn_unlock.grid(row=0, column=1, padx=4, sticky="ew")
 
+        self._btn_retry = ctk.CTkButton(
+            btn_frame, text="Retry Errors", fg_color="#555", hover_color="#666",
+            command=self._retry_errors,
+        )
+        self._btn_retry.grid(row=0, column=2, padx=4, sticky="ew")
+
         self._btn_reset = ctk.CTkButton(
-            btn_frame, text="Reset Progress", fg_color="#555", hover_color="#666",
+            btn_frame, text="Reset", fg_color="#555", hover_color="#666",
             command=self._reset,
         )
-        self._btn_reset.grid(row=0, column=2, padx=4, sticky="ew")
+        self._btn_reset.grid(row=0, column=3, padx=4, sticky="ew")
 
         self._btn_stop = ctk.CTkButton(
             btn_frame, text="Stop", fg_color="#a33", hover_color="#c44",
             command=self._stop,
         )
-        self._btn_stop.grid(row=0, column=3, padx=4, sticky="ew")
+        self._btn_stop.grid(row=0, column=4, padx=4, sticky="ew")
         self._btn_stop.grid_remove()
 
         # Progress
@@ -132,6 +138,10 @@ class AchievementsTab(ctk.CTkFrame):
     def _unlock(self) -> None:
         """Запускает скрипт разблокировки достижений."""
         self._start_script(_UNLOCK_SCRIPT, [])
+
+    def _retry_errors(self) -> None:
+        """Повторяет только игры из error_ids.txt."""
+        self._start_script(_UNLOCK_SCRIPT, ["--retry-errors"])
 
     def _reset(self) -> None:
         """Сбрасывает прогресс и запускает скрипт разблокировки заново."""
@@ -203,5 +213,5 @@ class AchievementsTab(ctk.CTkFrame):
 
     def _set_buttons_state(self, state: str) -> None:
         """Устанавливает состояние ("normal"/"disabled") для основных кнопок действий."""
-        for btn in (self._btn_scan, self._btn_unlock, self._btn_reset):
+        for btn in (self._btn_scan, self._btn_unlock, self._btn_retry, self._btn_reset):
             btn.configure(state=state)
