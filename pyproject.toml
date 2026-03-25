@@ -8,3 +8,10 @@ ignore = [
     "E501",   # line too long — handled by formatter
 ]
 
+[tool.mypy]
+python_version = "3.12"
+
+[[tool.mypy.overrides]]
+module = "psutil"
+ignore_missing_imports = true
+

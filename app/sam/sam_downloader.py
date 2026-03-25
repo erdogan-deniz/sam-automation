@@ -62,7 +62,23 @@ def _save_version(sam_dir: Path, tag_name: str) -> None:
 
 
 def _read_installed_version(sam_dir: Path) -> str | None:
-    """Возвращает tag_name из .sam_version, или None если файл отсутствует."""
+    """Возвращает версию установленного SAM.Game.exe.
+
+    Сначала читает PE-метаданные бинарника (всегда точно),
+    затем падает на .sam_version, затем возвращает None.
+    """
+    exe = sam_dir / "SAM.Game.exe"
+    if exe.exists():
+        try:
+            import win32api
+
+            info = win32api.GetFileVersionInfo(str(exe), "\\")
+            ms, ls = info["FileVersionMS"], info["FileVersionLS"]
+            major, minor, patch = ms >> 16, ms & 0xFFFF, ls >> 16
+            return f"{major}.{minor}.{patch}"
+        except Exception:
+            pass
+
     version_file = sam_dir / ".sam_version"
     try:
         return version_file.read_text(encoding="utf-8").strip()
