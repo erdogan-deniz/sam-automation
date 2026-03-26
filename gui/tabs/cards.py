@@ -140,6 +140,10 @@ class CardsTab(ctk.CTkFrame):
         """Сбрасывает прогресс фарма и начинает заново."""
         self._start_script(_FARM_SCRIPT, ["--reset"])
 
+    def stop(self) -> None:
+        """Останавливает текущий запущенный скрипт (публичный метод для хоткея)."""
+        self._runner.stop()
+
     def _stop(self) -> None:
         """Останавливает текущий запущенный скрипт."""
         self._runner.stop()
