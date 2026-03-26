@@ -175,9 +175,9 @@ def main() -> None:
         log.info("Прогресс сброшен")
 
     if not check_steam_running():
-        log.error("Steam не запущен! Запусти Steam и попробуй снова.")
+        log.error("Steam клиент не запущен")
         sys.exit(1)
-    log.info("Steam запущен")
+    log.info("Steam клиент запущен")
 
     try:
         cfg.sam_game_exe_path = ensure_sam(cfg.sam_game_exe_path)

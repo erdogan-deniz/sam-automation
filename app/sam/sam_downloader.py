@@ -44,15 +44,18 @@ def check_for_update(exe_path: str) -> str | None:
     if installed is None:
         log.info("Версия SAM неизвестна. Последняя: %s", latest)
     else:
-        log.info("Доступна новая версия SAM: %s (текущая: %s)", latest, installed)
+        log.info("Текущая версия приложения SAM: %s", installed)
+        log.info("Доступна новая версия приложения SAM: %s", latest)
 
     try:
-        answer = input("Обновить SAM? [y/n]: ").strip().lower()
+        print()
+
+        answer = input("Обновить приложение SAM до последней версии? [YES/NO]: ").strip().lower()
     except EOFError:
         log.info("Не интерактивный режим — пропускаю обновление SAM")
         return None
 
-    if answer != "y":
+    if answer != "yes":
         return None
 
     return download_sam(str(exe_dir), release=release)
