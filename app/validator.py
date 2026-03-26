@@ -110,8 +110,7 @@ def validate(cfg: Config) -> None:
     if errors:
         _report_and_exit(errors)
 
-    # Phase 2 — external (process + network)
-    errors.extend(_check_steam_process())
+    # Phase 2 — external (network only; Steam process check is each script's responsibility)
     errors.extend(_check_steam_api(cfg))
     if errors:
         _report_and_exit(errors)

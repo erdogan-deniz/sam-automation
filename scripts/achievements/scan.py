@@ -149,7 +149,7 @@ def main() -> None:
 
     ALL_IDS_FILE.parent.mkdir(exist_ok=True)
     ALL_IDS_FILE.write_text(
-        "\n".join(str(i) for i in combined) + "\n", encoding="utf-8"
+        "\n".join(str(i) for i in sorted(combined)) + "\n", encoding="utf-8"
     )
     log.info("Полученые ID приложений библиотеки Steam записаны в локальный файл: %s", ALL_IDS_FILE)
 
