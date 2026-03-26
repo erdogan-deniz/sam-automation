@@ -27,11 +27,6 @@ def load_game_ids(cfg: Config) -> list[int]:
         if ids:
             log.info("Загружено %d игр из %s", len(ids), ALL_IDS_FILE)
 
-    if not ids:
-        log.error(
-            "Список игр не найден. Запусти scan_achievements.py для формирования ids.txt"
-        )
-
     # Загружаем из файла, если указан
     if cfg.game_ids_file:
         file_path = Path(cfg.game_ids_file)

@@ -196,6 +196,10 @@ def main() -> None:
     else:
         game_ids = load_game_ids(cfg)
         if not game_ids:
+            from app.cache import ALL_IDS_FILE
+            if not ALL_IDS_FILE.exists() and not cfg.game_ids_file and not cfg.game_ids:
+                log.error("ids.txt не найден — запусти scan.py для формирования списка игр")
+                sys.exit(1)
             log.info("Все достижения уже на 100%% — нечего обрабатывать!")
             sys.exit(0)
 
