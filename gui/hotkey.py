@@ -5,21 +5,33 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes
 import threading
+import time
 from collections.abc import Callable
 
 _WM_HOTKEY = 0x0312
+_PM_REMOVE = 0x0001
 _user32 = ctypes.windll.user32
 
 # Virtual key codes
 VK_F10 = 0x79
 VK_ESCAPE = 0x1B
 
+_hotkey_counter = 0
+_hotkey_lock = threading.Lock()
+
+
+def _next_id() -> int:
+    global _hotkey_counter
+    with _hotkey_lock:
+        _hotkey_counter += 1
+        return _hotkey_counter
+
 
 class GlobalHotkey:
     """Системный хоткей — срабатывает даже без фокуса на окне.
 
     Использование:
-        hk = GlobalHotkey(VK_F10, callback)
+        hk = GlobalHotkey(VK_ESCAPE, callback)
         # ...
         hk.unregister()
     """
@@ -27,7 +39,7 @@ class GlobalHotkey:
     def __init__(self, vk: int, callback: Callable[[], None]) -> None:
         self._vk = vk
         self._callback = callback
-        self._id = id(self) & 0xBFFF  # Windows hotkey ID (1–0xBFFF)
+        self._id = _next_id()
         self._active = False
         self._thread = threading.Thread(target=self._listen, daemon=True)
         self._thread.start()
@@ -37,12 +49,14 @@ class GlobalHotkey:
             return
         self._active = True
         msg = ctypes.wintypes.MSG()
-        while _user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-            if msg.message == _WM_HOTKEY and msg.wParam == self._id:
-                self._callback()
+        while self._active:
+            # PeekMessageW не блокирует — работает надёжно в daemon-потоке
+            if _user32.PeekMessageW(ctypes.byref(msg), None, _WM_HOTKEY, _WM_HOTKEY, _PM_REMOVE):
+                if msg.message == _WM_HOTKEY and msg.wParam == self._id:
+                    self._callback()
+            time.sleep(0.05)
 
     def unregister(self) -> None:
         """Отменяет регистрацию хоткея."""
-        if self._active:
-            _user32.UnregisterHotKey(None, self._id)
-            self._active = False
+        self._active = False
+        _user32.UnregisterHotKey(None, self._id)
