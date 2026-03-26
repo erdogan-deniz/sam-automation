@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import customtkinter as ctk
 
-from gui.hotkey import GlobalHotkey, VK_F10
+from gui.hotkey import GlobalHotkey, VK_ESCAPE
 from gui.tabs.achievements import AchievementsTab
 from gui.tabs.cards import CardsTab
 from gui.tabs.playtime import PlaytimeTab
@@ -65,8 +65,8 @@ class SAMAutomationApp(ctk.CTk):
         self._playtime = PlaytimeTab(playtime_tab, check_config=check_config)
         self._playtime.grid(row=0, column=0, sticky="nsew")
 
-        self._hotkey = GlobalHotkey(VK_F10, self._stop_all)
-        self.title("SAM Automation  [F10 — остановить]")
+        self._hotkey = GlobalHotkey(VK_ESCAPE, self._stop_all)
+        self.title("SAM Automation  [Esc — остановить]")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         if not self._settings.is_configured():
