@@ -12,6 +12,7 @@ _user32 = ctypes.windll.user32
 
 # Virtual key codes
 VK_F10 = 0x79
+VK_ESCAPE = 0x1B
 
 
 class GlobalHotkey:
