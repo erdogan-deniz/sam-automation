@@ -131,6 +131,10 @@ class PlaytimeTab(ctk.CTkFrame):
         """Сбрасывает прогресс и запускает набивку заново."""
         self._start_script(_BOOST_SCRIPT, ["--reset"])
 
+    def stop(self) -> None:
+        """Останавливает текущий запущенный скрипт (публичный метод для хоткея)."""
+        self._runner.stop()
+
     def _stop(self) -> None:
         """Останавливает текущий запущенный скрипт."""
         self._runner.stop()
