@@ -77,8 +77,8 @@ def _process_one_game(
         if result.skipped:
             if result.skip_reason == "no achievements":
                 mark_no_achievements(game_id)
-            # skip_reason == "error" — временная ошибка SAM (таймаут, недоступно).
-            # Не записываем в error_ids.txt — игра будет повторно обработана.
+            else:
+                mark_error_id(game_id)
         else:
             mark_done(game_id)
 
