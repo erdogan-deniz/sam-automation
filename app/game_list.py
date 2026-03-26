@@ -22,10 +22,8 @@ def load_game_ids(cfg: Config) -> list[int]:
 
     # Если ids.txt существует и нет явных переопределений — читаем из него
     if not ids and not cfg.game_ids_file and ALL_IDS_FILE.exists():
-        log.info("Читаю список игр из %s", ALL_IDS_FILE)
         ids = read_ids_ordered(ALL_IDS_FILE)
-        if ids:
-            log.info("Загружено %d игр из %s", len(ids), ALL_IDS_FILE)
+        log.info("Загружено %d игр из ids.txt", len(ids))
 
     # Загружаем из файла, если указан
     if cfg.game_ids_file:

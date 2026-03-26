@@ -200,15 +200,19 @@ def main() -> None:
             if not ALL_IDS_FILE.exists() and not cfg.game_ids_file and not cfg.game_ids:
                 log.error("ids.txt не найден — запусти scan.py для формирования списка игр")
                 sys.exit(1)
-            log.info("Все достижения уже на 100%% — нечего обрабатывать!")
+            log.info("Список игр пуст (все исключены конфигом?)")
             sys.exit(0)
 
         if not args.no_resume:
             game_ids = _apply_resume_filter(game_ids)
 
     if not args.retry_errors and not game_ids:
+        done = len(load_done_ids())
+        no_ach = len(load_no_achievements_ids())
+        errors = len(load_error_ids())
         log.info(
-            "Все игры уже обработаны! Используй --reset для повторного запуска."
+            "Все игры обработаны — done: %d, no achievements: %d, errors: %d",
+            done, no_ach, errors,
         )
         sys.exit(0)
 
