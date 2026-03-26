@@ -25,7 +25,7 @@ class Config:
 
     # Таймауты (секунды)
     launch_delay: float = 3.0
-    load_timeout: float = 10.0
+    load_timeout: float = 5.0
     post_commit_delay: float = 0.2
     between_games_delay: float = 0.1
 
