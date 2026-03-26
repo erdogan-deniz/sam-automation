@@ -147,6 +147,10 @@ class AchievementsTab(ctk.CTkFrame):
         """Сбрасывает прогресс и запускает скрипт разблокировки заново."""
         self._start_script(_UNLOCK_SCRIPT, ["--reset"])
 
+    def stop(self) -> None:
+        """Останавливает текущий запущенный скрипт (публичный метод для хоткея)."""
+        self._runner.stop()
+
     def _stop(self) -> None:
         """Останавливает текущий запущенный скрипт."""
         self._runner.stop()

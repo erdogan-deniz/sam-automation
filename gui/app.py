@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import customtkinter as ctk
 
+from gui.hotkey import GlobalHotkey, VK_F10
 from gui.tabs.achievements import AchievementsTab
 from gui.tabs.cards import CardsTab
 from gui.tabs.playtime import PlaytimeTab
@@ -49,18 +50,36 @@ class SAMAutomationApp(ctk.CTk):
         ach_tab = tabs.tab("Achievements")
         ach_tab.grid_columnconfigure(0, weight=1)
         ach_tab.grid_rowconfigure(0, weight=1)
-        AchievementsTab(ach_tab, check_config=check_config).grid(row=0, column=0, sticky="nsew")
+        self._ach = AchievementsTab(ach_tab, check_config=check_config)
+        self._ach.grid(row=0, column=0, sticky="nsew")
 
         cards_tab = tabs.tab("Cards")
         cards_tab.grid_columnconfigure(0, weight=1)
         cards_tab.grid_rowconfigure(0, weight=1)
-        CardsTab(cards_tab, check_config=check_config).grid(row=0, column=0, sticky="nsew")
+        self._cards = CardsTab(cards_tab, check_config=check_config)
+        self._cards.grid(row=0, column=0, sticky="nsew")
 
         playtime_tab = tabs.tab("Playtime")
         playtime_tab.grid_columnconfigure(0, weight=1)
         playtime_tab.grid_rowconfigure(0, weight=1)
-        PlaytimeTab(playtime_tab, check_config=check_config).grid(row=0, column=0, sticky="nsew")
+        self._playtime = PlaytimeTab(playtime_tab, check_config=check_config)
+        self._playtime.grid(row=0, column=0, sticky="nsew")
+
+        self._hotkey = GlobalHotkey(VK_F10, self._stop_all)
+        self.title("SAM Automation  [F10 — остановить]")
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         if not self._settings.is_configured():
             self._settings.show_banner()
             tabs.set("Settings")
+
+    def _stop_all(self) -> None:
+        """Останавливает все активные скрипты (глобальный хоткей F10)."""
+        self._ach.stop()
+        self._cards.stop()
+        self._playtime.stop()
+
+    def _on_close(self) -> None:
+        """Отменяет хоткей и закрывает окно."""
+        self._hotkey.unregister()
+        self.destroy()
