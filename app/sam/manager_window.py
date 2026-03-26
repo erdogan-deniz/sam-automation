@@ -109,7 +109,7 @@ def process_game(
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
     if skip_reason:
         status = "NO ACHIEVEMENTS" if skip_reason == "no achievements" else "ERROR"
-        log.info("[%d] STATUS: %s", game_id, status)
+        log.info("APP STATUS: %s", status)
         return UnlockResult(
             game_id=game_id, skipped=True, skip_reason=skip_reason
         )
@@ -136,7 +136,7 @@ def process_game(
     mouse.click(
         coords=(wr.left + _cache.unlock_all_dx, wr.top + _cache.unlock_all_dy)
     )
-    log.info("[%d] Unlock All", game_id)
+    log.info("Unlock All")
 
     # Commit Changes
     time.sleep(0.05)
