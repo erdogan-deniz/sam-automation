@@ -150,10 +150,10 @@ def process_game(
         time.sleep(post_commit_delay)
 
     if total == 0:
-        log.info("[%d] STATUS: NO ACHIEVEMENTS", game_id)
+        log.info("APP STATUS: NO ACHIEVEMENTS")
         return UnlockResult(game_id=game_id, skipped=True, skip_reason="no achievements")
 
     result.total = total
     result.newly_unlocked = total
-    log.info("[%d] STATUS: UNLOCK +%d", game_id, total)
+    log.info("APP STATUS: UNLOCK (+%d)", total)
     return result

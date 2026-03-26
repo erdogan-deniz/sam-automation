@@ -54,6 +54,7 @@ def _process_one_game(
     cfg,
     tracker: ErrorTracker,
     results: list[UnlockResult],
+    name: str = "",
 ) -> bool:
     """Обрабатывает одну игру: открывает, разблокирует достижения, закрывает.
 
@@ -62,6 +63,8 @@ def _process_one_game(
     game_app = None
     try:
         game_app = session.add_and_open_game(game_id, timeout=cfg.load_timeout)
+        if name:
+            log.info("APP NAME: %s", name)
         result = process_game(
             game_app,
             game_id,
@@ -85,7 +88,7 @@ def _process_one_game(
         raise
     except SAMError as e:
         reason = e.message if hasattr(e, "message") else str(e)
-        log.warning("[%d] STATUS: ERROR — %s", game_id, reason)
+        log.warning("APP STATUS: ERROR — %s", reason)
         tracker.record_error(game_id, e)
         results.append(
             UnlockResult(game_id=game_id, skipped=True, skip_reason=reason)
@@ -93,7 +96,7 @@ def _process_one_game(
         mark_error_id(game_id)
         return True
     except Exception as e:
-        log.error("[%d] STATUS: ERROR — %s", game_id, e, exc_info=True)
+        log.error("APP STATUS: ERROR — %s", e, exc_info=True)
         tracker.record_error(game_id, e)
         results.append(
             UnlockResult(game_id=game_id, skipped=True, skip_reason=str(e))
@@ -132,7 +135,7 @@ def _log_summary(results: list[UnlockResult], errors: int) -> None:
     )
     for r in results:
         if not r.skipped:
-            log.info("  %d: STATUS: UNLOCK +%d", r.game_id, r.newly_unlocked)
+            log.info("  %d: STATUS: UNLOCK (+%d)", r.game_id, r.newly_unlocked)
         elif r.skip_reason == "no achievements":
             log.info("  %d: STATUS: NO ACHIEVEMENTS", r.game_id)
         else:
@@ -228,10 +231,9 @@ def main() -> None:
 
     game_names = load_game_names()
     total = len(game_ids)
-    log.info("=" * 60)
     log.info("SAM Automation — начало работы")
     log.info("Игр к обработке: %d", total)
-    log.info("=" * 60)
+    print()
 
     tracker = ErrorTracker(max_consecutive=cfg.max_consecutive_errors)
     results: list[UnlockResult] = []
@@ -240,9 +242,11 @@ def main() -> None:
     try:
         for i, game_id in enumerate(game_ids, 1):
             name = game_names.get(game_id, "")
-            label = f"{game_id} — {name}" if name else str(game_id)
-            log.info("[%d/%d] Игра: %s", i, total, label)
-            if _process_one_game(session, game_id, cfg, tracker, results):
+            header = f"[{i}/{total}]"
+            side = (70 - len(header) - 2) // 2
+            log.info("%s %s %s", "=" * side, header, "=" * side)
+            log.info("APP ID: %d", game_id)
+            if _process_one_game(session, game_id, cfg, tracker, results, name):
                 errors += 1
             if i < total:
                 time.sleep(cfg.between_games_delay)
@@ -256,6 +260,7 @@ def main() -> None:
     finally:
         kill_process(proc)
 
+    print()
     log.info("=" * 60)
     log.info("ИТОГИ")
     _log_summary(results, errors)
