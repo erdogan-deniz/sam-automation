@@ -142,7 +142,7 @@ class PickerSession:
             )
 
         # Шаг 2: connect + ждём окно
-        log.info("[%d] SAM.Game PID=%d", game_id, found_pid)
+        log.info("APP SAM PID: %d", found_pid)
         game_app = Application(backend="uia").connect(
             process=found_pid, timeout=5
         )
