@@ -46,7 +46,6 @@ def _load_manual_cookie() -> dict | None:
         if _jwt_expired(val):
             log.info("Сохранённый cookie истёк — нужен новый")
             return None
-        log.info("Использую сохранённый steamLoginSecure cookie")
         return {"steamLoginSecure": val}
     except Exception:
         return None

@@ -18,10 +18,10 @@
 | `tests/unit/test_validator.py` | Create | Unit tests for every private check function + `validate()` |
 | `app/config.py` | Modify | Remove `Config.validate()` method |
 | `tests/unit/test_config.py` | Modify | Remove two tests that test `Config.validate()` |
-| `scripts/achievements/unlock.py` | Modify | Replace `cfg.validate()` with `validate(cfg)` |
+| `scripts/achievements/farm.py` | Modify | Replace `cfg.validate()` with `validate(cfg)` |
 | `scripts/achievements/scan.py` | Modify | Add `validate(cfg)`; remove manual `steam_id` guard (lines 88–90) |
 | `scripts/cards/farm.py` | Modify | Replace `cfg.validate()` with `validate(cfg)` |
-| `scripts/cards/detect_drops.py` | Modify | Replace `cfg.validate()` with `validate(cfg)` |
+| `scripts/cards/scan.py` | Modify | Replace `cfg.validate()` with `validate(cfg)` |
 | `scripts/playtime/boost.py` | Modify | Replace `cfg.validate()` with `validate(cfg)` |
 
 ---
@@ -547,13 +547,13 @@ git commit -m "refactor: remove Config.validate() — superseded by app/validato
 ## Task 5: Wire `validate()` into all scripts
 
 **Files:**
-- Modify: `scripts/achievements/unlock.py`
+- Modify: `scripts/achievements/farm.py`
 - Modify: `scripts/achievements/scan.py`
 - Modify: `scripts/cards/farm.py`
-- Modify: `scripts/cards/detect_drops.py`
+- Modify: `scripts/cards/scan.py`
 - Modify: `scripts/playtime/boost.py`
 
-- [ ] **Step 1: Update `scripts/achievements/unlock.py`**
+- [ ] **Step 1: Update `scripts/achievements/farm.py`**
 
 Find the import block and `cfg.validate()` call. Replace:
 
@@ -601,7 +601,7 @@ Actually, keep the log.info line — it provides useful context for the user. On
 
 - [ ] **Step 3: Update `scripts/cards/farm.py`**
 
-Same pattern as `unlock.py`:
+Same pattern as `farm.py`:
 
 ```python
 from app.validator import validate
@@ -612,7 +612,7 @@ validate(cfg)
 
 Replace `cfg.validate()`.
 
-- [ ] **Step 4: Update `scripts/cards/detect_drops.py`**
+- [ ] **Step 4: Update `scripts/cards/scan.py`**
 
 Same pattern:
 
@@ -657,8 +657,8 @@ Expected: all tests PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add scripts/achievements/unlock.py scripts/achievements/scan.py \
-        scripts/cards/farm.py scripts/cards/detect_drops.py \
+git add scripts/achievements/farm.py scripts/achievements/scan.py \
+        scripts/cards/farm.py scripts/cards/scan.py \
         scripts/playtime/boost.py
 git commit -m "feat: wire validator.validate(cfg) into all scripts"
 ```

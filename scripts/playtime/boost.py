@@ -57,7 +57,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     done_count = 0
     active: dict[int, subprocess.Popen] = {}
 
-    log.info("=" * 60)
+    log.info("═" * 80)
     log.info("Boost Playtime — начало работы")
     log.info(
         "Игр к обработке: %d | Параллельно: %d | Время айдла: %d сек",
@@ -65,7 +65,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
         cfg.max_concurrent_games,
         cfg.playtime_idle_duration,
     )
-    log.info("=" * 60)
+    log.info("═" * 80)
 
     try:
         for i in range(0, total, cfg.max_concurrent_games):
@@ -99,9 +99,9 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
             kill_process(proc)
         # Не помечаем как done — батч мог не набрать достаточно времени
 
-    log.info("=" * 60)
+    log.info("═" * 80)
     log.info("Boost Playtime завершён. Обработано: %d / %d", done_count, total)
-    log.info("=" * 60)
+    log.info("═" * 80)
     toast("SAM Automation — Playtime", f"Готово: {done_count} / {total} игр обработано")
 
 

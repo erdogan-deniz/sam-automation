@@ -5,9 +5,7 @@
 Закрывает игру как только drops заканчиваются, открывает следующую.
 
 Использование:
-    python scripts/cards/farm.py              # начать/продолжить фарм
-    python scripts/cards/farm.py --list       # показать игры с card drops
-    python scripts/cards/farm.py --reset      # сбросить прогресс и начать заново
+    python scripts/cards/farm.py
 """
 
 from __future__ import annotations
@@ -17,7 +15,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import argparse
 import logging
 import subprocess
 import time
@@ -26,16 +23,16 @@ from typing import Any
 
 from app.cards import (
     check_cards_remaining,
-    clear_card_progress,
     fetch_games_with_card_drops,
     mark_card_done,
 )
+from app.cache import load_game_names
 from app.notify import toast
 from app.config import load_config
 from app.logging_setup import setup_logging
 from app.validator import validate
 from app.sam import check_steam_running, ensure_sam, kill_process, launch_game
-from app.steam import fetch_owned_games, get_web_cookies, resolve_steam_id
+from app.steam import get_web_cookies, resolve_steam_id
 
 log = logging.getLogger("sam_automation")
 
@@ -45,20 +42,23 @@ _MAX_CHECK_FAILURES = (
 
 
 def _kill_game(appid: int, proc: subprocess.Popen) -> None:
-    """Завершает SAM.Game.exe и логирует."""
+    """Завершает SAM.Game.exe."""
     kill_process(proc)
-    log.info("[%d] SAM.Game.exe закрыт", appid)
 
 
-def _open_next(queue: deque[tuple[int, int]], active: dict[int, subprocess.Popen], cfg: Any) -> None:
+def _open_next(queue: deque[tuple[int, int]], active: dict[int, subprocess.Popen], cfg: Any, game_names: dict) -> None:
     """Открывает следующую игру из очереди если есть место."""
     while queue and len(active) < cfg.max_concurrent_games:
         appid, cnt = queue.popleft()
-        drops_str = str(cnt) if cnt >= 0 else "?"
-        log.info(
-            "[%d] Открываю для idle (%s drops remaining)", appid, drops_str
-        )
-        active[appid] = launch_game(cfg.sam_game_exe_path, appid)
+        proc = launch_game(cfg.sam_game_exe_path, appid)
+        active[appid] = proc
+        name = game_names.get(appid, "")
+        if name:
+            log.info("APP NAME: %s", name)
+        log.info("APP PID: %d", proc.pid)
+        if cnt >= 0:
+            log.info("APP CARDS: %d", cnt)
+        log.info("═" * 80)
 
 
 def _farm_loop(
@@ -71,26 +71,19 @@ def _farm_loop(
     queue: deque[tuple[int, int]] = deque(games_with_drops)
     active: dict[int, subprocess.Popen] = {}
     check_failures: dict[int, int] = {}
+    game_names = load_game_names()
 
-    log.info("=" * 60)
-    log.info("SAM Card Farming — начало работы")
-    log.info(
-        "Игр к обработке: %d | Параллельно: %d | Интервал проверки: %d мин",
-        len(games_with_drops),
-        cfg.max_concurrent_games,
-        cfg.card_check_interval,
-    )
-    log.info("=" * 60)
+    log.info("═" * 80)
+    log.info("Время интервала проверки приложений библиотеки Steam с доступными картами на выпадение: %d мин", cfg.card_check_interval)
+    log.info("Параллельно запущено приложений библиотеки Steam с доступными картами на выпадение: %d", cfg.max_concurrent_games)
+    log.info("═" * 80)
 
-    _open_next(queue, active, cfg)
+    _open_next(queue, active, cfg, game_names)
 
     try:
         while active:
-            log.info(
-                "Idle: %s | Ожидаю %d мин до следующей проверки...",
-                list(active.keys()),
-                cfg.card_check_interval,
-            )
+            log.info("До следующей проверки осталось %d минут ...", cfg.card_check_interval)
+            log.info("═" * 80)
             time.sleep(cfg.card_check_interval * 60)
 
             for appid in list(active):
@@ -98,40 +91,39 @@ def _farm_loop(
                 time.sleep(1.0)  # пауза между запросами
 
                 if remaining == 0:
-                    log.info(
-                        "[%d] Card drops закончились — закрываю игру", appid
-                    )
+                    log.info("APP ID: %d — Card drops закончились", appid)
                     _kill_game(appid, active.pop(appid))
                     check_failures.pop(appid, None)
                     mark_card_done(appid)
-                    _open_next(queue, active, cfg)
+                    _open_next(queue, active, cfg, game_names)
                 elif remaining > 0:
-                    log.info(
-                        "[%d] Ещё %d card drop(s) — продолжаю idle",
-                        appid,
-                        remaining,
-                    )
+                    _kill_game(appid, active[appid])
+                    proc = launch_game(cfg.sam_game_exe_path, appid)
+                    active[appid] = proc
+                    name = game_names.get(appid, "")
+                    if name:
+                        log.info("APP NAME: %s", name)
+                    log.info("APP PID: %d", proc.pid)
+                    log.info("APP CARDS: %d", remaining)
+                    log.info("═" * 80)
                     check_failures[appid] = 0
                 else:
                     failures = check_failures.get(appid, 0) + 1
                     check_failures[appid] = failures
                     if failures >= _MAX_CHECK_FAILURES:
-                        log.warning(
-                            "[%d] %d неудачных проверок подряд — считаю дропы закончившимися",
-                            appid,
-                            failures,
-                        )
                         _kill_game(appid, active.pop(appid))
                         check_failures.pop(appid, None)
                         mark_card_done(appid)
-                        _open_next(queue, active, cfg)
+                        _open_next(queue, active, cfg, game_names)
                     else:
-                        log.warning(
-                            "[%d] Не удалось определить card drops (%d/%d) — продолжаю idle",
-                            appid,
-                            failures,
-                            _MAX_CHECK_FAILURES,
-                        )
+                        _kill_game(appid, active[appid])
+                        proc = launch_game(cfg.sam_game_exe_path, appid)
+                        active[appid] = proc
+                        name = game_names.get(appid, "")
+                        if name:
+                            log.info("APP NAME: %s", name)
+                        log.info("APP PID: %d", proc.pid)
+                        log.info("═" * 80)
 
     except KeyboardInterrupt:
         log.info("Прервано (Ctrl+C). Закрываю все активные игры...")
@@ -139,43 +131,29 @@ def _farm_loop(
         for appid, proc in active.items():
             _kill_game(appid, proc)
 
-    log.info("=" * 60)
+    log.info("═" * 80)
     log.info("Card farming завершён")
-    log.info("=" * 60)
+    log.info("═" * 80)
     toast("SAM Automation — Cards", "Card farming завершён")
 
 
 def main() -> None:
-    """Точка входа: парсит аргументы CLI и запускает цикл фарма trading cards."""
-    parser = argparse.ArgumentParser(description="SAM Card Farming")
-    parser.add_argument(
-        "--list",
-        action="store_true",
-        help="Показать игры с оставшимися card drops и выйти",
-    )
-    parser.add_argument(
-        "--reset",
-        action="store_true",
-        help="Сбросить прогресс card farming и начать заново",
-    )
-    parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args()
-
+    """Точка входа: запускает цикл фарма trading cards."""
+    print()
     log = setup_logging(
-        verbose=args.verbose, name="card_farming", category="cards/farm"
+        verbose=False, name="farm_cards", category="cards/farm"
     )
+    log.info("SAM Automation: Farm Cards")
+    log.info("═" * 80)
     cfg = load_config()
-
     validate(cfg)
-
-    if args.reset:
-        clear_card_progress()
-        log.info("Прогресс card farming сброшен")
 
     if not check_steam_running():
         log.error("Steam не запущен! Запусти Steam и попробуй снова.")
         sys.exit(1)
-    log.info("Steam запущен")
+    log.info("Steam клиент приложение запущено ✓")
+    log.info("Использование сохранённого Steam cookie ✓")
+    log.info("═" * 80)
 
     try:
         cfg.sam_game_exe_path = ensure_sam(cfg.sam_game_exe_path)
@@ -188,14 +166,10 @@ def main() -> None:
     except RuntimeError as e:
         log.error("Не удалось определить Steam ID: %s", e)
         sys.exit(1)
-    log.info("Steam ID: %s", steam_id)
 
-    log.info("Получаю список игр с оставшимися card drops через badges page...")
+    log.info("Поиск приложений библиотеки Steam с доступными картами на выпадение ...")
     cookies = get_web_cookies(cfg.steam_id)
-    if cookies:
-        games_with_drops = fetch_games_with_card_drops(cookies, steam_id)
-        log.info("Найдено %d игр с оставшимися дропами", len(games_with_drops))
-    else:
+    if not cookies:
         log.error(
             "Нет авторизации Steam. Запусти скрипт вручную один раз:\n"
             "  python scripts/cards/farm.py\n"
@@ -203,22 +177,9 @@ def main() -> None:
         )
         sys.exit(1)
 
+    games_with_drops = fetch_games_with_card_drops(cookies, steam_id)
     if not games_with_drops:
         log.info("Нет игр с оставшимися card drops — всё уже получено!")
-        sys.exit(0)
-
-    if args.list:
-        try:
-            owned = fetch_owned_games(cfg.steam_api_key, steam_id)
-        except Exception as e:
-            log.warning("Не удалось получить имена игр: %s", e)
-            owned = []
-        log.info("Игр с trading cards к обработке: %d", len(games_with_drops))
-        for appid, _ in games_with_drops:
-            name = next(
-                (g.get("name", "?") for g in owned if g["appid"] == appid), "?"
-            )
-            print(f"{appid:>10}  —  {name}")
         sys.exit(0)
 
     _farm_loop(games_with_drops, cfg, cookies, steam_id)

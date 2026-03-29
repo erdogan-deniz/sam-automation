@@ -52,27 +52,18 @@ python run.py
 # 1. Scan your Steam library → writes data/achievements/ids.txt
 python scripts/achievements/scan.py
 
-# 2. Preview which games will be processed (no changes made)
-python scripts/achievements/unlock.py --list
-
-# 3. Run (resumes automatically if previously interrupted)
-python scripts/achievements/unlock.py
-
-# Reset progress and start over
-python scripts/achievements/unlock.py --reset
+# 2. Run (resumes automatically if previously interrupted)
+python scripts/achievements/farm.py
 ```
 
 ### Card farming (CLI)
 
 ```bash
 # Show games with remaining card drops
-python scripts/cards/farm.py --list
+python scripts/cards/scan.py
 
 # Start farming (idles games until all drops are collected)
 python scripts/cards/farm.py
-
-# Detect games with remaining drops (two methods: fast + exact)
-python scripts/cards/detect_drops.py
 ```
 
 ## Configuration (`config.yaml`)
@@ -92,7 +83,7 @@ python scripts/cards/detect_drops.py
 | `between_games_delay` | `0.1` | Pause between games (seconds) |
 | `max_consecutive_errors` | `100` | Consecutive error threshold before emergency stop |
 | `max_concurrent_games` | `1` | How many games to idle simultaneously (card farming) |
-| `card_check_interval` | `30` | Minutes between card drop checks (card farming) |
+| `card_check_interval` | `10` | Minutes between card drop checks (card farming) |
 
 ## Getting a Steam API Key and Steam ID
 
@@ -139,9 +130,9 @@ sam-automation/
 ├── scripts/
 │   ├── achievements/
 │   │   ├── scan.py         # Collect App IDs → data/achievements/ids.txt
-│   │   └── unlock.py       # Main achievement unlock loop
+│   │   └── farm.py         # Main achievement unlock loop
 │   └── cards/
-│       ├── detect_drops.py # Detect games with remaining card drops
+│       ├── scan.py         # Detect games with remaining card drops
 │       └── farm.py         # Idle games to collect card drops
 ├── data/                   # Runtime state (gitignored)
 │   ├── achievements/       # ids.txt, done_ids.txt, error_ids.txt, no_achievements_ids.txt

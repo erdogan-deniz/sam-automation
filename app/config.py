@@ -37,7 +37,7 @@ class Config:
 
     # Card farming
     max_concurrent_games: int = 1  # сколько игр идлить одновременно
-    card_check_interval: int = 30  # минут между проверками card drops
+    card_check_interval: int = 10  # минут между проверками card drops
 
     # Playtime boosting
     playtime_idle_duration: int = 120  # секунд идлить каждую игру

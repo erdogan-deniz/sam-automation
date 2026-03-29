@@ -53,13 +53,13 @@ between_games_delay: 0.1
 # Порог последовательных ошибок для аварийной остановки
 max_consecutive_errors: 100
 
-# ── Карточки (card_farming.py) ────────────────────────────────────────────────
+# ── Карточки (scripts/cards/farm.py) ─────────────────────────────────────────
 
 # Сколько игр идлить одновременно (SAM.Game.exe запускается N раз параллельно)
 max_concurrent_games: 1
 
 # Минут между проверками количества оставшихся card drops
-card_check_interval: 30
+card_check_interval: 10
 
 # ── Boost Playtime (scripts/playtime/boost.py) ────────────────────────────────
 
