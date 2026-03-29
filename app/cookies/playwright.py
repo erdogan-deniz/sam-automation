@@ -189,7 +189,7 @@ def _playwright_login() -> dict | None:
             page = ctx.new_page()
             page.goto(
                 "https://steamcommunity.com/login/home/",
-                timeout=30_000,
+                timeout=60_000,
                 wait_until="domcontentloaded",
             )
 
