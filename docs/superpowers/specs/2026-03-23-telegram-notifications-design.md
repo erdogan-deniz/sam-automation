@@ -5,7 +5,7 @@
 
 ## Problem
 
-Scripts like `cards/farm.py`, `playtime/boost.py`, and `achievements/unlock.py` run for hours in the background. The user has no way to know when they finish or crash without keeping a terminal window open.
+Scripts like `cards/farm.py`, `playtime/boost.py`, and `achievements/farm.py` run for hours in the background. The user has no way to know when they finish or crash without keeping a terminal window open.
 
 ## Solution
 
@@ -15,7 +15,7 @@ Add an optional `app/notify.py` module that sends Telegram messages at key event
 
 - **Platform:** Telegram only (Bot API)
 - **Events:** script completion + unhandled errors / emergency stop
-- **Scripts:** `scripts/cards/farm.py`, `scripts/playtime/boost.py`, `scripts/achievements/unlock.py`
+- **Scripts:** `scripts/cards/farm.py`, `scripts/playtime/boost.py`, `scripts/achievements/farm.py`
 
 ## Architecture
 
@@ -100,7 +100,7 @@ except Exception as e:
 
 `KeyboardInterrupt` is caught inside `_boost_loop`; same reasoning applies.
 
-### `scripts/achievements/unlock.py`
+### `scripts/achievements/farm.py`
 
 `main()` already has a `try/except SAMTooManyErrors / except KeyboardInterrupt / finally` block
 (lines 207–222). A `completed_cleanly` flag gates the completion notification so it fires only
@@ -161,4 +161,4 @@ Two notification points total:
 | `config.example.yaml` | New commented section |
 | `scripts/cards/farm.py` | `try/except` wrapper around `_farm_loop(...)` call in `main()` |
 | `scripts/playtime/boost.py` | `try/except` wrapper around `_boost_loop(...)` call in `main()` |
-| `scripts/achievements/unlock.py` | 1 call in `except SAMTooManyErrors`, 1 call after `_log_summary` |
+| `scripts/achievements/farm.py` | 1 call in `except SAMTooManyErrors`, 1 call after `_log_summary` |

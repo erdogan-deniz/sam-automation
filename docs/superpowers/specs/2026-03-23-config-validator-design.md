@@ -23,7 +23,7 @@ failed.
 - **Trigger:** automatic — called at the start of every script's `main()`
 - **Behaviour on failure:** hard stop (`sys.exit(1)`) — no prompts, no "continue anyway"
 - **Error reporting:** collect all errors, print them together, then exit
-- **Scripts covered:** `unlock.py`, `scan.py`, `farm.py`, `detect_drops.py`, `boost.py`
+- **Scripts covered:** `farm.py`, `scan.py`, `farm.py`, `scan.py`, `boost.py`
 
 ## Architecture
 
@@ -93,15 +93,15 @@ Scripts affected:
 
 | Script | Change |
 | --- | --- |
-| `scripts/achievements/unlock.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+| `scripts/achievements/farm.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
 | `scripts/achievements/scan.py` | Add `validator.validate(cfg)`; remove the existing manual `if not cfg.steam_id: sys.exit(1)` guard (lines 88–90) which is now superseded |
 | `scripts/cards/farm.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
-| `scripts/cards/detect_drops.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+| `scripts/cards/scan.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
 | `scripts/playtime/boost.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
 
 ### Existing per-script `check_steam_running()` calls
 
-`unlock.py`, `farm.py`, and `boost.py` each call `check_steam_running()` mid-execution (before
+`farm.py`, `farm.py`, and `boost.py` each call `check_steam_running()` mid-execution (before
 launching SAM or idling a game). These are **operational checks** — they verify Steam is still
 running at the moment a game is about to be processed. They serve a different purpose from the
 validator's pre-flight check and must **not** be removed. The validator's Phase 2 check and the
@@ -131,10 +131,10 @@ The Steam API call uses `urllib.request` (stdlib) — same approach as `app/noti
 | --- | --- |
 | `app/validator.py` | New module |
 | `app/config.py` | Remove `Config.validate()` method |
-| `scripts/achievements/unlock.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+| `scripts/achievements/farm.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
 | `scripts/achievements/scan.py` | Add `validator.validate(cfg)` call |
 | `scripts/cards/farm.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
-| `scripts/cards/detect_drops.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
+| `scripts/cards/scan.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
 | `scripts/playtime/boost.py` | Replace `cfg.validate()` with `validator.validate(cfg)` |
 | `tests/test_validator.py` | New test file — unit tests for each private check function, `sys.exit` patched via `unittest.mock.patch` |
 

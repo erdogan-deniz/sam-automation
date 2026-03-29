@@ -15,7 +15,7 @@ from collections.abc import Callable
 from app.cards.card_cache import load_card_done_ids
 from gui.runner import ScriptRunner
 
-_DETECT_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "cards" / "detect_drops.py"
+_DETECT_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "cards" / "scan.py"
 _FARM_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "cards" / "farm.py"
 
 _PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")

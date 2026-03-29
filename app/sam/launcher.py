@@ -26,13 +26,20 @@ def launch_game(sam_game_exe: str, appid: int) -> subprocess.Popen:
         RuntimeError: если exe не удалось запустить.
     """
     exe = Path(sam_game_exe)
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = 6  # SW_MINIMIZE
     try:
-        proc = subprocess.Popen([str(exe), str(appid)], cwd=str(exe.parent))
+        proc = subprocess.Popen(
+            [str(exe), str(appid)],
+            cwd=str(exe.parent),
+            startupinfo=startupinfo,
+        )
     except OSError as e:
         raise RuntimeError(
             f"Не удалось запустить SAM.Game.exe для {appid}: {e}"
         ) from e
-    log.info("[%d] SAM.Game.exe запущен (PID=%d)", appid, proc.pid)
+
     return proc
 
 

@@ -89,6 +89,8 @@ def main() -> None:
     log = setup_logging(
         verbose=False, name="scan_achievements", category="achievements/scan"
     )
+    log.info("Сканирование приложений библиотеки Steam")
+    log.info("═" * 80)
     cfg = load_config()
     validate(cfg)
 
@@ -109,7 +111,7 @@ def main() -> None:
                 seen.add(gid)
                 combined.append(gid)
 
-    log.info("─" * 60)
+    log.info("═" * 80)
     _merge(_read_vdf_ids(steam_path, cfg.steam_id))
     new_before_cm = sum(1 for gid in combined if gid not in prev_ids)
     log.info(
@@ -117,7 +119,7 @@ def main() -> None:
         new_before_cm,
     )
 
-    log.info("─" * 60)
+    log.info("═" * 80)
     _merge(_read_api_ids(cfg.steam_api_key, cfg.steam_id))
     new_after_api = sum(1 for gid in combined if gid not in prev_ids)
     log.info(
@@ -125,7 +127,7 @@ def main() -> None:
         new_after_api - new_before_cm,
     )
 
-    log.info("─" * 60)
+    log.info("═" * 80)
     cm_ids = _read_cm_ids(steam_path)
     cm_new = sum(1 for gid in cm_ids if gid not in prev_ids)
     _merge(cm_ids)
@@ -140,7 +142,7 @@ def main() -> None:
         log.error("Ни один источник не вернул ID. Проверь steam_id и конфиг.")
         sys.exit(1)
 
-    log.info("─" * 60)
+    log.info("═" * 80)
     log.info("Итого: найдено %d ID приложений библиотеки Steam", len(combined))
     log.info(
         "Итого: найдено %d новых ID приложений библиотеки Steam",

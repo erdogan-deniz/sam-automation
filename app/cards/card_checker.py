@@ -147,7 +147,7 @@ def fetch_games_with_card_drops(
         time.sleep(_REQUEST_DELAY)
 
     results.sort(key=lambda x: x[1])
-    log.info("Итого игр с card drops: %d", len(results))
+    log.info("Обнаружено %d приложений библиотеки Steam с доступными картами на выпадение", len(results))
     return results
 
 
