@@ -1,9 +1,7 @@
 """SAM Automation — автоматическая разблокировка всех достижений Steam.
 
 Использование:
-    python scripts/achievements/unlock.py              # полный автопилот
-    python scripts/achievements/unlock.py --list       # только показать какие игры будут обработаны
-    python scripts/achievements/unlock.py --reset      # сбросить прогресс и начать заново
+    python scripts/achievements/farm.py
 """
 
 from __future__ import annotations
@@ -13,13 +11,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import argparse
 import logging
 import time
 
 from app.cache import (
-    clear_error_ids,
-    clear_progress,
     load_done_ids,
     load_error_ids,
     load_game_names,
@@ -144,38 +139,17 @@ def _log_summary(results: list[UnlockResult], errors: int) -> None:
 
 
 def main() -> None:
-    """Точка входа: парсит аргументы CLI и запускает цикл разблокировки достижений."""
-    parser = argparse.ArgumentParser(description="SAM Automation")
-    parser.add_argument(
-        "--list", action="store_true", help="Показать список игр и выйти"
-    )
-    parser.add_argument(
-        "--reset", action="store_true", help="Сбросить прогресс и начать заново"
-    )
-    parser.add_argument(
-        "--no-resume",
-        action="store_true",
-        help="Не пропускать уже обработанные игры",
-    )
-    parser.add_argument(
-        "--retry-errors",
-        action="store_true",
-        help="Повторить только игры из error_ids.txt",
-    )
-    parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args()
-
+    """Точка входа: запускает цикл разблокировки достижений."""
+    print()
     setup_logging(
-        verbose=args.verbose,
-        name="unlock_achievements",
-        category="achievements/unlock",
+        verbose=False,
+        name="farm_achievements",
+        category="achievements/farm",
     )
+    log.info("Разблокировка достижений Steam")
+    log.info("═" * 80)
     cfg = load_config()
     validate(cfg)
-
-    if args.reset:
-        clear_progress()
-        log.info("Прогресс сброшен")
 
     if not check_steam_running():
         log.error("Steam клиент не запущен")
@@ -188,28 +162,18 @@ def main() -> None:
         log.error(str(e))
         sys.exit(1)
 
-    if args.retry_errors:
-        error_ids = sorted(load_error_ids())
-        if not error_ids:
-            log.info("Нет игр с ошибками для повтора.")
-            sys.exit(0)
-        log.info("Повтор %d игр из error_ids.txt", len(error_ids))
-        clear_error_ids()
-        game_ids = error_ids
-    else:
-        game_ids = load_game_ids(cfg)
-        if not game_ids:
-            from app.cache import ALL_IDS_FILE
-            if not ALL_IDS_FILE.exists() and not cfg.game_ids_file and not cfg.game_ids:
-                log.error("ids.txt не найден — запусти scan.py для формирования списка игр")
-                sys.exit(1)
-            log.info("Список игр пуст (все исключены конфигом?)")
-            sys.exit(0)
+    game_ids = load_game_ids(cfg)
+    if not game_ids:
+        from app.cache import ALL_IDS_FILE
+        if not ALL_IDS_FILE.exists() and not cfg.game_ids_file and not cfg.game_ids:
+            log.error("ids.txt не найден — запусти scan.py для формирования списка игр")
+            sys.exit(1)
+        log.info("Список игр пуст (все исключены конфигом?)")
+        sys.exit(0)
 
-        if not args.no_resume:
-            game_ids = _apply_resume_filter(game_ids)
+    game_ids = _apply_resume_filter(game_ids)
 
-    if not args.retry_errors and not game_ids:
+    if not game_ids:
         done = len(load_done_ids())
         no_ach = len(load_no_achievements_ids())
         errors = len(load_error_ids())
@@ -219,19 +183,12 @@ def main() -> None:
         )
         sys.exit(0)
 
-    if args.list:
-        log.info("Игр для обработки: %d", len(game_ids))
-        for gid in game_ids:
-            print(gid)
-        sys.exit(0)
-
     proc, session = launch_picker(
         cfg.sam_game_exe_path, launch_delay=cfg.launch_delay
     )
 
     game_names = load_game_names()
     total = len(game_ids)
-    log.info("SAM Automation — начало работы")
     log.info("Игр к обработке: %d", total)
     print()
 
@@ -244,7 +201,7 @@ def main() -> None:
             name = game_names.get(game_id, "")
             header = f"[{i}/{total}]"
             side = (70 - len(header) - 2) // 2
-            log.info("%s %s %s", "=" * side, header, "=" * side)
+            log.info("%s %s %s", "═" * side, header, "═" * side)
             log.info("APP ID: %d", game_id)
             if _process_one_game(session, game_id, cfg, tracker, results, name):
                 errors += 1
@@ -261,7 +218,7 @@ def main() -> None:
         kill_process(proc)
 
     print()
-    log.info("=" * 60)
+    log.info("═" * 80)
     log.info("ИТОГИ")
     _log_summary(results, errors)
 
