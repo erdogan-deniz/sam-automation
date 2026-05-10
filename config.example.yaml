@@ -65,3 +65,6 @@ card_check_interval: 10
 
 # Секунд идлить каждую игру. 120 = гарантированно Steam запишет >1 мин.
 playtime_idle_duration: 120
+
+# Целевой минимум playtime (мин). Игры ниже этого порога будут добиваться.
+playtime_target_minutes: 3
