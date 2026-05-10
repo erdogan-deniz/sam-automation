@@ -16,14 +16,14 @@ from app.steam.store_api import _REQUEST_DELAY, _has_trading_cards
 
 log = logging.getLogger("sam_automation")
 
-_HAS_CARDS_FILE = CARDS_DIR / "has_cards_ids.txt"
-_NO_CARDS_FILE = CARDS_DIR / "no_cards_ids.txt"
+_HAS_CARDS_FILE = CARDS_DIR / "has_cards.txt"
+_NO_CARDS_FILE = CARDS_DIR / "no_cards.txt"
 
 _LOG_EVERY = 25  # логировать прогресс каждые N игр
 
 
 def _load_cache() -> dict[int, bool]:
-    """Читает кэш из has_cards_ids.txt и no_cards_ids.txt → {appid: bool}."""
+    """Читает кэш из has_cards.txt и no_cards.txt → {appid: bool}."""
     cache: dict[int, bool] = {}
     for appid in load_ids_file(_HAS_CARDS_FILE):
         cache[appid] = True
