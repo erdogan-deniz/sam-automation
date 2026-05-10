@@ -12,6 +12,7 @@ from .win32_utils import (
     _close_picker_modal,
     _get_sam_game_pids,
     _is_window_enabled,
+    _kill_pid,
 )
 
 log = logging.getLogger("sam_automation")
@@ -141,18 +142,26 @@ class PickerSession:
                 game_id, f"Процесс SAM.Game не появился за {timeout}с"
             )
 
-        # Шаг 2: connect + ждём окно
+        # Шаг 2: connect + ждём окно.
+        # found_pid уже запущен — при любом исключении убиваем его.
         log.info("APP SAM PID: %d", found_pid)
-        game_app = Application(backend="uia").connect(
-            process=found_pid, timeout=5
-        )
-        while time.time() < deadline:
-            try:
-                wins = game_app.windows()
-                if wins:
-                    return game_app
-            except Exception:
-                pass
-            time.sleep(0.03)
+        try:
+            game_app = Application(backend="uia").connect(
+                process=found_pid, timeout=5
+            )
+            while time.time() < deadline:
+                try:
+                    wins = game_app.windows()
+                    if wins:
+                        return game_app
+                except Exception:
+                    pass
+                time.sleep(0.03)
 
-        raise SAMGameError(game_id, "Окно Manager не появилось")
+            raise SAMGameError(game_id, "Окно Manager не появилось")
+        except SAMGameError:
+            try:
+                _kill_pid(found_pid)
+            except Exception as kill_err:
+                log.debug("Не удалось убить SAM.Game PID=%d: %s", found_pid, kill_err)
+            raise

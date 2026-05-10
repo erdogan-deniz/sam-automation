@@ -39,6 +39,8 @@ log = logging.getLogger("sam_automation")
 _MAX_CHECK_FAILURES = (
     5  # после N неудачных проверок подряд считаем дропы закончившимися
 )
+_PAUSE_AFTER_KILL = 10  # сек, даём Steam обновить данные после закрытия SAM.Game.exe
+_PAUSE_BETWEEN_GAMES = 3  # сек, пауза перед открытием следующей игры из очереди
 
 
 def _kill_game(appid: int, proc: subprocess.Popen) -> None:
@@ -50,6 +52,7 @@ def _open_next(queue: deque[tuple[int, int]], active: dict[int, subprocess.Popen
     """Открывает следующую игру из очереди если есть место."""
     while queue and len(active) < cfg.max_concurrent_games:
         appid, cnt = queue.popleft()
+        time.sleep(_PAUSE_BETWEEN_GAMES)
         proc = launch_game(cfg.sam_game_exe_path, appid)
         active[appid] = proc
         name = game_names.get(appid, "")
@@ -98,6 +101,7 @@ def _farm_loop(
                     _open_next(queue, active, cfg, game_names)
                 elif remaining > 0:
                     _kill_game(appid, active[appid])
+                    time.sleep(_PAUSE_AFTER_KILL)
                     proc = launch_game(cfg.sam_game_exe_path, appid)
                     active[appid] = proc
                     name = game_names.get(appid, "")
@@ -117,6 +121,7 @@ def _farm_loop(
                         _open_next(queue, active, cfg, game_names)
                     else:
                         _kill_game(appid, active[appid])
+                        time.sleep(_PAUSE_AFTER_KILL)
                         proc = launch_game(cfg.sam_game_exe_path, appid)
                         active[appid] = proc
                         name = game_names.get(appid, "")
