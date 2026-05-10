@@ -41,6 +41,7 @@ class Config:
 
     # Playtime boosting
     playtime_idle_duration: int = 120  # секунд идлить каждую игру
+    playtime_target_minutes: int = 3  # минимум минут playtime для каждой игры
 
 def load_config(config_path: str = "config.yaml") -> Config:
     """Загружает конфигурацию из YAML-файла.
@@ -91,6 +92,9 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     if "playtime_idle_duration" in raw:
         cfg.playtime_idle_duration = int(raw["playtime_idle_duration"])
+
+    if "playtime_target_minutes" in raw:
+        cfg.playtime_target_minutes = int(raw["playtime_target_minutes"])
 
     # Резолвим относительный путь к exe от директории конфига
     if cfg.sam_game_exe_path and not os.path.isabs(cfg.sam_game_exe_path):

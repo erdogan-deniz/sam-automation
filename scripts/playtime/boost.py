@@ -1,12 +1,13 @@
-"""Boost Playtime — набивает 1+ мин playtime в играх с нулевым временем.
+"""Boost Playtime — добивает playtime до playtime_target_minutes в каждой игре.
 
 Запускает SAM.Game.exe для каждой игры (фейковая сессия → Steam считает playtime).
 Batch-модель: N игр одновременно → ждём playtime_idle_duration сек → закрываем всех → следующий батч.
 
+Источник правды — Steam API (`playtime_forever`), локальный прогресс не хранится.
+
 Использование:
-    python scripts/playtime/boost.py              # начать/продолжить
-    python scripts/playtime/boost.py --list       # показать игры с 0 playtime и выйти
-    python scripts/playtime/boost.py --reset      # сбросить прогресс и начать заново
+    python scripts/playtime/boost.py              # добить недостающие игры
+    python scripts/playtime/boost.py --list       # показать недобранные игры и выйти
 """
 
 from __future__ import annotations
@@ -22,11 +23,6 @@ import subprocess
 import time
 from typing import Any
 
-from app.cache import (
-    clear_playtime_progress,
-    load_playtime_done_ids,
-    mark_playtime_done,
-)
 from app.notify import toast
 from app.config import load_config
 from app.logging_setup import setup_logging
@@ -38,15 +34,14 @@ log = logging.getLogger("sam_automation")
 
 
 def _fetch_unplayed(cfg: Any, steam_id: str) -> list[dict]:
-    """Возвращает игры с playtime_forever == 0, не из done_ids и не из exclude_ids."""
+    """Возвращает игры с playtime_forever < playtime_target_minutes (минус exclude_ids)."""
     games = fetch_owned_games(cfg.steam_api_key, steam_id)
-    done = load_playtime_done_ids()
     exclude = set(cfg.exclude_ids)
+    target = cfg.playtime_target_minutes
     return [
         g
         for g in games
-        if g.get("playtime_forever", 0) == 0
-        and g["appid"] not in done
+        if g.get("playtime_forever", 0) < target
         and g["appid"] not in exclude
     ]
 
@@ -87,8 +82,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
 
             for appid, proc in active.items():
                 kill_process(proc)
-                mark_playtime_done(appid)
-                log.info("[%d] Закрыт и отмечен как done", appid)
+                log.info("[%d] Закрыт", appid)
 
             done_count += len(active)
             log.info("Прогресс: %d / %d", done_count, total)
@@ -113,12 +107,7 @@ def main() -> None:
     parser.add_argument(
         "--list",
         action="store_true",
-        help="Показать игры с 0 playtime и выйти",
-    )
-    parser.add_argument(
-        "--reset",
-        action="store_true",
-        help="Сбросить прогресс и начать заново",
+        help="Показать недобранные игры и выйти",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -128,10 +117,6 @@ def main() -> None:
     )
     cfg = load_config()
     validate(cfg)
-
-    if args.reset:
-        clear_playtime_progress()
-        log.info("Прогресс playtime boosting сброшен")
 
     if not check_steam_running():
         log.error("Steam не запущен! Запусти Steam и попробуй снова.")
@@ -151,15 +136,12 @@ def main() -> None:
         sys.exit(1)
     log.info("Steam ID: %s", steam_id)
 
-    log.info("Получаю список игр с 0 playtime через Steam API...")
-    games = _fetch_unplayed(cfg, steam_id)
-    already_done = len(load_playtime_done_ids())
-
     log.info(
-        "Игр с 0 playtime (не обработано): %d (уже готово: %d)",
-        len(games),
-        already_done,
+        "Получаю игры с playtime < %d мин через Steam API...",
+        cfg.playtime_target_minutes,
     )
+    games = _fetch_unplayed(cfg, steam_id)
+    log.info("Недобранных игр: %d", len(games))
 
     if not games:
         log.info("Нет игр для обработки!")
@@ -167,7 +149,8 @@ def main() -> None:
 
     if args.list:
         for g in games:
-            print(f"{g['appid']:>10}  —  {g.get('name', '?')}")
+            pt = g.get("playtime_forever", 0)
+            print(f"{g['appid']:>10}  [{pt:>3} мин]  —  {g.get('name', '?')}")
         sys.exit(0)
 
     _boost_loop(games, cfg)
