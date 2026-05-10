@@ -43,6 +43,7 @@ def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
         f"{BASE_URL}/IPlayerService/GetOwnedGames/v1/"
         f"?key={api_key}&steamid={steam_id}"
         f"&include_appinfo=1&include_played_free_games=1"
+        f"&skip_unvetted_apps=false"
         f"&format=json"
     )
 
