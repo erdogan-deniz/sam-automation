@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from collections.abc import Callable
 
-from app.cache import load_playtime_done_ids
 from gui.runner import ScriptRunner
 
 _BOOST_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "playtime" / "boost.py"
@@ -36,7 +35,7 @@ class PlaytimeTab(ctk.CTkFrame):
         self._runner.on_finish = self._on_finish
 
         self._build_ui()
-        self.refresh_stats()
+        self._lbl_status.configure(text="Idle")
 
     # ------------------------------------------------------------------
     # UI
@@ -49,15 +48,14 @@ class PlaytimeTab(ctk.CTkFrame):
         # Stats
         stats_frame = ctk.CTkFrame(self, fg_color="transparent")
         stats_frame.grid(row=0, column=0, padx=16, pady=(16, 8), sticky="ew")
-        stats_frame.grid_columnconfigure((0, 1), weight=1)
+        stats_frame.grid_columnconfigure(0, weight=1)
 
-        self._lbl_done = self._stat_label(stats_frame, "Playtime Done", 0)
-        self._lbl_status = self._stat_label(stats_frame, "Status", 1)
+        self._lbl_status = self._stat_label(stats_frame, "Status", 0)
 
         # Buttons
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.grid(row=1, column=0, padx=16, pady=4, sticky="ew")
-        btn_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         self._btn_boost = ctk.CTkButton(
             btn_frame, text="Boost Playtime", command=self._boost,
@@ -69,17 +67,11 @@ class PlaytimeTab(ctk.CTkFrame):
         )
         self._btn_list.grid(row=0, column=1, padx=4, sticky="ew")
 
-        self._btn_reset = ctk.CTkButton(
-            btn_frame, text="Reset", fg_color="#555", hover_color="#666",
-            command=self._reset,
-        )
-        self._btn_reset.grid(row=0, column=2, padx=4, sticky="ew")
-
         self._btn_stop = ctk.CTkButton(
             btn_frame, text="Stop", fg_color="#a33", hover_color="#c44",
             command=self._stop,
         )
-        self._btn_stop.grid(row=0, column=3, padx=4, sticky="ew")
+        self._btn_stop.grid(row=0, column=2, padx=4, sticky="ew")
         self._btn_stop.grid_remove()
 
         # Progress
@@ -108,15 +100,6 @@ class PlaytimeTab(ctk.CTkFrame):
         return lbl
 
     # ------------------------------------------------------------------
-    # Stats
-
-    def refresh_stats(self) -> None:
-        """Обновляет счётчик выполненных игр."""
-        done = len(load_playtime_done_ids())
-        self._lbl_done.configure(text=str(done))
-        self._lbl_status.configure(text="Idle")
-
-    # ------------------------------------------------------------------
     # Button handlers
 
     def _boost(self) -> None:
@@ -124,12 +107,8 @@ class PlaytimeTab(ctk.CTkFrame):
         self._start_script(_BOOST_SCRIPT, [])
 
     def _list(self) -> None:
-        """Выводит список игр с нулевым playtime."""
+        """Выводит список игр с playtime ниже порога."""
         self._start_script(_BOOST_SCRIPT, ["--list"])
-
-    def _reset(self) -> None:
-        """Сбрасывает прогресс и запускает набивку заново."""
-        self._start_script(_BOOST_SCRIPT, ["--reset"])
 
     def stop(self) -> None:
         """Останавливает текущий запущенный скрипт (публичный метод для хоткея)."""
@@ -183,7 +162,6 @@ class PlaytimeTab(ctk.CTkFrame):
         self._lbl_status.configure(text="Done" if returncode == 0 else f"Error ({returncode})")
         self._set_buttons_state("normal")
         self._btn_stop.grid_remove()
-        self.refresh_stats()
 
     # ------------------------------------------------------------------
     # Log helpers
@@ -203,5 +181,5 @@ class PlaytimeTab(ctk.CTkFrame):
 
     def _set_buttons_state(self, state: str) -> None:
         """Устанавливает состояние (\"normal\"/\"disabled\") для основных кнопок действий."""
-        for btn in (self._btn_boost, self._btn_list, self._btn_reset):
+        for btn in (self._btn_boost, self._btn_list):
             btn.configure(state=state)
