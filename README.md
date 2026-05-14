@@ -1,6 +1,6 @@
 # SAM Automation
 
-Automatically unlock all Steam achievements and farm trading card drops across your entire game library.
+Automatically unlock all Steam achievements, farm trading card drops, and boost playtime across your entire game library.
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
@@ -49,10 +49,10 @@ python run.py
 ### Achievements (CLI)
 
 ```bash
-# 1. Scan your Steam library → writes data/achievements/ids.txt
-python scripts/achievements/scan.py
+# 1. Scan your Steam library → writes data/games/ids/all.txt
+python scripts/scan.py
 
-# 2. Run (resumes automatically if previously interrupted)
+# 2. Unlock (resumes automatically if previously interrupted)
 python scripts/achievements/farm.py
 ```
 
@@ -64,6 +64,16 @@ python scripts/cards/scan.py
 
 # Start farming (idles games until all drops are collected)
 python scripts/cards/farm.py
+```
+
+### Playtime boosting (CLI)
+
+```bash
+# Show games with playtime below playtime_target_minutes
+python scripts/playtime/boost.py --list
+
+# Boost low-playtime games via short SAM sessions
+python scripts/playtime/boost.py
 ```
 
 ## Configuration (`config.yaml`)
@@ -78,12 +88,14 @@ python scripts/cards/farm.py
 | `game_ids_file` | — | Path to a text file with App IDs (one per line) |
 | `game_ids` | — | Explicit list of App IDs; overrides `scan.py` and `game_ids_file` |
 | `launch_delay` | `3` | Seconds to wait after launching SAM.Picker.exe |
-| `load_timeout` | `10` | Max seconds to wait for a game to load in SAM |
+| `load_timeout` | `3` | Max seconds to wait for a game to load in SAM |
 | `post_commit_delay` | `0.2` | Pause after Commit Changes (seconds) |
 | `between_games_delay` | `0.1` | Pause between games (seconds) |
 | `max_consecutive_errors` | `100` | Consecutive error threshold before emergency stop |
 | `max_concurrent_games` | `1` | How many games to idle simultaneously (card farming) |
 | `card_check_interval` | `10` | Minutes between card drop checks (card farming) |
+| `playtime_idle_duration` | `120` | Seconds to idle each game (playtime boost) |
+| `playtime_target_minutes` | `3` | Minimum playtime per game; games below this are boosted |
 
 ## Getting a Steam API Key and Steam ID
 
@@ -128,15 +140,21 @@ sam-automation/
 │   ├── runner.py           # Script subprocess runner
 │   └── tabs/               # Tab components (achievements, cards, settings)
 ├── scripts/
+│   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
 │   ├── achievements/
-│   │   ├── scan.py         # Collect App IDs → data/achievements/ids.txt
 │   │   └── farm.py         # Main achievement unlock loop
-│   └── cards/
-│       ├── scan.py         # Detect games with remaining card drops
-│       └── farm.py         # Idle games to collect card drops
+│   ├── cards/
+│   │   ├── scan.py         # Detect games with remaining card drops
+│   │   └── farm.py         # Idle games to collect card drops
+│   └── playtime/
+│       └── boost.py        # Boost low-playtime games via short SAM sessions
 ├── data/                   # Runtime state (gitignored)
-│   ├── achievements/       # ids.txt, done_ids.txt, error_ids.txt, no_achievements_ids.txt
-│   └── cards/              # has_cards_ids.txt, no_cards_ids.txt, card_done_ids.txt
+│   └── games/
+│       ├── names.json      # AppID → game name cache
+│       └── ids/
+│           ├── all.txt             # Master list of App IDs (from scan.py)
+│           ├── achievements/       # unlocked.txt, error.txt, without.txt
+│           └── cards/              # has_cards.txt, no_cards.txt, done.txt
 ├── logs/                   # Session logs (gitignored)
 ├── external/
 │   └── SAM/                # SAM binaries (auto-downloaded on first run)
@@ -147,25 +165,34 @@ sam-automation/
 
 ## State files
 
-All state is stored in `data/` (gitignored) as plain-text files — one App ID per line.
+All state is stored in `data/games/` (gitignored) as plain-text files — one App ID per line.
 Delete or edit them manually if needed.
 
-**Achievements** (`data/achievements/`)
+**Master list** (`data/games/ids/`)
 
 | File | Purpose |
 | --- | --- |
-| `ids.txt` | App IDs collected by `scripts/achievements/scan.py` |
-| `done_ids.txt` | Successfully processed games |
-| `error_ids.txt` | Games that errored out (retryable) |
-| `no_achievements_ids.txt` | Games with no achievements (skipped permanently) |
+| `all.txt` | App IDs collected by `scripts/scan.py` (VDF + Steam API + Steam CM) |
+| `../names.json` | AppID → game name lookup, populated alongside the scan |
 
-**Cards** (`data/cards/`)
+**Achievements** (`data/games/ids/achievements/`)
 
 | File | Purpose |
 | --- | --- |
-| `has_cards_ids.txt` | Games confirmed to have trading cards |
-| `no_cards_ids.txt` | Games confirmed to have no trading cards |
-| `card_done_ids.txt` | Games with no remaining card drops |
+| `unlocked.txt` | Successfully processed games |
+| `error.txt` | Games that errored out (retryable) |
+| `without.txt` | Games with no achievements (skipped permanently) |
+
+**Cards** (`data/games/ids/cards/`)
+
+| File | Purpose |
+| --- | --- |
+| `has_cards.txt` | Games confirmed to have trading cards |
+| `no_cards.txt` | Games confirmed to have no trading cards |
+| `done.txt` | Games with no remaining card drops |
+
+**Playtime boosting** has no local state — progress is read live from the Steam API
+(`playtime_forever`); games below `playtime_target_minutes` are queued each run.
 
 Session logs are written to `logs/` with timestamps (`YYYY-MM-DD_HH-MM-SS.log`).
 
