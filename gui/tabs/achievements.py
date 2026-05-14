@@ -16,7 +16,7 @@ from app.cache import ALL_IDS_FILE, load_done_ids, load_error_ids, load_no_achie
 from app.id_file import read_ids_ordered
 from gui.runner import ScriptRunner
 
-_SCAN_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "achievements" / "scan.py"
+_SCAN_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "scan.py"
 _UNLOCK_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "achievements" / "farm.py"
 
 _PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
