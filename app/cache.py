@@ -19,7 +19,6 @@ GAME_NAMES_FILE = GAMES_DIR / "names.json"
 _IDS_DIR = GAMES_DIR / "ids"
 _ACHIEVEMENTS_IDS_DIR = _IDS_DIR / "achievements"
 CARDS_DIR = _IDS_DIR / "cards"
-PLAYTIME_DIR = _IDS_DIR / "playtime"
 
 # Achievements
 ALL_IDS_FILE = _IDS_DIR / "all.txt"
@@ -91,23 +90,3 @@ def clear_progress() -> None:
         if path.exists():
             path.unlink()
             log.debug("Удалён файл прогресса: %s", path)
-
-
-PLAYTIME_DONE_FILE = PLAYTIME_DIR / "done.txt"
-
-
-def load_playtime_done_ids() -> set[int]:
-    """Читает playtime/done.txt → set[int]."""
-    return load_ids_file(PLAYTIME_DONE_FILE)
-
-
-def mark_playtime_done(appid: int) -> None:
-    """Дозаписывает appid в playtime/done.txt."""
-    _append_id(PLAYTIME_DONE_FILE, appid)
-
-
-def clear_playtime_progress() -> None:
-    """Удаляет playtime/done.txt для playtime boosting."""
-    if PLAYTIME_DONE_FILE.exists():
-        PLAYTIME_DONE_FILE.unlink()
-        log.debug("Удалён файл прогресса: %s", PLAYTIME_DONE_FILE)
