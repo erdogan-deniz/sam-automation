@@ -5,10 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-import pytest
-
 from app.config import Config, load_config
-
 
 # ── load_config — файл не существует ──────────────────────────────────────
 

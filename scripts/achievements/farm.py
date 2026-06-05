@@ -25,9 +25,9 @@ from app.cache import (
 )
 from app.config import load_config
 from app.exceptions import SAMError, SAMTooManyErrors
-from app.validator import validate
 from app.game_list import load_game_ids
 from app.logging_setup import setup_logging
+from app.notify import toast
 from app.safety import ErrorTracker
 from app.sam import (
     check_steam_running,
@@ -37,8 +37,8 @@ from app.sam import (
     launch_picker,
     process_game,
 )
-from app.notify import toast
 from app.unlock_result import UnlockResult
+from app.validator import validate
 
 log = logging.getLogger("sam_automation")
 

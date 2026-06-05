@@ -9,7 +9,6 @@ import pytest
 import app.game_list as gl_mod
 from app.config import Config
 
-
 # ── Источник: config.game_ids ──────────────────────────────────────────────
 
 
