@@ -15,6 +15,11 @@ from .win32_utils import _kill_pid
 
 log = logging.getLogger("sam_automation")
 
+# Пауза между стартами SAM.Game.exe (сек). Одновременный запуск нескольких
+# процессов вызывает гонку за Steam global user → 'failed to connect to
+# global user'. Старт по очереди с задержкой её устраняет.
+_LAUNCH_STAGGER = 3.0
+
 
 def launch_game(sam_game_exe: str, appid: int) -> subprocess.Popen:
     """Запускает SAM.Game.exe для указанного appid (card farming — без UI автоматизации).
@@ -41,6 +46,29 @@ def launch_game(sam_game_exe: str, appid: int) -> subprocess.Popen:
         ) from e
 
     return proc
+
+
+def launch_games_staggered(
+    sam_game_exe: str,
+    games: list[tuple[int, str]],
+    stagger: float = _LAUNCH_STAGGER,
+) -> dict[int, subprocess.Popen]:
+    """Запускает SAM.Game.exe для каждой (appid, name) по очереди с паузой.
+
+    Пауза >= stagger МЕЖДУ запусками избегает гонки за Steam global user
+    ('failed to connect to global user' при одновременном старте). Перед
+    первым запуском паузы нет — она нужна только между процессами.
+
+    Returns:
+        Отображение appid → Popen запущенных процессов.
+    """
+    active: dict[int, subprocess.Popen] = {}
+    for idx, (appid, name) in enumerate(games):
+        if idx > 0:
+            time.sleep(stagger)
+        log.info("[%d] Запускаю: %s", appid, name)
+        active[appid] = launch_game(sam_game_exe, appid)
+    return active
 
 
 def close_game(game_app: Application | None) -> None:
