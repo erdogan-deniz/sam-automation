@@ -26,7 +26,7 @@ from app.cache import (
 from app.config import load_config
 from app.exceptions import SAMError, SAMTooManyErrors
 from app.game_list import load_game_ids
-from app.logging_setup import setup_logging
+from app.logging_setup import SEPARATOR, centered, setup_logging
 from app.notify import toast
 from app.safety import ErrorTracker
 from app.sam import (
@@ -147,7 +147,7 @@ def main() -> None:
         category="achievements/farm",
     )
     log.info("Разблокировка достижений Steam")
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     cfg = load_config()
     validate(cfg)
 
@@ -200,8 +200,7 @@ def main() -> None:
         for i, game_id in enumerate(game_ids, 1):
             name = game_names.get(game_id, "")
             header = f"[{i}/{total}]"
-            side = (70 - len(header) - 2) // 2
-            log.info("%s %s %s", "═" * side, header, "═" * side)
+            log.info(centered(header))
             log.info("APP ID: %d", game_id)
             if _process_one_game(session, game_id, cfg, tracker, results, name):
                 errors += 1
@@ -218,7 +217,7 @@ def main() -> None:
         kill_process(proc)
 
     print()
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     log.info("ИТОГИ")
     _log_summary(results, errors)
 
