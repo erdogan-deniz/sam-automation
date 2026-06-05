@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from app.notify import toast
 
@@ -40,5 +40,7 @@ def test_toast_silent_on_error() -> None:
 
 def test_toast_silent_on_os_error() -> None:
     """toast() не бросает исключение при любой ошибке запуска."""
-    with patch("app.notify.subprocess.Popen", side_effect=OSError("access denied")):
+    with patch(
+        "app.notify.subprocess.Popen", side_effect=OSError("access denied")
+    ):
         toast("T", "M")

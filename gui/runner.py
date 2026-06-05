@@ -34,7 +34,9 @@ class ScriptRunner:
     def is_running(self) -> bool:
         return self._running
 
-    def run(self, script_path: str | Path, args: list[str] | None = None) -> None:
+    def run(
+        self, script_path: str | Path, args: list[str] | None = None
+    ) -> None:
         """Запускает скрипт в subprocess. Вывод стримится через on_output."""
         if self._running:
             return
