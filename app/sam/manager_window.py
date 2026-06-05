@@ -13,6 +13,11 @@ from .sam_status import _check_game_status
 
 log = logging.getLogger("sam_automation")
 
+# Таймаут перепроверки статистики после Refresh (сек). Короче load_timeout:
+# если Refresh не помог за это время — игру откидываем в retry, не висим ещё
+# раз полный load_timeout (всё равно отбросит — нет смысла ждать долго).
+_REFRESH_RECHECK_TIMEOUT = 8.0
+
 
 # ---------------------------------------------------------------------------
 #  Кэш координат кнопок (вычисляется один раз на первой игре)
@@ -145,7 +150,7 @@ def process_game(
     if skip_reason == "retry" and _click_refresh(game_window):
         log.info("Статистика не загрузилась — Refresh, повтор")
         skip_reason, total = _check_game_status(
-            game_window, timeout=load_timeout
+            game_window, timeout=_REFRESH_RECHECK_TIMEOUT
         )
 
     if skip_reason:
