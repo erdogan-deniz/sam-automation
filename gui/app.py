@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import customtkinter as ctk
 
-from gui.hotkey import GlobalHotkey, VK_ESCAPE
+from gui.hotkey import VK_ESCAPE, GlobalHotkey
 from gui.tabs.achievements import AchievementsTab
 from gui.tabs.cards import CardsTab
 from gui.tabs.playtime import PlaytimeTab
