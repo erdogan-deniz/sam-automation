@@ -26,7 +26,12 @@ from typing import Any
 from app.config import load_config
 from app.logging_setup import SEPARATOR, setup_logging
 from app.notify import toast
-from app.sam import check_steam_running, ensure_sam, kill_process, launch_game
+from app.sam import (
+    check_steam_running,
+    ensure_sam,
+    kill_process,
+    launch_games_staggered,
+)
 from app.steam import fetch_owned_games, resolve_steam_id
 from app.validator import validate
 
@@ -64,13 +69,12 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     try:
         for i in range(0, total, cfg.max_concurrent_games):
             batch = games[i : i + cfg.max_concurrent_games]
-            active = {}
-
-            for g in batch:
-                appid = g["appid"]
-                name = g.get("name", str(appid))
-                log.info("[%d] Запускаю: %s", appid, name)
-                active[appid] = launch_game(cfg.sam_game_exe_path, appid)
+            games_with_names = [
+                (g["appid"], g.get("name", str(g["appid"]))) for g in batch
+            ]
+            active = launch_games_staggered(
+                cfg.sam_game_exe_path, games_with_names
+            )
 
             log.info(
                 "Батч %d игр запущен, жду %d сек...",
