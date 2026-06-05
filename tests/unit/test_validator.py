@@ -10,8 +10,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.config import Config
-from app.validator import _check_file_paths, _check_required_fields, _check_steam_api, _check_steam_process, validate
-
+from app.validator import (
+    _check_file_paths,
+    _check_required_fields,
+    _check_steam_api,
+    _check_steam_process,
+    validate,
+)
 
 # ── _check_required_fields ────────────────────────────────────────────────
 

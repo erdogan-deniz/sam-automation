@@ -25,12 +25,12 @@ if sys.platform == "win32":
 from app.cards import fetch_games_with_card_drops
 from app.config import load_config
 from app.logging_setup import setup_logging
-from app.validator import validate
 from app.steam import (
     fetch_owned_games,
     get_web_cookies,
     resolve_steam_id,
 )
+from app.validator import validate
 
 
 def main() -> None:

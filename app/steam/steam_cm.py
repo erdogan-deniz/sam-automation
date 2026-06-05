@@ -28,7 +28,9 @@ log = logging.getLogger("sam_automation")
 
 # Публичный API модуля
 # Внутренние зависимости read_steam_cm_app_ids
-from app.auth import (
+# E402 ниже подавлен намеренно: импорты идут после os.environ выше
+# (protobuf-режим должен быть выставлен до загрузки библиотеки steam).
+from app.auth import (  # noqa: E402
     _CRED_DIR,
     _USERNAME_FILE,
     _ask_keep_credentials,
@@ -41,8 +43,9 @@ from app.auth import (
     _load_shared_secret,
     _save_session,
 )
-from app.cookies import get_web_cookies  # noqa: F401
-from .packageinfo import expand_packages_to_apps
+from app.cookies import get_web_cookies  # noqa: F401, E402
+
+from .packageinfo import expand_packages_to_apps  # noqa: E402
 
 
 def read_steam_cm_app_ids(

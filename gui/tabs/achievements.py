@@ -12,7 +12,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from collections.abc import Callable
 
-from app.cache import ALL_IDS_FILE, load_done_ids, load_error_ids, load_no_achievements_ids
+from app.cache import (
+    ALL_IDS_FILE,
+    load_done_ids,
+    load_error_ids,
+    load_no_achievements_ids,
+)
 from app.id_file import read_ids_ordered
 from gui.runner import ScriptRunner
 

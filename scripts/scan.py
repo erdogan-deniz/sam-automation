@@ -25,9 +25,9 @@ os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 from app.cache import ALL_IDS_FILE, save_game_names
 from app.config import load_config
 from app.id_file import read_ids_ordered
-from app.validator import validate
 from app.logging_setup import setup_logging
 from app.steam import find_steam_path, read_library_app_ids
+from app.validator import validate
 
 log = logging.getLogger("sam_automation")
 
