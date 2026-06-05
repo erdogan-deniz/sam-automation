@@ -7,6 +7,19 @@ from pathlib import Path
 
 LOG_DIR = Path(__file__).parent.parent / "logs"
 
+SEPARATOR = "═" * 80
+
+
+def centered(text: str, width: int = 70, char: str = "═") -> str:
+    """Центрирует text между полосами из char до заданной ширины.
+
+    Воспроизводит прежний inline-формат заголовков в скриптах:
+    «═══ [1/10] ═══». При тексте шире width полосы исчезают (side ≤ 0).
+    """
+    side = (width - len(text) - 2) // 2
+    bar = char * side  # при отрицательном side Python даёт "" — полос нет
+    return f"{bar} {text} {bar}"
+
 
 def setup_logging(
     verbose: bool = False, name: str = "sam", category: str = ""
@@ -29,10 +42,11 @@ def setup_logging(
         datefmt="%H:%M:%S",
     )
 
-    # Консоль — errors='replace' на случай не-Unicode терминалов (cp1251 и т.п.)
+    # Консоль — UTF-8 + errors='replace' для не-Unicode терминалов (cp1251 и т.п.).
+    # encoding="utf-8" переключает кодировку (нужно для ═, ✗ и пр.); errors страхует.
     if hasattr(sys.stdout, "reconfigure"):
         try:
-            sys.stdout.reconfigure(errors="replace")
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
     console = logging.StreamHandler(sys.stdout)
