@@ -25,3 +25,7 @@ customtkinter>=5.2.0    # Modern dark-themed UI (tkinter wrapper)
 
 # ── Testing ───────────────────────────────────────────────────
 pytest>=8.0             # Unit test runner
+
+# ── Dev Tooling ───────────────────────────────────────────────
+ruff>=0.15              # Linter + formatter (pinned via .pre-commit-config rev)
+pre-commit>=4.0         # Git pre-commit hooks (ruff lint + format, basic checks)

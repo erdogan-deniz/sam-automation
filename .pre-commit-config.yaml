@@ -1,0 +1,27 @@
+# Pre-commit хуки для sam-automation.
+#
+# Установка (один раз):  pre-commit install
+# Ручной прогон по всем:  pre-commit run --all-files
+#
+# Версия ruff здесь (rev) держится в синхроне с requirements.txt.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml          # config.yaml, этот файл
+      - id: check-toml          # pyproject.toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.16
+    hooks:
+      - id: ruff               # линтинг (E, F, W, I) с авто-фиксом
+        name: ruff (lint)
+        args: [--fix]
+      - id: ruff-format        # форматирование (как black)
+        name: ruff (format)
