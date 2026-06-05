@@ -23,11 +23,13 @@ import subprocess
 import time
 from typing import Any
 
+from app.cache import load_playtime_skip_ids, mark_playtime_skip
 from app.config import load_config
 from app.logging_setup import SEPARATOR, setup_logging
 from app.notify import toast
 from app.sam import (
     check_steam_running,
+    drop_failed_launches,
     ensure_sam,
     kill_process,
     launch_games_staggered,
@@ -46,7 +48,7 @@ _PAUSE_AFTER_KILL = 5.0
 def _fetch_unplayed(cfg: Any, steam_id: str) -> list[dict]:
     """Возвращает игры с playtime_forever < playtime_target_minutes (минус exclude_ids)."""
     games = fetch_owned_games(cfg.steam_api_key, steam_id)
-    exclude = set(cfg.exclude_ids)
+    exclude = set(cfg.exclude_ids) | load_playtime_skip_ids()
     target = cfg.playtime_target_minutes
     return [
         g
@@ -81,18 +83,26 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
                 cfg.sam_game_exe_path, games_with_names
             )
 
-            log.info(
-                "Батч %d игр запущен, жду %d сек...",
-                len(active),
-                cfg.playtime_idle_duration,
-            )
-            time.sleep(cfg.playtime_idle_duration)
+            # Отсеять игры, не подключившиеся к Steam (playtest/демо и пр.)
+            failed = drop_failed_launches(active)
+            for appid in failed:
+                mark_playtime_skip(appid)
+            if failed:
+                log.info("Не подключились к Steam (в skip): %d", len(failed))
 
-            for appid, proc in active.items():
-                kill_process(proc)
-                log.info("[%d] Закрыт", appid)
+            if active:
+                log.info(
+                    "Батч %d игр запущен, жду %d сек...",
+                    len(active),
+                    cfg.playtime_idle_duration,
+                )
+                time.sleep(cfg.playtime_idle_duration)
 
-            done_count += len(active)
+                for appid, proc in active.items():
+                    kill_process(proc)
+                    log.info("[%d] Закрыт", appid)
+
+            done_count += len(active) + len(failed)
             log.info("Прогресс: %d / %d", done_count, total)
 
             # Пауза перед следующим батчем — даём Steam освободить сессии
