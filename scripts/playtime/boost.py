@@ -37,6 +37,11 @@ from app.validator import validate
 
 log = logging.getLogger("sam_automation")
 
+# Пауза после убийства батча перед стартом следующего (сек). Даёт Steam
+# освободить global user от закрытых сессий — иначе первая игра нового
+# батча ловит 'failed to connect to global user'.
+_PAUSE_AFTER_KILL = 5.0
+
 
 def _fetch_unplayed(cfg: Any, steam_id: str) -> list[dict]:
     """Возвращает игры с playtime_forever < playtime_target_minutes (минус exclude_ids)."""
@@ -89,6 +94,10 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
 
             done_count += len(active)
             log.info("Прогресс: %d / %d", done_count, total)
+
+            # Пауза перед следующим батчем — даём Steam освободить сессии
+            if i + cfg.max_concurrent_games < total:
+                time.sleep(_PAUSE_AFTER_KILL)
 
     except KeyboardInterrupt:
         log.info("Прервано (Ctrl+C). Закрываю активные игры...")
