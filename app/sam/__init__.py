@@ -2,6 +2,7 @@
 
 from .launcher import (
     close_game,
+    drop_failed_launches,
     kill_process,
     launch_game,
     launch_games_staggered,
@@ -13,6 +14,7 @@ from .sam_downloader import check_steam_running, download_sam, ensure_sam
 
 __all__ = [
     "close_game",
+    "drop_failed_launches",
     "kill_process",
     "launch_game",
     "launch_games_staggered",
