@@ -11,7 +11,7 @@ from pywinauto import Application
 
 from ..exceptions import SAMConnectionError, SAMLaunchError
 from .picker_session import PickerSession
-from .win32_utils import _kill_pid
+from .win32_utils import _has_error_window, _kill_pid
 
 log = logging.getLogger("sam_automation")
 
@@ -69,6 +69,33 @@ def launch_games_staggered(
         log.info("[%d] Запускаю: %s", appid, name)
         active[appid] = launch_game(sam_game_exe, appid)
     return active
+
+
+def drop_failed_launches(
+    active: dict[int, subprocess.Popen],
+    check_delay: float = 3.0,
+) -> list[int]:
+    """Отсеивает процессы, не подключившиеся к Steam (показали окно 'Error').
+
+    Ждёт check_delay (пока SAM.Game.exe успеет показать ошибку), затем
+    убивает такие процессы и удаляет их из active (мутирует на месте).
+
+    Returns:
+        Список appid, не сумевших подключиться (для записи в skip-список).
+    """
+    if not active:
+        return []
+    time.sleep(check_delay)
+    failed: list[int] = []
+    for appid, proc in list(active.items()):
+        if _has_error_window(proc.pid):
+            log.info(
+                "[%d] Не подключился к Steam (окно Error) — пропуск", appid
+            )
+            kill_process(proc)
+            del active[appid]
+            failed.append(appid)
+    return failed
 
 
 def close_game(game_app: Application | None) -> None:

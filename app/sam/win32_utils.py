@@ -126,6 +126,29 @@ def _find_picker_dialog(picker_pid: int, main_hwnd: int) -> int:
     return found[0] if found else 0
 
 
+def _has_error_window(pid: int) -> bool:
+    """True если у процесса есть видимое top-level окно с заголовком 'Error'.
+
+    SAM.Game.exe показывает modal 'Error' при неудаче подключения к Steam
+    ('failed to connect to global user').
+    """
+    found: list[int] = []
+    pid_buf = ctypes.wintypes.DWORD()
+    title = ctypes.create_unicode_buffer(64)
+
+    def _cb(hwnd: int, _: int) -> bool:
+        if _user32.IsWindowVisible(hwnd):
+            _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
+            if pid_buf.value == pid:
+                _user32.GetWindowTextW(hwnd, title, 64)
+                if title.value == "Error":
+                    found.append(hwnd)
+        return True
+
+    _user32.EnumWindows(_WNDENUMPROC(_cb), 0)
+    return bool(found)
+
+
 def _close_picker_modal(
     picker_hwnd: int, picker_pid: int, wait_timeout: float = 3.0
 ) -> bool:
