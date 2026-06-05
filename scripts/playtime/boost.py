@@ -24,7 +24,7 @@ import time
 from typing import Any
 
 from app.config import load_config
-from app.logging_setup import setup_logging
+from app.logging_setup import SEPARATOR, setup_logging
 from app.notify import toast
 from app.sam import check_steam_running, ensure_sam, kill_process, launch_game
 from app.steam import fetch_owned_games, resolve_steam_id
@@ -52,7 +52,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     done_count = 0
     active: dict[int, subprocess.Popen] = {}
 
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     log.info("Boost Playtime — начало работы")
     log.info(
         "Игр к обработке: %d | Параллельно: %d | Время айдла: %d сек",
@@ -60,7 +60,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
         cfg.max_concurrent_games,
         cfg.playtime_idle_duration,
     )
-    log.info("═" * 80)
+    log.info(SEPARATOR)
 
     try:
         for i in range(0, total, cfg.max_concurrent_games):
@@ -93,9 +93,9 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
             kill_process(proc)
         # Не помечаем как done — батч мог не набрать достаточно времени
 
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     log.info("Boost Playtime завершён. Обработано: %d / %d", done_count, total)
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     toast("SAM Automation — Playtime", f"Готово: {done_count} / {total} игр обработано")
 
 
