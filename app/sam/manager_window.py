@@ -75,20 +75,31 @@ _cache = _ButtonCache()
 
 
 def _click_refresh(game_window) -> bool:
-    """Находит и нажимает кнопку Refresh в SAM.Game. True если нажата.
+    """Находит и нажимает кнопку Refresh в _MainToolStrip SAM.Game.
 
     Используется когда статистика не загрузилась за timeout — Refresh
     заставляет SAM перезапросить достижения у Steam.
+
+    _MainToolStrip — прямой child окна, Refresh — прямой child тулбара,
+    поэтому идём по children() (быстро), а не descendants(): полный обход
+    UIA на зависшем окне ~5с и не успевает за прерыванием.
     """
     try:
-        for ctrl in game_window.descendants():
+        for ctrl in game_window.children():
             try:
-                if (
-                    ctrl.friendly_class_name() == "Button"
-                    and "refresh" in ctrl.window_text().lower()
-                ):
-                    ctrl.click_input()
-                    return True
+                if ctrl.automation_id() != "_MainToolStrip":
+                    continue
+                for btn in ctrl.children():
+                    try:
+                        if (
+                            btn.friendly_class_name() == "Button"
+                            and "refresh" in btn.window_text().lower()
+                        ):
+                            btn.click_input()
+                            return True
+                    except Exception:
+                        continue
+                return False
             except Exception:
                 continue
     except Exception:
