@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, call, patch
 
-from app.sam.launcher import _LAUNCH_STAGGER, launch_games_staggered
+import app.sam.launcher as launcher
+from app.sam.launcher import (
+    _LAUNCH_STAGGER,
+    drop_failed_launches,
+    launch_games_staggered,
+)
 
 
 def test_staggered_launch_pauses_between_but_not_before_first():
@@ -57,3 +62,23 @@ def test_staggered_launch_empty_list_returns_empty():
         active = launch_games_staggered("sam.exe", [])
     assert active == {}
     mock_launch.assert_not_called()
+
+
+def test_drop_failed_removes_and_kills_error_processes(monkeypatch):
+    p1, p2, p3 = MagicMock(pid=1), MagicMock(pid=2), MagicMock(pid=3)
+    active = {10: p1, 20: p2, 30: p3}
+    killed: list = []
+    # Окно 'Error' только у процесса с pid=2 (appid 20)
+    monkeypatch.setattr(launcher, "_has_error_window", lambda pid: pid == 2)
+    monkeypatch.setattr(launcher, "kill_process", killed.append)
+    monkeypatch.setattr(launcher.time, "sleep", lambda _s: None)
+
+    failed = drop_failed_launches(active, check_delay=0)
+
+    assert failed == [20]
+    assert set(active) == {10, 30}  # провалившийся удалён из active
+    assert killed == [p2]  # и убит
+
+
+def test_drop_failed_empty_active_returns_empty():
+    assert drop_failed_launches({}) == []
