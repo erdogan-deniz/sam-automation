@@ -94,6 +94,9 @@ def read_library_app_ids(steam_path: str, steam_id: str) -> list[int]:
     content = vdf_path.read_text(encoding="utf-8", errors="replace")
     app_ids = _extract_app_ids_from_vdf(content)
 
-    log.info("Найдено %d ID приложений библиотеки Steam из локального файла", len(app_ids))
+    log.info(
+        "Найдено %d ID приложений библиотеки Steam из локального файла",
+        len(app_ids),
+    )
 
     return app_ids
