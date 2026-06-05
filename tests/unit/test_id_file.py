@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from app.id_file import _append_id, load_ids_file, read_ids_ordered
-
 
 # ── load_ids_file ──────────────────────────────────────────────────────────
 
