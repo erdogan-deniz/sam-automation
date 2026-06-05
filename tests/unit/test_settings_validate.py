@@ -82,42 +82,57 @@ def test_validate_both_missing() -> None:
 # ── _validate — числовые поля ──────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("field,bad_value", [
-    ("launch_delay",          "abc"),
-    ("load_timeout",          "not_a_number"),
-    ("post_commit_delay",     ""),
-    ("max_consecutive_errors","one"),
-    ("max_concurrent_games",  "two"),
-    ("card_check_interval",   "!"),
-    ("playtime_idle_duration","?"),
-])
+@pytest.mark.parametrize(
+    "field,bad_value",
+    [
+        ("launch_delay", "abc"),
+        ("load_timeout", "not_a_number"),
+        ("post_commit_delay", ""),
+        ("max_consecutive_errors", "one"),
+        ("max_concurrent_games", "two"),
+        ("card_check_interval", "!"),
+        ("playtime_idle_duration", "?"),
+    ],
+)
 def test_validate_non_numeric(field: str, bad_value: str) -> None:
     errors = _validate(_make_settings(**{field: bad_value}))
-    assert any(field in e for e in errors), f"Expected error for {field}={bad_value!r}"
+    assert any(field in e for e in errors), (
+        f"Expected error for {field}={bad_value!r}"
+    )
 
 
-@pytest.mark.parametrize("field,bad_value", [
-    ("load_timeout",          "0"),     # min 0.1
-    ("max_consecutive_errors","-1"),
-    ("max_concurrent_games",  "0"),
-    ("card_check_interval",   "0"),
-    ("playtime_idle_duration","0"),
-])
+@pytest.mark.parametrize(
+    "field,bad_value",
+    [
+        ("load_timeout", "0"),  # min 0.1
+        ("max_consecutive_errors", "-1"),
+        ("max_concurrent_games", "0"),
+        ("card_check_interval", "0"),
+        ("playtime_idle_duration", "0"),
+    ],
+)
 def test_validate_below_minimum(field: str, bad_value: str) -> None:
     errors = _validate(_make_settings(**{field: bad_value}))
-    assert any(field in e for e in errors), f"Expected min error for {field}={bad_value!r}"
+    assert any(field in e for e in errors), (
+        f"Expected min error for {field}={bad_value!r}"
+    )
 
 
-@pytest.mark.parametrize("field,good_value", [
-    ("launch_delay",          "0"),     # 0 is ok
-    ("post_commit_delay",     "0"),
-    ("between_games_delay",   "0"),
-    ("load_timeout",          "0.1"),   # exactly min
-    ("max_concurrent_games",  "1"),
-])
+@pytest.mark.parametrize(
+    "field,good_value",
+    [
+        ("launch_delay", "0"),  # 0 is ok
+        ("post_commit_delay", "0"),
+        ("between_games_delay", "0"),
+        ("load_timeout", "0.1"),  # exactly min
+        ("max_concurrent_games", "1"),
+    ],
+)
 def test_validate_boundary_ok(field: str, good_value: str) -> None:
     errors = _validate(_make_settings(**{field: good_value}))
-    assert not any(field in e for e in errors), f"Unexpected error for {field}={good_value!r}"
+    assert not any(field in e for e in errors), (
+        f"Unexpected error for {field}={good_value!r}"
+    )
 
 
 # ── _path_warnings ──────────────────────────────────────────────────────────
