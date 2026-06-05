@@ -20,7 +20,6 @@ from app.sam.sam_downloader import (
     ensure_sam,
 )
 
-
 # ── Shared test helpers ───────────────────────────────────────────────────────
 
 
