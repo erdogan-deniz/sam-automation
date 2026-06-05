@@ -39,7 +39,9 @@ log = logging.getLogger("sam_automation")
 _MAX_CHECK_FAILURES = (
     5  # после N неудачных проверок подряд считаем дропы закончившимися
 )
-_PAUSE_AFTER_KILL = 10  # сек, даём Steam обновить данные после закрытия SAM.Game.exe
+_PAUSE_AFTER_KILL = (
+    10  # сек, даём Steam обновить данные после закрытия SAM.Game.exe
+)
 _PAUSE_BETWEEN_GAMES = 3  # сек, пауза перед открытием следующей игры из очереди
 
 
@@ -48,7 +50,12 @@ def _kill_game(appid: int, proc: subprocess.Popen) -> None:
     kill_process(proc)
 
 
-def _open_next(queue: deque[tuple[int, int]], active: dict[int, subprocess.Popen], cfg: Any, game_names: dict) -> None:
+def _open_next(
+    queue: deque[tuple[int, int]],
+    active: dict[int, subprocess.Popen],
+    cfg: Any,
+    game_names: dict,
+) -> None:
     """Открывает следующую игру из очереди если есть место."""
     while queue and len(active) < cfg.max_concurrent_games:
         appid, cnt = queue.popleft()
@@ -77,15 +84,24 @@ def _farm_loop(
     game_names = load_game_names()
 
     log.info(SEPARATOR)
-    log.info("Время интервала проверки приложений библиотеки Steam с доступными картами на выпадение: %d мин", cfg.card_check_interval)
-    log.info("Параллельно запущено приложений библиотеки Steam с доступными картами на выпадение: %d", cfg.max_concurrent_games)
+    log.info(
+        "Время интервала проверки приложений библиотеки Steam с доступными картами на выпадение: %d мин",
+        cfg.card_check_interval,
+    )
+    log.info(
+        "Параллельно запущено приложений библиотеки Steam с доступными картами на выпадение: %d",
+        cfg.max_concurrent_games,
+    )
     log.info(SEPARATOR)
 
     _open_next(queue, active, cfg, game_names)
 
     try:
         while active:
-            log.info("До следующей проверки осталось %d минут ...", cfg.card_check_interval)
+            log.info(
+                "До следующей проверки осталось %d минут ...",
+                cfg.card_check_interval,
+            )
             log.info(SEPARATOR)
             time.sleep(cfg.card_check_interval * 60)
 
@@ -145,9 +161,7 @@ def _farm_loop(
 def main() -> None:
     """Точка входа: запускает цикл фарма trading cards."""
     print()
-    setup_logging(
-        verbose=False, name="farm_cards", category="cards/farm"
-    )
+    setup_logging(verbose=False, name="farm_cards", category="cards/farm")
     log.info("SAM Automation: Farm Cards")
     log.info(SEPARATOR)
     cfg = load_config()
@@ -172,7 +186,9 @@ def main() -> None:
         log.error("Не удалось определить Steam ID: %s", e)
         sys.exit(1)
 
-    log.info("Поиск приложений библиотеки Steam с доступными картами на выпадение ...")
+    log.info(
+        "Поиск приложений библиотеки Steam с доступными картами на выпадение ..."
+    )
     cookies = get_web_cookies(cfg.steam_id)
     if not cookies:
         log.error(
