@@ -122,7 +122,10 @@ def read_steam_cm_app_ids(
 
     if result != EResult.OK and saved:
         saved_username, saved_password = saved
-        log.info("Автоматическая авторизация аккаунта Steam под логином %s", saved_username)
+        log.info(
+            "Автоматическая авторизация аккаунта Steam под логином %s",
+            saved_username,
+        )
         result = _login_with_timeout(saved_username, saved_password)
 
         if result is None:
@@ -218,10 +221,15 @@ def read_steam_cm_app_ids(
 
     if first_login and want_to_save and captured_password:
         _save_session(client.username or username, captured_password)
-        log.info("Данные аккаунта Steam сохранены локально в файл: %s", _USERNAME_FILE)
+        log.info(
+            "Данные аккаунта Steam сохранены локально в файл: %s",
+            _USERNAME_FILE,
+        )
         log.info("═" * 80)
 
-    log.info("Получение ID приложений библиотеки Steam через Steam Client Master")
+    log.info(
+        "Получение ID приложений библиотеки Steam через Steam Client Master"
+    )
 
     client.disconnect()
 

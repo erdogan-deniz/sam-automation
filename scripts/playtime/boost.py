@@ -41,8 +41,7 @@ def _fetch_unplayed(cfg: Any, steam_id: str) -> list[dict]:
     return [
         g
         for g in games
-        if g.get("playtime_forever", 0) < target
-        and g["appid"] not in exclude
+        if g.get("playtime_forever", 0) < target and g["appid"] not in exclude
     ]
 
 
@@ -96,7 +95,10 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     log.info(SEPARATOR)
     log.info("Boost Playtime завершён. Обработано: %d / %d", done_count, total)
     log.info(SEPARATOR)
-    toast("SAM Automation — Playtime", f"Готово: {done_count} / {total} игр обработано")
+    toast(
+        "SAM Automation — Playtime",
+        f"Готово: {done_count} / {total} игр обработано",
+    )
 
 
 def main() -> None:
