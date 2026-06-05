@@ -146,18 +146,22 @@ def process_game(
     # Ранний выход: нет достижений или SAM не смог их загрузить
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
 
-    # Статистика не успела загрузиться — нажимаем Refresh и ждём ещё раз
-    if skip_reason == "retry" and _click_refresh(game_window):
-        log.info("Статистика не загрузилась — Refresh, повтор")
-        skip_reason, total = _check_game_status(
-            game_window, timeout=_REFRESH_RECHECK_TIMEOUT
-        )
+    # Статистика не успела — даём ОДИН шанс через Refresh
+    if skip_reason == "retry":
+        if _click_refresh(game_window):
+            log.info("Статистика не загрузилась — Refresh, повтор")
+            skip_reason, total = _check_game_status(
+                game_window, timeout=_REFRESH_RECHECK_TIMEOUT
+            )
+        # Не загрузилась даже после Refresh — это не временно (нет статистики /
+        # playtest и пр.), откидываем как error, а не крутим вечный retry.
+        if skip_reason == "retry":
+            skip_reason = "error"
 
     if skip_reason:
-        status = {
-            "no achievements": "NO ACHIEVEMENTS",
-            "retry": "RETRY (загрузка не успела)",
-        }.get(skip_reason, "ERROR")
+        status = (
+            "NO ACHIEVEMENTS" if skip_reason == "no achievements" else "ERROR"
+        )
         log.info("APP STATUS: %s", status)
         return UnlockResult(
             game_id=game_id, skipped=True, skip_reason=skip_reason
