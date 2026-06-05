@@ -108,7 +108,9 @@ def process_game(
     # Ранний выход: нет достижений или SAM не смог их загрузить
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
     if skip_reason:
-        status = "NO ACHIEVEMENTS" if skip_reason == "no achievements" else "ERROR"
+        status = (
+            "NO ACHIEVEMENTS" if skip_reason == "no achievements" else "ERROR"
+        )
         log.info("APP STATUS: %s", status)
         return UnlockResult(
             game_id=game_id, skipped=True, skip_reason=skip_reason
@@ -151,7 +153,9 @@ def process_game(
 
     if total == 0:
         log.info("APP STATUS: NO ACHIEVEMENTS")
-        return UnlockResult(game_id=game_id, skipped=True, skip_reason="no achievements")
+        return UnlockResult(
+            game_id=game_id, skipped=True, skip_reason="no achievements"
+        )
 
     result.total = total
     result.newly_unlocked = total

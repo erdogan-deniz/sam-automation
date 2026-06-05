@@ -165,8 +165,15 @@ def main() -> None:
     game_ids = load_game_ids(cfg)
     if not game_ids:
         from app.cache import ALL_IDS_FILE
-        if not ALL_IDS_FILE.exists() and not cfg.game_ids_file and not cfg.game_ids:
-            log.error("ids.txt не найден — запусти scan.py для формирования списка игр")
+
+        if (
+            not ALL_IDS_FILE.exists()
+            and not cfg.game_ids_file
+            and not cfg.game_ids
+        ):
+            log.error(
+                "ids.txt не найден — запусти scan.py для формирования списка игр"
+            )
             sys.exit(1)
         log.info("Список игр пуст (все исключены конфигом?)")
         sys.exit(0)
@@ -179,7 +186,9 @@ def main() -> None:
         errors = len(load_error_ids())
         log.info(
             "Все игры обработаны — done: %d, no achievements: %d, errors: %d",
-            done, no_ach, errors,
+            done,
+            no_ach,
+            errors,
         )
         sys.exit(0)
 
