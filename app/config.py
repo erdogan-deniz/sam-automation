@@ -43,6 +43,7 @@ class Config:
     playtime_idle_duration: int = 120  # секунд идлить каждую игру
     playtime_target_minutes: int = 3  # минимум минут playtime для каждой игры
 
+
 def load_config(config_path: str = "config.yaml") -> Config:
     """Загружает конфигурацию из YAML-файла.
 

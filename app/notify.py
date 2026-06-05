@@ -26,7 +26,14 @@ def toast(title: str, message: str) -> None:
     script = _PS_TEMPLATE.format(title=title, message=message, app_id=_APP_ID)
     try:
         subprocess.Popen(
-            ["powershell", "-WindowStyle", "Hidden", "-NonInteractive", "-Command", script],
+            [
+                "powershell",
+                "-WindowStyle",
+                "Hidden",
+                "-NonInteractive",
+                "-Command",
+                script,
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW,

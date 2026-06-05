@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 import time
 
+from app.steam.store_api import _REQUEST_DELAY, _has_trading_cards
+
 from ..cache import CARDS_DIR
 from ..id_file import load_ids_file
-from app.steam.store_api import _REQUEST_DELAY, _has_trading_cards
 
 log = logging.getLogger("sam_automation")
 

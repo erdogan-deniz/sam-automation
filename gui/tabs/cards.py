@@ -15,8 +15,18 @@ from collections.abc import Callable
 from app.cards.card_cache import load_card_done_ids
 from gui.runner import ScriptRunner
 
-_DETECT_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "cards" / "scan.py"
-_FARM_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "cards" / "farm.py"
+_DETECT_SCRIPT = (
+    Path(__file__).resolve().parent.parent.parent
+    / "scripts"
+    / "cards"
+    / "scan.py"
+)
+_FARM_SCRIPT = (
+    Path(__file__).resolve().parent.parent.parent
+    / "scripts"
+    / "cards"
+    / "farm.py"
+)
 
 _PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
 
@@ -61,28 +71,40 @@ class CardsTab(ctk.CTkFrame):
         btn_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
 
         self._btn_fast = ctk.CTkButton(
-            btn_frame, text="Detect (fast)", command=self._detect_fast,
+            btn_frame,
+            text="Detect (fast)",
+            command=self._detect_fast,
         )
         self._btn_fast.grid(row=0, column=0, padx=4, sticky="ew")
 
         self._btn_exact = ctk.CTkButton(
-            btn_frame, text="Detect (exact)", command=self._detect_exact,
+            btn_frame,
+            text="Detect (exact)",
+            command=self._detect_exact,
         )
         self._btn_exact.grid(row=0, column=1, padx=4, sticky="ew")
 
         self._btn_farm = ctk.CTkButton(
-            btn_frame, text="Farm Cards", command=self._farm,
+            btn_frame,
+            text="Farm Cards",
+            command=self._farm,
         )
         self._btn_farm.grid(row=0, column=2, padx=4, sticky="ew")
 
         self._btn_reset = ctk.CTkButton(
-            btn_frame, text="Reset", fg_color="#555", hover_color="#666",
+            btn_frame,
+            text="Reset",
+            fg_color="#555",
+            hover_color="#666",
             command=self._reset,
         )
         self._btn_reset.grid(row=0, column=3, padx=4, sticky="ew")
 
         self._btn_stop = ctk.CTkButton(
-            btn_frame, text="Stop", fg_color="#a33", hover_color="#c44",
+            btn_frame,
+            text="Stop",
+            fg_color="#a33",
+            hover_color="#c44",
             command=self._stop,
         )
         self._btn_stop.grid(row=0, column=4, padx=4, sticky="ew")
@@ -97,18 +119,24 @@ class CardsTab(ctk.CTkFrame):
         self._progress.grid(row=0, column=0, padx=(0, 8), sticky="ew")
         self._progress.set(0)
 
-        self._lbl_progress = ctk.CTkLabel(progress_frame, text="", width=80, anchor="w")
+        self._lbl_progress = ctk.CTkLabel(
+            progress_frame, text="", width=80, anchor="w"
+        )
         self._lbl_progress.grid(row=0, column=1)
 
         # Log
-        self._log = ctk.CTkTextbox(self, state="disabled", wrap="word", font=("Consolas", 12))
+        self._log = ctk.CTkTextbox(
+            self, state="disabled", wrap="word", font=("Consolas", 12)
+        )
         self._log.grid(row=3, column=0, padx=16, pady=(4, 16), sticky="nsew")
 
     @staticmethod
     def _stat_label(parent: ctk.CTkFrame, title: str, col: int) -> ctk.CTkLabel:
         frame = ctk.CTkFrame(parent)
         frame.grid(row=0, column=col, padx=4, sticky="ew")
-        ctk.CTkLabel(frame, text=title, font=("", 11), text_color="gray").pack(pady=(6, 0))
+        ctk.CTkLabel(frame, text=title, font=("", 11), text_color="gray").pack(
+            pady=(6, 0)
+        )
         lbl = ctk.CTkLabel(frame, text="—", font=("", 18, "bold"))
         lbl.pack(pady=(0, 6))
         return lbl
@@ -189,7 +217,9 @@ class CardsTab(ctk.CTkFrame):
     def _on_finish(self, returncode: int) -> None:
         """Вызывается по завершении скрипта: логирует код возврата, восстанавливает кнопки."""
         self._append_log(f"\n--- exit code: {returncode} ---")
-        self._lbl_status.configure(text="Done" if returncode == 0 else f"Error ({returncode})")
+        self._lbl_status.configure(
+            text="Done" if returncode == 0 else f"Error ({returncode})"
+        )
         self._set_buttons_state("normal")
         self._btn_stop.grid_remove()
         self.refresh_stats()
@@ -212,5 +242,10 @@ class CardsTab(ctk.CTkFrame):
 
     def _set_buttons_state(self, state: str) -> None:
         """Устанавливает состояние ("normal"/"disabled") для основных кнопок действий."""
-        for btn in (self._btn_fast, self._btn_exact, self._btn_farm, self._btn_reset):
+        for btn in (
+            self._btn_fast,
+            self._btn_exact,
+            self._btn_farm,
+            self._btn_reset,
+        ):
             btn.configure(state=state)

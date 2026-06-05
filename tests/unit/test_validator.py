@@ -10,8 +10,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.config import Config
-from app.validator import _check_file_paths, _check_required_fields, _check_steam_api, _check_steam_process, validate
-
+from app.validator import (
+    _check_file_paths,
+    _check_required_fields,
+    _check_steam_api,
+    _check_steam_process,
+    validate,
+)
 
 # ── _check_required_fields ────────────────────────────────────────────────
 
@@ -119,7 +124,9 @@ def test_steam_process_not_running() -> None:
 
 
 def test_steam_process_psutil_raises() -> None:
-    with patch("psutil.process_iter", side_effect=RuntimeError("access denied")):
+    with patch(
+        "psutil.process_iter", side_effect=RuntimeError("access denied")
+    ):
         errors = _check_steam_process()
         assert any("Could not check Steam process" in e for e in errors)
 
@@ -155,7 +162,9 @@ def test_steam_api_rate_limited() -> None:
     cfg = Config(steam_api_key="key", steam_id="76561198000000000")
     with patch(
         "urllib.request.urlopen",
-        side_effect=urllib.error.HTTPError(None, 429, "Too Many Requests", {}, None),
+        side_effect=urllib.error.HTTPError(
+            None, 429, "Too Many Requests", {}, None
+        ),
     ):
         errors = _check_steam_api(cfg)
         assert any("rate limited" in e for e in errors)
@@ -165,7 +174,9 @@ def test_steam_api_unexpected_status() -> None:
     cfg = Config(steam_api_key="key", steam_id="76561198000000000")
     with patch(
         "urllib.request.urlopen",
-        side_effect=urllib.error.HTTPError(None, 500, "Internal Server Error", {}, None),
+        side_effect=urllib.error.HTTPError(
+            None, 500, "Internal Server Error", {}, None
+        ),
     ):
         errors = _check_steam_api(cfg)
         assert any("HTTP 500" in e for e in errors)
