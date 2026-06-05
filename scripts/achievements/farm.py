@@ -25,9 +25,9 @@ from app.cache import (
 )
 from app.config import load_config
 from app.exceptions import SAMError, SAMTooManyErrors
-from app.validator import validate
 from app.game_list import load_game_ids
-from app.logging_setup import setup_logging
+from app.logging_setup import SEPARATOR, centered, setup_logging
+from app.notify import toast
 from app.safety import ErrorTracker
 from app.sam import (
     check_steam_running,
@@ -37,8 +37,8 @@ from app.sam import (
     launch_picker,
     process_game,
 )
-from app.notify import toast
 from app.unlock_result import UnlockResult
+from app.validator import validate
 
 log = logging.getLogger("sam_automation")
 
@@ -147,7 +147,7 @@ def main() -> None:
         category="achievements/farm",
     )
     log.info("Разблокировка достижений Steam")
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     cfg = load_config()
     validate(cfg)
 
@@ -165,8 +165,15 @@ def main() -> None:
     game_ids = load_game_ids(cfg)
     if not game_ids:
         from app.cache import ALL_IDS_FILE
-        if not ALL_IDS_FILE.exists() and not cfg.game_ids_file and not cfg.game_ids:
-            log.error("ids.txt не найден — запусти scan.py для формирования списка игр")
+
+        if (
+            not ALL_IDS_FILE.exists()
+            and not cfg.game_ids_file
+            and not cfg.game_ids
+        ):
+            log.error(
+                "ids.txt не найден — запусти scan.py для формирования списка игр"
+            )
             sys.exit(1)
         log.info("Список игр пуст (все исключены конфигом?)")
         sys.exit(0)
@@ -179,7 +186,9 @@ def main() -> None:
         errors = len(load_error_ids())
         log.info(
             "Все игры обработаны — done: %d, no achievements: %d, errors: %d",
-            done, no_ach, errors,
+            done,
+            no_ach,
+            errors,
         )
         sys.exit(0)
 
@@ -200,8 +209,7 @@ def main() -> None:
         for i, game_id in enumerate(game_ids, 1):
             name = game_names.get(game_id, "")
             header = f"[{i}/{total}]"
-            side = (70 - len(header) - 2) // 2
-            log.info("%s %s %s", "═" * side, header, "═" * side)
+            log.info(centered(header))
             log.info("APP ID: %d", game_id)
             if _process_one_game(session, game_id, cfg, tracker, results, name):
                 errors += 1
@@ -218,7 +226,7 @@ def main() -> None:
         kill_process(proc)
 
     print()
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     log.info("ИТОГИ")
     _log_summary(results, errors)
 

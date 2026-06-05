@@ -28,7 +28,9 @@ log = logging.getLogger("sam_automation")
 
 # Публичный API модуля
 # Внутренние зависимости read_steam_cm_app_ids
-from app.auth import (
+# E402 ниже подавлен намеренно: импорты идут после os.environ выше
+# (protobuf-режим должен быть выставлен до загрузки библиотеки steam).
+from app.auth import (  # noqa: E402
     _CRED_DIR,
     _USERNAME_FILE,
     _ask_keep_credentials,
@@ -41,8 +43,9 @@ from app.auth import (
     _load_shared_secret,
     _save_session,
 )
-from app.cookies import get_web_cookies  # noqa: F401
-from .packageinfo import expand_packages_to_apps
+from app.cookies import get_web_cookies  # noqa: F401, E402
+
+from .packageinfo import expand_packages_to_apps  # noqa: E402
 
 
 def read_steam_cm_app_ids(
@@ -119,7 +122,10 @@ def read_steam_cm_app_ids(
 
     if result != EResult.OK and saved:
         saved_username, saved_password = saved
-        log.info("Автоматическая авторизация аккаунта Steam под логином %s", saved_username)
+        log.info(
+            "Автоматическая авторизация аккаунта Steam под логином %s",
+            saved_username,
+        )
         result = _login_with_timeout(saved_username, saved_password)
 
         if result is None:
@@ -215,10 +221,15 @@ def read_steam_cm_app_ids(
 
     if first_login and want_to_save and captured_password:
         _save_session(client.username or username, captured_password)
-        log.info("Данные аккаунта Steam сохранены локально в файл: %s", _USERNAME_FILE)
+        log.info(
+            "Данные аккаунта Steam сохранены локально в файл: %s",
+            _USERNAME_FILE,
+        )
         log.info("═" * 80)
 
-    log.info("Получение ID приложений библиотеки Steam через Steam Client Master")
+    log.info(
+        "Получение ID приложений библиотеки Steam через Steam Client Master"
+    )
 
     client.disconnect()
 

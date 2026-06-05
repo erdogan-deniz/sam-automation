@@ -53,12 +53,16 @@ class GlobalHotkey:
     def _listen(self) -> None:
         def _proc(nCode: int, wParam: int, lParam: int) -> int:
             if nCode == HC_ACTION and wParam == WM_KEYDOWN:
-                kb = ctypes.cast(lParam, ctypes.POINTER(_KBDLLHOOKSTRUCT)).contents
+                kb = ctypes.cast(
+                    lParam, ctypes.POINTER(_KBDLLHOOKSTRUCT)
+                ).contents
                 if kb.vkCode == self._vk:
                     self._callback()
             return _user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
 
-        self._hook_proc = _HOOKPROC(_proc)  # удерживаем ссылку — иначе GC удалит
+        self._hook_proc = _HOOKPROC(
+            _proc
+        )  # удерживаем ссылку — иначе GC удалит
         self._hook = _user32.SetWindowsHookExW(
             WH_KEYBOARD_LL,
             self._hook_proc,
@@ -70,7 +74,10 @@ class GlobalHotkey:
 
         self._active = True
         msg = ctypes.wintypes.MSG()
-        while self._active and _user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+        while (
+            self._active
+            and _user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0
+        ):
             _user32.TranslateMessage(ctypes.byref(msg))
             _user32.DispatchMessageW(ctypes.byref(msg))
 

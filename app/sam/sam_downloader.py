@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import os
 import shutil
 import tempfile
 import urllib.request
@@ -50,7 +49,11 @@ def check_for_update(exe_path: str) -> str | None:
     try:
         print()
 
-        answer = input("Обновить приложение SAM до последней версии? [YES/NO]: ").strip().lower()
+        answer = (
+            input("Обновить приложение SAM до последней версии? [YES/NO]: ")
+            .strip()
+            .lower()
+        )
     except EOFError:
         log.info("Не интерактивный режим — пропускаю обновление SAM")
         return None

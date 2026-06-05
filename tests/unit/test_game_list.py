@@ -9,7 +9,6 @@ import pytest
 import app.game_list as gl_mod
 from app.config import Config
 
-
 # ── Источник: config.game_ids ──────────────────────────────────────────────
 
 
@@ -40,7 +39,9 @@ def test_game_ids_exclude_all() -> None:
 # ── Источник: ALL_IDS_FILE ─────────────────────────────────────────────────
 
 
-def test_game_ids_from_all_ids_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_game_ids_from_all_ids_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     f = tmp_path / "ids.txt"
     f.write_text("10\n440\n730\n", encoding="utf-8")
     monkeypatch.setattr(gl_mod, "ALL_IDS_FILE", f)
@@ -48,7 +49,9 @@ def test_game_ids_from_all_ids_file(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert gl_mod.load_game_ids(cfg) == [10, 440, 730]
 
 
-def test_all_ids_file_not_used_when_config_ids_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_all_ids_file_not_used_when_config_ids_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     f = tmp_path / "ids.txt"
     f.write_text("999\n", encoding="utf-8")
     monkeypatch.setattr(gl_mod, "ALL_IDS_FILE", f)
@@ -61,7 +64,9 @@ def test_all_ids_file_not_used_when_config_ids_set(monkeypatch: pytest.MonkeyPat
 # ── Источник: game_ids_file ────────────────────────────────────────────────
 
 
-def test_game_ids_from_ids_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_game_ids_from_ids_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # Убедимся, что ALL_IDS_FILE не мешает (несуществующий файл)
     monkeypatch.setattr(gl_mod, "ALL_IDS_FILE", tmp_path / "nonexistent.txt")
     ids_file = tmp_path / "my_ids.txt"
@@ -71,7 +76,9 @@ def test_game_ids_from_ids_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert set(result) == {10, 440}
 
 
-def test_game_ids_file_extends_config_ids(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_game_ids_file_extends_config_ids(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(gl_mod, "ALL_IDS_FILE", tmp_path / "nonexistent.txt")
     ids_file = tmp_path / "extra.txt"
     ids_file.write_text("730\n", encoding="utf-8")
@@ -80,7 +87,9 @@ def test_game_ids_file_extends_config_ids(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert set(result) == {10, 440, 730}
 
 
-def test_game_ids_file_missing_is_ignored(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_game_ids_file_missing_is_ignored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(gl_mod, "ALL_IDS_FILE", tmp_path / "nonexistent.txt")
     cfg = Config(game_ids=[10], game_ids_file=str(tmp_path / "missing.txt"))
     result = gl_mod.load_game_ids(cfg)

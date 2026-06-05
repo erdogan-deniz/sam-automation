@@ -14,29 +14,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-# Принудительный UTF-8 на Windows
-if sys.platform == "win32":
-    import io
-
-    sys.stdout = io.TextIOWrapper(
-        sys.stdout.buffer, encoding="utf-8", errors="replace"
-    )
+import logging
 
 from app.cards import fetch_games_with_card_drops
 from app.config import load_config
-from app.logging_setup import setup_logging
-from app.validator import validate
+from app.logging_setup import SEPARATOR, setup_logging
 from app.steam import (
     fetch_owned_games,
     get_web_cookies,
     resolve_steam_id,
 )
+from app.validator import validate
+
+log = logging.getLogger("sam_automation")
 
 
 def main() -> None:
-    log = setup_logging(
-        verbose=False, name="scan_cards", category="cards/scan"
-    )
+    setup_logging(verbose=False, name="scan_cards", category="cards/scan")
     cfg = load_config()
     validate(cfg)
 
@@ -73,7 +67,7 @@ def main() -> None:
     if games:
         owned_map = {g["appid"]: g.get("name", "?") for g in owned}
         print(f"{'AppID':>10}  {'Drops':>5}  Название")
-        print("═" * 80)
+        print(SEPARATOR)
         for appid, drops in sorted(games, key=lambda x: -x[1]):
             name = owned_map.get(appid, "?")
             print(f"{appid:>10}  {drops:>5}  {name}")

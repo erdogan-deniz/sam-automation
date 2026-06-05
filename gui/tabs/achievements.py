@@ -12,12 +12,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from collections.abc import Callable
 
-from app.cache import ALL_IDS_FILE, load_done_ids, load_error_ids, load_no_achievements_ids
+from app.cache import (
+    ALL_IDS_FILE,
+    load_done_ids,
+    load_error_ids,
+    load_no_achievements_ids,
+)
 from app.id_file import read_ids_ordered
 from gui.runner import ScriptRunner
 
-_SCAN_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "scan.py"
-_UNLOCK_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "achievements" / "farm.py"
+_SCAN_SCRIPT = (
+    Path(__file__).resolve().parent.parent.parent / "scripts" / "scan.py"
+)
+_UNLOCK_SCRIPT = (
+    Path(__file__).resolve().parent.parent.parent
+    / "scripts"
+    / "achievements"
+    / "farm.py"
+)
 
 _PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
 
@@ -64,26 +76,39 @@ class AchievementsTab(ctk.CTkFrame):
         btn_frame.grid(row=1, column=0, padx=16, pady=4, sticky="ew")
         btn_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
 
-        self._btn_scan = ctk.CTkButton(btn_frame, text="Scan Library", command=self._scan)
+        self._btn_scan = ctk.CTkButton(
+            btn_frame, text="Scan Library", command=self._scan
+        )
         self._btn_scan.grid(row=0, column=0, padx=4, sticky="ew")
 
-        self._btn_unlock = ctk.CTkButton(btn_frame, text="Unlock All", command=self._unlock)
+        self._btn_unlock = ctk.CTkButton(
+            btn_frame, text="Unlock All", command=self._unlock
+        )
         self._btn_unlock.grid(row=0, column=1, padx=4, sticky="ew")
 
         self._btn_retry = ctk.CTkButton(
-            btn_frame, text="Retry Errors", fg_color="#555", hover_color="#666",
+            btn_frame,
+            text="Retry Errors",
+            fg_color="#555",
+            hover_color="#666",
             command=self._retry_errors,
         )
         self._btn_retry.grid(row=0, column=2, padx=4, sticky="ew")
 
         self._btn_reset = ctk.CTkButton(
-            btn_frame, text="Reset", fg_color="#555", hover_color="#666",
+            btn_frame,
+            text="Reset",
+            fg_color="#555",
+            hover_color="#666",
             command=self._reset,
         )
         self._btn_reset.grid(row=0, column=3, padx=4, sticky="ew")
 
         self._btn_stop = ctk.CTkButton(
-            btn_frame, text="Stop", fg_color="#a33", hover_color="#c44",
+            btn_frame,
+            text="Stop",
+            fg_color="#a33",
+            hover_color="#c44",
             command=self._stop,
         )
         self._btn_stop.grid(row=0, column=4, padx=4, sticky="ew")
@@ -98,18 +123,24 @@ class AchievementsTab(ctk.CTkFrame):
         self._progress.grid(row=0, column=0, padx=(0, 8), sticky="ew")
         self._progress.set(0)
 
-        self._lbl_progress = ctk.CTkLabel(progress_frame, text="", width=80, anchor="w")
+        self._lbl_progress = ctk.CTkLabel(
+            progress_frame, text="", width=80, anchor="w"
+        )
         self._lbl_progress.grid(row=0, column=1)
 
         # Log
-        self._log = ctk.CTkTextbox(self, state="disabled", wrap="word", font=("Consolas", 12))
+        self._log = ctk.CTkTextbox(
+            self, state="disabled", wrap="word", font=("Consolas", 12)
+        )
         self._log.grid(row=3, column=0, padx=16, pady=(4, 16), sticky="nsew")
 
     @staticmethod
     def _stat_label(parent: ctk.CTkFrame, title: str, col: int) -> ctk.CTkLabel:
         frame = ctk.CTkFrame(parent)
         frame.grid(row=0, column=col, padx=4, sticky="ew")
-        ctk.CTkLabel(frame, text=title, font=("", 11), text_color="gray").pack(pady=(6, 0))
+        ctk.CTkLabel(frame, text=title, font=("", 11), text_color="gray").pack(
+            pady=(6, 0)
+        )
         lbl = ctk.CTkLabel(frame, text="—", font=("", 18, "bold"))
         lbl.pack(pady=(0, 6))
         return lbl
@@ -118,7 +149,9 @@ class AchievementsTab(ctk.CTkFrame):
     # Stats
 
     def refresh_stats(self) -> None:
-        library = len(read_ids_ordered(ALL_IDS_FILE)) if ALL_IDS_FILE.exists() else 0
+        library = (
+            len(read_ids_ordered(ALL_IDS_FILE)) if ALL_IDS_FILE.exists() else 0
+        )
         done = len(load_done_ids())
         errors = len(load_error_ids())
         no_ach = len(load_no_achievements_ids())
@@ -217,5 +250,10 @@ class AchievementsTab(ctk.CTkFrame):
 
     def _set_buttons_state(self, state: str) -> None:
         """Устанавливает состояние ("normal"/"disabled") для основных кнопок действий."""
-        for btn in (self._btn_scan, self._btn_unlock, self._btn_retry, self._btn_reset):
+        for btn in (
+            self._btn_scan,
+            self._btn_unlock,
+            self._btn_retry,
+            self._btn_reset,
+        ):
             btn.configure(state=state)
