@@ -21,18 +21,18 @@ import time
 from collections import deque
 from typing import Any
 
+from app.cache import load_game_names
 from app.cards import (
     check_cards_remaining,
     fetch_games_with_card_drops,
     mark_card_done,
 )
-from app.cache import load_game_names
-from app.notify import toast
 from app.config import load_config
 from app.logging_setup import setup_logging
-from app.validator import validate
+from app.notify import toast
 from app.sam import check_steam_running, ensure_sam, kill_process, launch_game
 from app.steam import get_web_cookies, resolve_steam_id
+from app.validator import validate
 
 log = logging.getLogger("sam_automation")
 

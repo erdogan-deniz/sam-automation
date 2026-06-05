@@ -13,7 +13,6 @@ import pytest
 
 from gui.tabs.settings import SettingsTab
 
-
 # ── helpers ────────────────────────────────────────────────────────────────
 
 
