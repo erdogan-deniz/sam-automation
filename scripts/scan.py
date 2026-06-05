@@ -145,15 +145,17 @@ def main() -> None:
     log.info(SEPARATOR)
     log.info("Итого: найдено %d ID приложений библиотеки Steam", len(combined))
     log.info(
-        "Итого: найдено %d новых ID приложений библиотеки Steam",
-        new_count
+        "Итого: найдено %d новых ID приложений библиотеки Steam", new_count
     )
 
     ALL_IDS_FILE.parent.mkdir(exist_ok=True)
     ALL_IDS_FILE.write_text(
         "\n".join(str(i) for i in sorted(combined)) + "\n", encoding="utf-8"
     )
-    log.info("Полученые ID приложений библиотеки Steam записаны в локальный файл: %s", ALL_IDS_FILE)
+    log.info(
+        "Полученые ID приложений библиотеки Steam записаны в локальный файл: %s",
+        ALL_IDS_FILE,
+    )
 
 
 if __name__ == "__main__":
