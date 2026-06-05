@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from app.cards.card_parsers import _BadgesPageParser, _GameCardsParser
 
-
 # ── Хелперы ────────────────────────────────────────────────────────────────
 
 
