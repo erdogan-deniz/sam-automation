@@ -23,12 +23,12 @@ import subprocess
 import time
 from typing import Any
 
-from app.notify import toast
 from app.config import load_config
 from app.logging_setup import setup_logging
-from app.validator import validate
+from app.notify import toast
 from app.sam import check_steam_running, ensure_sam, kill_process, launch_game
 from app.steam import fetch_owned_games, resolve_steam_id
+from app.validator import validate
 
 log = logging.getLogger("sam_automation")
 
