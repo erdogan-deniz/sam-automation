@@ -41,9 +41,7 @@ def _getpass_stars(prompt: str) -> str:
 _LOGIN_TIMEOUT = 60  # секунд на попытку входа
 
 
-def _do_interactive_login(
-    client: Any, username: str
-) -> tuple[Any, str, str]:
+def _do_interactive_login(client: Any, username: str) -> tuple[Any, str, str]:
     """Интерактивный логин с захватом логина и пароля.
 
     Возвращает (result, username, password).
