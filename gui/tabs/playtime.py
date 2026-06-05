@@ -14,7 +14,12 @@ from collections.abc import Callable
 
 from gui.runner import ScriptRunner
 
-_BOOST_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "playtime" / "boost.py"
+_BOOST_SCRIPT = (
+    Path(__file__).resolve().parent.parent.parent
+    / "scripts"
+    / "playtime"
+    / "boost.py"
+)
 
 _PROGRESS_RE = re.compile(r"Прогресс: (\d+) / (\d+)")
 
@@ -58,17 +63,24 @@ class PlaytimeTab(ctk.CTkFrame):
         btn_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         self._btn_boost = ctk.CTkButton(
-            btn_frame, text="Boost Playtime", command=self._boost,
+            btn_frame,
+            text="Boost Playtime",
+            command=self._boost,
         )
         self._btn_boost.grid(row=0, column=0, padx=4, sticky="ew")
 
         self._btn_list = ctk.CTkButton(
-            btn_frame, text="List Unplayed", command=self._list,
+            btn_frame,
+            text="List Unplayed",
+            command=self._list,
         )
         self._btn_list.grid(row=0, column=1, padx=4, sticky="ew")
 
         self._btn_stop = ctk.CTkButton(
-            btn_frame, text="Stop", fg_color="#a33", hover_color="#c44",
+            btn_frame,
+            text="Stop",
+            fg_color="#a33",
+            hover_color="#c44",
             command=self._stop,
         )
         self._btn_stop.grid(row=0, column=2, padx=4, sticky="ew")
@@ -83,18 +95,24 @@ class PlaytimeTab(ctk.CTkFrame):
         self._progress.grid(row=0, column=0, padx=(0, 8), sticky="ew")
         self._progress.set(0)
 
-        self._lbl_progress = ctk.CTkLabel(progress_frame, text="", width=80, anchor="w")
+        self._lbl_progress = ctk.CTkLabel(
+            progress_frame, text="", width=80, anchor="w"
+        )
         self._lbl_progress.grid(row=0, column=1)
 
         # Log
-        self._log = ctk.CTkTextbox(self, state="disabled", wrap="word", font=("Consolas", 12))
+        self._log = ctk.CTkTextbox(
+            self, state="disabled", wrap="word", font=("Consolas", 12)
+        )
         self._log.grid(row=3, column=0, padx=16, pady=(4, 16), sticky="nsew")
 
     @staticmethod
     def _stat_label(parent: ctk.CTkFrame, title: str, col: int) -> ctk.CTkLabel:
         frame = ctk.CTkFrame(parent)
         frame.grid(row=0, column=col, padx=4, sticky="ew")
-        ctk.CTkLabel(frame, text=title, font=("", 11), text_color="gray").pack(pady=(6, 0))
+        ctk.CTkLabel(frame, text=title, font=("", 11), text_color="gray").pack(
+            pady=(6, 0)
+        )
         lbl = ctk.CTkLabel(frame, text="—", font=("", 18, "bold"))
         lbl.pack(pady=(0, 6))
         return lbl
@@ -159,7 +177,9 @@ class PlaytimeTab(ctk.CTkFrame):
     def _on_finish(self, returncode: int) -> None:
         """Вызывается по завершении скрипта: логирует код возврата, восстанавливает кнопки."""
         self._append_log(f"\n--- exit code: {returncode} ---")
-        self._lbl_status.configure(text="Done" if returncode == 0 else f"Error ({returncode})")
+        self._lbl_status.configure(
+            text="Done" if returncode == 0 else f"Error ({returncode})"
+        )
         self._set_buttons_state("normal")
         self._btn_stop.grid_remove()
 

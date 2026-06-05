@@ -75,7 +75,9 @@ def fetch_all_game_ids(api_key: str, steam_id_or_url: str) -> list[int]:
         return []
 
     ids = [g["appid"] for g in games]
-    log.info("Найдено %d ID приложений библиотеки Steam через Steam API", len(ids))
+    log.info(
+        "Найдено %d ID приложений библиотеки Steam через Steam API", len(ids)
+    )
     return ids
 
 

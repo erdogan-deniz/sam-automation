@@ -95,7 +95,9 @@ class PickerSession:
                     time.sleep(0.1)
                     if not _is_window_enabled(picker_hwnd):
                         _close_picker_modal(picker_hwnd, self.picker_pid)
-                        raise SAMGameError(game_id, "SAM: ошибка добавления игры")
+                        raise SAMGameError(
+                            game_id, "SAM: ошибка добавления игры"
+                        )
                 log.debug("Диалог не появился за 2с")
             except SAMGameError:
                 raise
@@ -163,5 +165,7 @@ class PickerSession:
             try:
                 _kill_pid(found_pid)
             except Exception as kill_err:
-                log.debug("Не удалось убить SAM.Game PID=%d: %s", found_pid, kill_err)
+                log.debug(
+                    "Не удалось убить SAM.Game PID=%d: %s", found_pid, kill_err
+                )
             raise
