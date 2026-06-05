@@ -25,7 +25,7 @@ os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 from app.cache import ALL_IDS_FILE, save_game_names
 from app.config import load_config
 from app.id_file import read_ids_ordered
-from app.logging_setup import setup_logging
+from app.logging_setup import SEPARATOR, setup_logging
 from app.steam import find_steam_path, read_library_app_ids
 from app.validator import validate
 
@@ -86,11 +86,11 @@ def main() -> None:
     """Сканирует библиотеку Steam из трёх источников и записывает ids.txt."""
     print()
 
-    log = setup_logging(
+    setup_logging(
         verbose=False, name="scan_achievements", category="achievements/scan"
     )
     log.info("Сканирование приложений библиотеки Steam")
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     cfg = load_config()
     validate(cfg)
 
@@ -111,7 +111,7 @@ def main() -> None:
                 seen.add(gid)
                 combined.append(gid)
 
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     _merge(_read_vdf_ids(steam_path, cfg.steam_id))
     new_before_cm = sum(1 for gid in combined if gid not in prev_ids)
     log.info(
@@ -119,7 +119,7 @@ def main() -> None:
         new_before_cm,
     )
 
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     _merge(_read_api_ids(cfg.steam_api_key, cfg.steam_id))
     new_after_api = sum(1 for gid in combined if gid not in prev_ids)
     log.info(
@@ -127,7 +127,7 @@ def main() -> None:
         new_after_api - new_before_cm,
     )
 
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     cm_ids = _read_cm_ids(steam_path)
     cm_new = sum(1 for gid in cm_ids if gid not in prev_ids)
     _merge(cm_ids)
@@ -142,7 +142,7 @@ def main() -> None:
         log.error("Ни один источник не вернул ID. Проверь steam_id и конфиг.")
         sys.exit(1)
 
-    log.info("═" * 80)
+    log.info(SEPARATOR)
     log.info("Итого: найдено %d ID приложений библиотеки Steam", len(combined))
     log.info(
         "Итого: найдено %d новых ID приложений библиотеки Steam",
