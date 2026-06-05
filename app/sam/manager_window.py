@@ -74,6 +74,28 @@ class _ButtonCache:
 _cache = _ButtonCache()
 
 
+def _click_refresh(game_window) -> bool:
+    """Находит и нажимает кнопку Refresh в SAM.Game. True если нажата.
+
+    Используется когда статистика не загрузилась за timeout — Refresh
+    заставляет SAM перезапросить достижения у Steam.
+    """
+    try:
+        for ctrl in game_window.descendants():
+            try:
+                if (
+                    ctrl.friendly_class_name() == "Button"
+                    and "refresh" in ctrl.window_text().lower()
+                ):
+                    ctrl.click_input()
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
 # ---------------------------------------------------------------------------
 #  Основная функция обработки игры (fast path)
 # ---------------------------------------------------------------------------
@@ -107,10 +129,19 @@ def process_game(
 
     # Ранний выход: нет достижений или SAM не смог их загрузить
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
-    if skip_reason:
-        status = (
-            "NO ACHIEVEMENTS" if skip_reason == "no achievements" else "ERROR"
+
+    # Статистика не успела загрузиться — нажимаем Refresh и ждём ещё раз
+    if skip_reason == "retry" and _click_refresh(game_window):
+        log.info("Статистика не загрузилась — Refresh, повтор")
+        skip_reason, total = _check_game_status(
+            game_window, timeout=load_timeout
         )
+
+    if skip_reason:
+        status = {
+            "no achievements": "NO ACHIEVEMENTS",
+            "retry": "RETRY (загрузка не успела)",
+        }.get(skip_reason, "ERROR")
         log.info("APP STATUS: %s", status)
         return UnlockResult(
             game_id=game_id, skipped=True, skip_reason=skip_reason

@@ -72,6 +72,8 @@ def _process_one_game(
         if result.skipped:
             if result.skip_reason == "no achievements":
                 mark_no_achievements(game_id)
+            elif result.skip_reason == "retry":
+                pass  # статистика не загрузилась — не помечаем, повторим позже
             else:
                 mark_error_id(game_id)
         else:
@@ -133,6 +135,8 @@ def _log_summary(results: list[UnlockResult], errors: int) -> None:
             log.info("  %d: STATUS: UNLOCK (+%d)", r.game_id, r.newly_unlocked)
         elif r.skip_reason == "no achievements":
             log.info("  %d: STATUS: NO ACHIEVEMENTS", r.game_id)
+        elif r.skip_reason == "retry":
+            log.info("  %d: STATUS: RETRY (загрузка не успела)", r.game_id)
         else:
             reason = f" — {r.skip_reason}" if r.skip_reason != "error" else ""
             log.info("  %d: STATUS: ERROR%s", r.game_id, reason)

@@ -70,13 +70,14 @@ def _check_game_status(
     skip_reason:
         None             — OK, достижения загружены
         "no achievements" — у игры нет достижений (постоянный пропуск)
-        "error"          — SAM не смог загрузить достижения (временная ошибка, можно повторить)
+        "retry"          — статистика не успела загрузиться за timeout
+                           (временно — игру нужно повторить, НЕ помечать error)
     """
     status = _wait_for_status(game_window, timeout=timeout, settle=1.0)
-    if "error" in status:
-        return "no achievements", 0
     if "retrieved" in status:
         match = re.search(r"(\d+)", status)
         count = int(match.group(1)) if match else 0
         return None, count
-    return "error", 0
+    if "error" in status:
+        return "no achievements", 0
+    return "retry", 0
