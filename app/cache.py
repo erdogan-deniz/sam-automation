@@ -19,6 +19,10 @@ GAME_NAMES_FILE = GAMES_DIR / "names.json"
 _IDS_DIR = GAMES_DIR / "ids"
 _ACHIEVEMENTS_IDS_DIR = _IDS_DIR / "achievements"
 CARDS_DIR = _IDS_DIR / "cards"
+_PLAYTIME_IDS_DIR = _IDS_DIR / "playtime"
+
+# Playtime: игры, которые не подключаются к Steam через SAM (playtest/демо и пр.)
+PLAYTIME_SKIP_FILE = _PLAYTIME_IDS_DIR / "skip.txt"
 
 # Achievements
 ALL_IDS_FILE = _IDS_DIR / "all.txt"
@@ -81,6 +85,16 @@ def load_no_achievements_ids() -> set[int]:
 def mark_no_achievements(game_id: int) -> None:
     """Дозаписывает game_id в no_achievements.txt."""
     _append_id(NO_ACHIEVEMENTS_FILE, game_id)
+
+
+def load_playtime_skip_ids() -> set[int]:
+    """Читает playtime/skip.txt → set[int] (игры, не подключающиеся к Steam)."""
+    return load_ids_file(PLAYTIME_SKIP_FILE)
+
+
+def mark_playtime_skip(appid: int) -> None:
+    """Дозаписывает appid в playtime/skip.txt."""
+    _append_id(PLAYTIME_SKIP_FILE, appid)
 
 
 def clear_error_ids() -> None:
