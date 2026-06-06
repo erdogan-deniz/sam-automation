@@ -8,11 +8,13 @@ from .steam_api import (
 from .steam_cm import get_web_cookies, read_steam_cm_app_ids
 from .steam_id import resolve_steam_id
 from .steam_local import find_steam_path, read_library_app_ids
+from .store_api import fetch_achievement_count
 
 __all__ = [
     "fetch_all_game_ids",
     "fetch_badge_app_ids",
     "fetch_owned_games",
+    "fetch_achievement_count",
     "get_web_cookies",
     "read_steam_cm_app_ids",
     "resolve_steam_id",
