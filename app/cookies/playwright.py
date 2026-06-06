@@ -100,8 +100,10 @@ def _playwright_steam_cookies(*, visible_fallback: bool = True) -> dict | None:
         for channel, exe, _ in unique_browsers:
             kwargs = _launch_kwargs(channel, exe)
             try:
-                browser = pw.chromium.launch(headless=False, **kwargs)
-                ctx = browser.new_context()
+                browser = pw.chromium.launch(
+                    headless=False, args=["--start-maximized"], **kwargs
+                )
+                ctx = browser.new_context(no_viewport=True)
                 page = ctx.new_page()
                 page.goto(
                     "https://steamcommunity.com/login/home/", timeout=15_000
@@ -184,8 +186,10 @@ def _playwright_login() -> dict | None:
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=False)
-            ctx = browser.new_context()
+            browser = pw.chromium.launch(
+                headless=False, args=["--start-maximized"]
+            )
+            ctx = browser.new_context(no_viewport=True)
             page = ctx.new_page()
             page.goto(
                 "https://steamcommunity.com/login/home/",

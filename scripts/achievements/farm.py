@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+import atexit
 import logging
 import time
 
@@ -28,6 +29,7 @@ from app.exceptions import SAMError, SAMTooManyErrors
 from app.game_list import load_game_ids
 from app.logging_setup import SEPARATOR, centered, setup_logging
 from app.notify import toast
+from app.run_lock import acquire_run_lock, release_run_lock
 from app.safety import ErrorTracker
 from app.sam import (
     check_steam_running,
@@ -146,6 +148,12 @@ def main() -> None:
         name="farm_achievements",
         category="achievements/farm",
     )
+    try:
+        acquire_run_lock("achievements/farm")
+    except RuntimeError as e:
+        log.error(str(e))
+        sys.exit(1)
+    atexit.register(release_run_lock)
     log.info("Разблокировка достижений Steam")
     log.info(SEPARATOR)
     cfg = load_config()

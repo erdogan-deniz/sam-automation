@@ -40,7 +40,7 @@ sam_game_exe_path: "./external/SAM/SAM.Game.exe"
 launch_delay: 3
 
 # Максимальное время ожидания загрузки игры в SAM (сек)
-load_timeout: 10
+load_timeout: 20
 
 # Пауза после Commit Changes (сек)
 post_commit_delay: 0.2
