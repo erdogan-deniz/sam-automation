@@ -49,8 +49,7 @@ python run.py
 ### Achievements (CLI)
 
 ```bash
-# 1. Scan your Steam library → writes all.txt, then sorts games into
-#    with.txt / without.txt by querying the Steam Store (no SAM needed)
+# 1. Scan your Steam library → writes data/games/ids/all.txt
 python scripts/scan.py
 
 # 2. Unlock (resumes automatically if previously interrupted)
@@ -141,7 +140,7 @@ sam-automation/
 │   ├── runner.py           # Script subprocess runner
 │   └── tabs/               # Tab components (achievements, cards, settings)
 ├── scripts/
-│   ├── scan.py             # Collect App IDs (VDF + API + CM) → all.txt, then catalog with/without
+│   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
 │   ├── achievements/
 │   │   └── farm.py         # Main achievement unlock loop
 │   ├── cards/
@@ -154,7 +153,7 @@ sam-automation/
 │       ├── names.json      # AppID → game name cache
 │       └── ids/
 │           ├── all.txt             # Master list of App IDs (from scan.py)
-│           ├── achievements/       # with.txt, without.txt, unlocked.txt, error.txt
+│           ├── achievements/       # unlocked.txt, error.txt, without.txt
 │           └── cards/              # has_cards.txt, no_cards.txt, done.txt
 ├── logs/                   # Session logs (gitignored)
 ├── external/
@@ -180,13 +179,9 @@ Delete or edit them manually if needed.
 
 | File | Purpose |
 | --- | --- |
-| `with.txt` | Games that have achievements (cataloged by `scan.py` via the Store API) |
-| `without.txt` | Games with no achievements (from `scan.py` or SAM); skipped by farm |
-| `unlocked.txt` | Successfully processed games (farm) |
-| `error.txt` | Games that errored out, retryable (farm) |
-
-Games the Store API can't resolve (DLC, delisted, servers) are left out of
-`with.txt` / `without.txt` and re-checked on the next scan.
+| `unlocked.txt` | Successfully processed games |
+| `error.txt` | Games that errored out (retryable) |
+| `without.txt` | Games with no achievements (skipped permanently) |
 
 **Cards** (`data/games/ids/cards/`)
 

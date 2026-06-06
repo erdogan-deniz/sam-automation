@@ -22,16 +22,11 @@ import os
 # Должно быть до любого импорта protobuf (используется steam библиотекой)
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
-from app.achievements_catalog import catalog
 from app.cache import ALL_IDS_FILE, save_game_names
 from app.config import load_config
 from app.id_file import read_ids_ordered
 from app.logging_setup import SEPARATOR, setup_logging
-from app.steam import (
-    fetch_achievement_count,
-    find_steam_path,
-    read_library_app_ids,
-)
+from app.steam import find_steam_path, read_library_app_ids
 from app.validator import validate
 
 log = logging.getLogger("sam_automation")
@@ -161,15 +156,6 @@ def main() -> None:
         "Полученые ID приложений библиотеки Steam записаны в локальный файл: %s",
         ALL_IDS_FILE,
     )
-
-    log.info(SEPARATOR)
-    try:
-        catalog(sorted(combined), fetch_achievement_count)
-    except KeyboardInterrupt:
-        log.info(
-            "Каталогизация прервана — прогресс сохранён, "
-            "продолжу при следующем скане"
-        )
 
 
 if __name__ == "__main__":
