@@ -29,6 +29,8 @@ ALL_IDS_FILE = _IDS_DIR / "all.txt"
 DONE_IDS_FILE = _ACHIEVEMENTS_IDS_DIR / "unlocked.txt"
 ERROR_IDS_FILE = _ACHIEVEMENTS_IDS_DIR / "error.txt"
 NO_ACHIEVEMENTS_FILE = _ACHIEVEMENTS_IDS_DIR / "without.txt"
+# Каталог scan: игры с достижениями (наполняется по Store API, см. achievements_catalog)
+WITH_ACHIEVEMENTS_FILE = _ACHIEVEMENTS_IDS_DIR / "with.txt"
 
 
 def load_game_names() -> dict[int, str]:
@@ -78,13 +80,23 @@ def mark_error_id(game_id: int) -> None:
 
 
 def load_no_achievements_ids() -> set[int]:
-    """Читает no_achievements.txt → set[int]."""
+    """Читает without.txt → set[int]."""
     return load_ids_file(NO_ACHIEVEMENTS_FILE)
 
 
 def mark_no_achievements(game_id: int) -> None:
-    """Дозаписывает game_id в no_achievements.txt."""
+    """Дозаписывает game_id в without.txt."""
     _append_id(NO_ACHIEVEMENTS_FILE, game_id)
+
+
+def load_with_achievements_ids() -> set[int]:
+    """Читает with.txt → set[int] (каталог: игры с достижениями)."""
+    return load_ids_file(WITH_ACHIEVEMENTS_FILE)
+
+
+def mark_with_achievements(game_id: int) -> None:
+    """Дозаписывает game_id в with.txt."""
+    _append_id(WITH_ACHIEVEMENTS_FILE, game_id)
 
 
 def load_playtime_skip_ids() -> set[int]:
