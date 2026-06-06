@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+import argparse
 import atexit
 import logging
 import subprocess
@@ -25,6 +26,7 @@ from typing import Any
 from app.cache import load_game_names
 from app.cards import (
     check_cards_remaining,
+    clear_card_progress,
     fetch_games_with_card_drops,
     mark_card_done,
 )
@@ -160,10 +162,34 @@ def _farm_loop(
     toast("SAM Automation — Cards", "Card farming завершён")
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    """CLI-флаги card farming."""
+    parser = argparse.ArgumentParser(
+        description="SAM Card Farming — фарм Steam trading card drops"
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Сбросить прогресс (cards/done.txt) и начать заново",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true")
+    return parser
+
+
+def _prepare_progress(args: argparse.Namespace) -> None:
+    """Применяет флаг сброса прогресса до начала фарма."""
+    if args.reset:
+        clear_card_progress()
+        log.info("Сброшен прогресс card farming (--reset)")
+
+
 def main() -> None:
     """Точка входа: запускает цикл фарма trading cards."""
     print()
-    setup_logging(verbose=False, name="farm_cards", category="cards/farm")
+    args = _build_parser().parse_args()
+    setup_logging(
+        verbose=args.verbose, name="farm_cards", category="cards/farm"
+    )
     try:
         acquire_run_lock("cards/farm")
     except RuntimeError as e:
@@ -174,6 +200,7 @@ def main() -> None:
     log.info(SEPARATOR)
     cfg = load_config()
     validate(cfg)
+    _prepare_progress(args)
 
     if not check_steam_running():
         log.error("Steam не запущен! Запусти Steam и попробуй снова.")
