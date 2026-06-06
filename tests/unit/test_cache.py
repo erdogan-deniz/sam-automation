@@ -22,9 +22,6 @@ def _patch_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         cache_mod, "NO_ACHIEVEMENTS_FILE", tmp_path / "no_ach.txt"
     )
-    monkeypatch.setattr(
-        cache_mod, "WITH_ACHIEVEMENTS_FILE", tmp_path / "with_ach.txt"
-    )
 
 
 # ── load/mark done ─────────────────────────────────────────────────────────
@@ -80,25 +77,6 @@ def test_mark_no_achievements_and_load(
     _patch_all(monkeypatch, tmp_path)
     cache_mod.mark_no_achievements(440)
     assert 440 in cache_mod.load_no_achievements_ids()
-
-
-# ── load/mark with_achievements ────────────────────────────────────────────
-
-
-def test_load_with_achievements_empty(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _patch_all(monkeypatch, tmp_path)
-    assert cache_mod.load_with_achievements_ids() == set()
-
-
-def test_mark_with_achievements_and_load(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _patch_all(monkeypatch, tmp_path)
-    cache_mod.mark_with_achievements(730)
-    cache_mod.mark_with_achievements(440)
-    assert cache_mod.load_with_achievements_ids() == {730, 440}
 
 
 # ── clear_progress ─────────────────────────────────────────────────────────
