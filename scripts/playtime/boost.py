@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import argparse
+import atexit
 import logging
 import subprocess
 import time
@@ -27,6 +28,7 @@ from app.cache import load_playtime_skip_ids, mark_playtime_skip
 from app.config import load_config
 from app.logging_setup import SEPARATOR, setup_logging
 from app.notify import toast
+from app.run_lock import acquire_run_lock, release_run_lock
 from app.sam import (
     check_steam_running,
     drop_failed_launches,
@@ -178,6 +180,12 @@ def main() -> None:
             print(f"{g['appid']:>10}  [{pt:>3} мин]  —  {g.get('name', '?')}")
         sys.exit(0)
 
+    try:
+        acquire_run_lock("playtime/boost")
+    except RuntimeError as e:
+        log.error(str(e))
+        sys.exit(1)
+    atexit.register(release_run_lock)
     _boost_loop(games, cfg)
 
 
