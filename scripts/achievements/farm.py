@@ -11,11 +11,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+import argparse
 import atexit
 import logging
 import time
 
 from app.cache import (
+    clear_error_ids,
+    clear_progress,
     load_done_ids,
     load_error_ids,
     load_game_names,
@@ -104,6 +107,43 @@ def _process_one_game(
         close_game(game_app)
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    """CLI-флаги farm: сброс прогресса и отключение резюма."""
+    parser = argparse.ArgumentParser(
+        description="Разблокировка достижений Steam через SAM"
+    )
+    parser.add_argument(
+        "--retry-errors",
+        action="store_true",
+        help="Очистить error.txt — повторить игры, завершившиеся ошибкой",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Сбросить весь прогресс (done/error/without) и начать заново",
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Обработать все игры, игнорируя сохранённый прогресс этим прогоном",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true")
+    return parser
+
+
+def _prepare_progress(args: argparse.Namespace) -> None:
+    """Применяет флаги сброса прогресса до построения списка игр."""
+    if args.reset:
+        clear_progress()
+        log.info("Сброшен весь прогресс (--reset)")
+    elif args.retry_errors:
+        clear_error_ids()
+        log.info(
+            "Очищен список ошибок — игры из error будут повторены "
+            "(--retry-errors)"
+        )
+
+
 def _apply_resume_filter(game_ids: list[int]) -> list[int]:
     """Исключает уже обработанные игры (done + error + no_achievements)."""
     skip = load_done_ids() | load_error_ids() | load_no_achievements_ids()
@@ -143,8 +183,9 @@ def _log_summary(results: list[UnlockResult], errors: int) -> None:
 def main() -> None:
     """Точка входа: запускает цикл разблокировки достижений."""
     print()
+    args = _build_parser().parse_args()
     setup_logging(
-        verbose=False,
+        verbose=args.verbose,
         name="farm_achievements",
         category="achievements/farm",
     )
@@ -158,6 +199,7 @@ def main() -> None:
     log.info(SEPARATOR)
     cfg = load_config()
     validate(cfg)
+    _prepare_progress(args)
 
     if not check_steam_running():
         log.error("Steam клиент не запущен")
@@ -186,7 +228,8 @@ def main() -> None:
         log.info("Список игр пуст (все исключены конфигом?)")
         sys.exit(0)
 
-    game_ids = _apply_resume_filter(game_ids)
+    if not args.no_resume:
+        game_ids = _apply_resume_filter(game_ids)
 
     if not game_ids:
         done = len(load_done_ids())
