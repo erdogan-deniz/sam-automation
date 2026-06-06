@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+import atexit
 import logging
 import subprocess
 import time
@@ -30,6 +31,7 @@ from app.cards import (
 from app.config import load_config
 from app.logging_setup import SEPARATOR, setup_logging
 from app.notify import toast
+from app.run_lock import acquire_run_lock, release_run_lock
 from app.sam import check_steam_running, ensure_sam, kill_process, launch_game
 from app.steam import get_web_cookies, resolve_steam_id
 from app.validator import validate
@@ -162,6 +164,12 @@ def main() -> None:
     """Точка входа: запускает цикл фарма trading cards."""
     print()
     setup_logging(verbose=False, name="farm_cards", category="cards/farm")
+    try:
+        acquire_run_lock("cards/farm")
+    except RuntimeError as e:
+        log.error(str(e))
+        sys.exit(1)
+    atexit.register(release_run_lock)
     log.info("SAM Automation: Farm Cards")
     log.info(SEPARATOR)
     cfg = load_config()
