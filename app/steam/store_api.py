@@ -15,6 +15,41 @@ _TRADING_CARDS_CATEGORY = 29
 _REQUEST_DELAY = 1.2  # секунд между запросами (Store API rate limit)
 
 
+def fetch_achievement_count(appid: int) -> int | None:
+    """Запрашивает Store API: число достижений у игры.
+
+    Returns:
+        int (0 и больше) если приложение есть в Store; None если приложения
+        в Store нет (DLC, удалено, сервер) или запрос не удался — такие ID
+        не классифицируются и перепроверяются при следующем скане.
+    """
+    url = f"{_STORE_API}?appids={appid}&filters=achievements&l=english"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            log.warning("Store API: rate limit, жду 30с...")
+            time.sleep(30)
+        return None
+    except Exception:
+        return None
+
+    app_data = data.get(str(appid), {})
+    if not app_data.get("success"):
+        return None  # приложения нет в Store → не классифицируем
+
+    inner = app_data.get("data", {})
+    if not isinstance(inner, dict):
+        return None  # неожиданный формат ответа
+
+    achievements = inner.get("achievements")
+    if not isinstance(achievements, dict):
+        return 0  # есть в Store, но достижений нет
+    return int(achievements.get("total", 0))
+
+
 def _has_trading_cards(appid: int) -> bool | None:
     """Запрашивает Store API для одной игры.
 
