@@ -1,4 +1,4 @@
-"""Чтение и ожидание статус-бара SAM.Game (ToolStripStatusLabel)."""
+"""Чтение и классификация статус-бара SAM.Game (ToolStripStatusLabel)."""
 
 from __future__ import annotations
 
@@ -32,51 +32,56 @@ def _read_status_panel(game_window) -> str:
     return ""
 
 
-def _wait_for_status(
-    game_window, timeout: float = 8.0, settle: float = 0.5
-) -> str:
-    """Ждёт стабильного финального состояния статус-бара, возвращает lowercase.
+def _check_game_status(
+    game_window,
+    timeout: float = 3.0,
+    settle: float = 1.0,
+    empty_grace: float = 8.0,
+) -> tuple[str | None, int]:
+    """Опрашивает статус-бар SAM.Game. Возвращает (skip_reason | None, count).
 
-    SAM проходит через транзитные состояния: 'Retrieving...' → 'Error...' → 'X achievements'.
-    Возвращает текст только когда он не менялся >= settle секунд подряд.
-    Если за timeout так и не стабилизировался — возвращает последний виденный текст.
+    skip_reason:
+        None              — OK, достижения загружены (count = сколько)
+        "no achievements" — у игры нет достижений / SAM показал Error
+        "retry"           — статистика грузилась ('retrieving'), но не успела
+                            за timeout (временно — стоит повторить через Refresh)
+        "error"           — статус-бар пуст и загрузка даже не началась
+                            (playtest / битая игра): откидываем рано, через
+                            empty_grace, не ожидая полный timeout
+
+    SAM проходит транзит: 'Retrieving...' → 'Error...' → 'X achievements'.
+    Стабильным считаем текст, не менявшийся >= settle секунд.
     """
     deadline = time.time() + timeout
+    empty_deadline = time.time() + empty_grace
+    saw_loading = False
     last = ""
-    stable_since: float = 0.0
+    stable_since = 0.0
 
     while time.time() < deadline:
         text = _read_status_panel(game_window)
-        if text and not text.startswith(_LOADING_TEXT):
+
+        if text.startswith(_LOADING_TEXT):
+            saw_loading = True
+            last = ""
+        elif text:
             if text != last:
                 last = text
                 stable_since = time.time()
             elif time.time() - stable_since >= settle:
-                log.debug("Статус-бар (стабильный): %r", text)
-                return last
+                if "retrieved" in last:
+                    match = re.search(r"(\d+)", last)
+                    return None, int(match.group(1)) if match else 0
+                if "error" in last:
+                    return "no achievements", 0
+                return "retry", 0  # неизвестный стабильный текст
+
+        # Ранний выход: загрузка не началась и статус пуст (playtest/битая)
+        if not saw_loading and not last and time.time() > empty_deadline:
+            log.debug("Статус-бар пуст за %.1fs — нет данных", empty_grace)
+            return "error", 0
+
         time.sleep(0.1)
 
-    log.debug(
-        "Статус-бар не стабилизировался за %.1fs, последний: %r", timeout, last
-    )
-    return last
-
-
-def _check_game_status(
-    game_window, timeout: float = 3.0
-) -> tuple[str | None, int]:
-    """Читает статус-бар SAM.Game. Возвращает (skip_reason | None, achievement_count).
-
-    skip_reason:
-        None             — OK, достижения загружены
-        "no achievements" — у игры нет достижений (постоянный пропуск)
-        "error"          — SAM не смог загрузить достижения (временная ошибка, можно повторить)
-    """
-    status = _wait_for_status(game_window, timeout=timeout, settle=1.0)
-    if "error" in status:
-        return "no achievements", 0
-    if "retrieved" in status:
-        match = re.search(r"(\d+)", status)
-        count = int(match.group(1)) if match else 0
-        return None, count
-    return "error", 0
+    # Таймаут: статистика грузилась, но финала не дождались → временно
+    return "retry", 0

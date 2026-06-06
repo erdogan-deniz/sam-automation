@@ -18,25 +18,39 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import argparse
+import atexit
 import logging
 import subprocess
 import time
 from typing import Any
 
+from app.cache import load_playtime_skip_ids, mark_playtime_skip
 from app.config import load_config
 from app.logging_setup import SEPARATOR, setup_logging
 from app.notify import toast
-from app.sam import check_steam_running, ensure_sam, kill_process, launch_game
+from app.run_lock import acquire_run_lock, release_run_lock
+from app.sam import (
+    check_steam_running,
+    drop_failed_launches,
+    ensure_sam,
+    kill_process,
+    launch_games_staggered,
+)
 from app.steam import fetch_owned_games, resolve_steam_id
 from app.validator import validate
 
 log = logging.getLogger("sam_automation")
 
+# Пауза после убийства батча перед стартом следующего (сек). Даёт Steam
+# освободить global user от закрытых сессий — иначе первая игра нового
+# батча ловит 'failed to connect to global user'.
+_PAUSE_AFTER_KILL = 5.0
+
 
 def _fetch_unplayed(cfg: Any, steam_id: str) -> list[dict]:
     """Возвращает игры с playtime_forever < playtime_target_minutes (минус exclude_ids)."""
     games = fetch_owned_games(cfg.steam_api_key, steam_id)
-    exclude = set(cfg.exclude_ids)
+    exclude = set(cfg.exclude_ids) | load_playtime_skip_ids()
     target = cfg.playtime_target_minutes
     return [
         g
@@ -64,27 +78,38 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     try:
         for i in range(0, total, cfg.max_concurrent_games):
             batch = games[i : i + cfg.max_concurrent_games]
-            active = {}
-
-            for g in batch:
-                appid = g["appid"]
-                name = g.get("name", str(appid))
-                log.info("[%d] Запускаю: %s", appid, name)
-                active[appid] = launch_game(cfg.sam_game_exe_path, appid)
-
-            log.info(
-                "Батч %d игр запущен, жду %d сек...",
-                len(active),
-                cfg.playtime_idle_duration,
+            games_with_names = [
+                (g["appid"], g.get("name", str(g["appid"]))) for g in batch
+            ]
+            active = launch_games_staggered(
+                cfg.sam_game_exe_path, games_with_names
             )
-            time.sleep(cfg.playtime_idle_duration)
 
-            for appid, proc in active.items():
-                kill_process(proc)
-                log.info("[%d] Закрыт", appid)
+            # Отсеять игры, не подключившиеся к Steam (playtest/демо и пр.)
+            failed = drop_failed_launches(active)
+            for appid in failed:
+                mark_playtime_skip(appid)
+            if failed:
+                log.info("Не подключились к Steam (в skip): %d", len(failed))
 
-            done_count += len(active)
+            if active:
+                log.info(
+                    "Батч %d игр запущен, жду %d сек...",
+                    len(active),
+                    cfg.playtime_idle_duration,
+                )
+                time.sleep(cfg.playtime_idle_duration)
+
+                for appid, proc in active.items():
+                    kill_process(proc)
+                    log.info("[%d] Закрыт", appid)
+
+            done_count += len(active) + len(failed)
             log.info("Прогресс: %d / %d", done_count, total)
+
+            # Пауза перед следующим батчем — даём Steam освободить сессии
+            if i + cfg.max_concurrent_games < total:
+                time.sleep(_PAUSE_AFTER_KILL)
 
     except KeyboardInterrupt:
         log.info("Прервано (Ctrl+C). Закрываю активные игры...")
@@ -155,6 +180,12 @@ def main() -> None:
             print(f"{g['appid']:>10}  [{pt:>3} мин]  —  {g.get('name', '?')}")
         sys.exit(0)
 
+    try:
+        acquire_run_lock("playtime/boost")
+    except RuntimeError as e:
+        log.error(str(e))
+        sys.exit(1)
+    atexit.register(release_run_lock)
     _boost_loop(games, cfg)
 
 

@@ -13,6 +13,11 @@ from .sam_status import _check_game_status
 
 log = logging.getLogger("sam_automation")
 
+# Таймаут перепроверки статистики после Refresh (сек). Короче load_timeout:
+# если Refresh не помог за это время — игру откидываем в retry, не висим ещё
+# раз полный load_timeout (всё равно отбросит — нет смысла ждать долго).
+_REFRESH_RECHECK_TIMEOUT = 8.0
+
 
 # ---------------------------------------------------------------------------
 #  Кэш координат кнопок (вычисляется один раз на первой игре)
@@ -74,6 +79,39 @@ class _ButtonCache:
 _cache = _ButtonCache()
 
 
+def _click_refresh(game_window) -> bool:
+    """Находит и нажимает кнопку Refresh в _MainToolStrip SAM.Game.
+
+    Используется когда статистика не загрузилась за timeout — Refresh
+    заставляет SAM перезапросить достижения у Steam.
+
+    _MainToolStrip — прямой child окна, Refresh — прямой child тулбара,
+    поэтому идём по children() (быстро), а не descendants(): полный обход
+    UIA на зависшем окне ~5с и не успевает за прерыванием.
+    """
+    try:
+        for ctrl in game_window.children():
+            try:
+                if ctrl.automation_id() != "_MainToolStrip":
+                    continue
+                for btn in ctrl.children():
+                    try:
+                        if (
+                            btn.friendly_class_name() == "Button"
+                            and "refresh" in btn.window_text().lower()
+                        ):
+                            btn.click_input()
+                            return True
+                    except Exception:
+                        continue
+                return False
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
 # ---------------------------------------------------------------------------
 #  Основная функция обработки игры (fast path)
 # ---------------------------------------------------------------------------
@@ -107,6 +145,19 @@ def process_game(
 
     # Ранний выход: нет достижений или SAM не смог их загрузить
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
+
+    # Статистика не успела — даём ОДИН шанс через Refresh
+    if skip_reason == "retry":
+        if _click_refresh(game_window):
+            log.info("Статистика не загрузилась — Refresh, повтор")
+            skip_reason, total = _check_game_status(
+                game_window, timeout=_REFRESH_RECHECK_TIMEOUT
+            )
+        # Не загрузилась даже после Refresh — это не временно (нет статистики /
+        # playtest и пр.), откидываем как error, а не крутим вечный retry.
+        if skip_reason == "retry":
+            skip_reason = "error"
+
     if skip_reason:
         status = (
             "NO ACHIEVEMENTS" if skip_reason == "no achievements" else "ERROR"
