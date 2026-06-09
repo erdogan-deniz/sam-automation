@@ -73,11 +73,13 @@ python scripts/cards/farm.py
 ### Playtime boosting (CLI)
 
 ```bash
-# Show games with playtime below playtime_target_minutes
+# Show the games that would be boosted, then exit
 python scripts/playtime/boost.py --list
 
-# Boost low-playtime games via short SAM sessions
+# Boost every game in all.txt via short SAM sessions (resumable)
 python scripts/playtime/boost.py
+
+#    --reset   re-boost everything (clears playtime/done.txt)
 ```
 
 ## Configuration (`config.yaml`)
@@ -195,8 +197,11 @@ Delete or edit them manually if needed.
 | `no_cards.txt` | Games confirmed to have no trading cards |
 | `done.txt` | Games with no remaining card drops |
 
-**Playtime boosting** has no local state — progress is read live from the Steam API
-(`playtime_forever`); games below `playtime_target_minutes` are queued each run.
+**Playtime boosting** drives off `all.txt` (the whole library). Games whose Steam
+API `playtime_forever` is already at/above `playtime_target_minutes` are skipped;
+the rest (including free/demo/license apps the API has no playtime for) are idled
+once. Progress is saved to `playtime/done.txt` so re-runs resume; games that fail
+to connect go to `playtime/skip.txt`. Use `--reset` to clear `done.txt` and redo.
 
 Session logs are written to `logs/` with timestamps (`YYYY-MM-DD_HH-MM-SS.log`).
 
