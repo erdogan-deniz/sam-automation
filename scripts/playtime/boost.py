@@ -106,6 +106,9 @@ def _select_targets(
                 "appid": appid,
                 "name": names.get(appid, str(appid)),
                 "playtime_forever": pt,
+                # known=True → Steam API отдаёт playtime, факт проверяется по API
+                # (в done.txt не пишем); False → проверить нельзя, пишем в done.
+                "known": appid in played,
             }
         )
     return out
@@ -140,6 +143,9 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     total = len(games)
     done_count = 0
     active: dict[int, subprocess.Popen] = {}
+    # Известные игры (есть в Steam API) в done.txt не пишем — их «готовность»
+    # определяется по реальному playtime через API при следующем скане.
+    known_ids = {g["appid"] for g in games if g.get("known")}
 
     log.info(SEPARATOR)
     log.info("Boost Playtime — начало работы")
@@ -180,7 +186,8 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
 
                 for appid, proc in active.items():
                     kill_process(proc)
-                    mark_playtime_done(appid)
+                    if appid not in known_ids:
+                        mark_playtime_done(appid)
                     log.info("[%d] Закрыт", appid)
 
             done_count += len(active) + len(failed)

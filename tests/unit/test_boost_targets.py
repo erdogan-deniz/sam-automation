@@ -44,9 +44,20 @@ def test_select_targets_builds_dicts_with_name_fallback() -> None:
         target=3,
         names={20: "Game20"},
     )
-    assert out[0] == {"appid": 20, "name": "Game20", "playtime_forever": 1}
-    # неизвестная игра: playtime 0, имя = строка appid
-    assert out[1] == {"appid": 50, "name": "50", "playtime_forever": 0}
+    # 20 есть в Steam API (known=True), 50 — нет (known=False)
+    assert out[0] == {
+        "appid": 20,
+        "name": "Game20",
+        "playtime_forever": 1,
+        "known": True,
+    }
+    # неизвестная игра: playtime 0, имя = строка appid, known=False
+    assert out[1] == {
+        "appid": 50,
+        "name": "50",
+        "playtime_forever": 0,
+        "known": False,
+    }
 
 
 def test_select_targets_preserves_order() -> None:
