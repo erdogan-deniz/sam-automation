@@ -18,6 +18,25 @@ def test_load_config_missing_file_returns_defaults(tmp_path: Path) -> None:
     assert cfg.launch_delay == 3.0
     assert cfg.load_timeout == 3.0
     assert cfg.max_consecutive_errors == 100
+    assert cfg.launch_stagger == 3.0
+
+
+def test_load_config_launch_stagger(write_config: Callable[..., str]) -> None:
+    path = write_config(launch_stagger=1.5)
+    cfg = load_config(path)
+    assert cfg.launch_stagger == 1.5
+
+
+def test_load_config_playtime_concurrent_games(
+    write_config: Callable[..., str],
+) -> None:
+    path = write_config(playtime_concurrent_games=20)
+    cfg = load_config(path)
+    assert cfg.playtime_concurrent_games == 20
+
+
+def test_playtime_concurrent_games_default() -> None:
+    assert Config().playtime_concurrent_games == 10
 
 
 # ── load_config — базовые поля ────────────────────────────────────────────

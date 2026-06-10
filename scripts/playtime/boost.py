@@ -24,8 +24,17 @@ import subprocess
 import time
 from typing import Any
 
-from app.cache import load_playtime_skip_ids, mark_playtime_skip
+from app.cache import (
+    ALL_IDS_FILE,
+    clear_playtime_progress,
+    load_game_names,
+    load_playtime_done_ids,
+    load_playtime_skip_ids,
+    mark_playtime_done,
+    mark_playtime_skip,
+)
 from app.config import load_config
+from app.id_file import read_ids_ordered
 from app.logging_setup import SEPARATOR, setup_logging
 from app.notify import toast
 from app.run_lock import acquire_run_lock, release_run_lock
@@ -47,16 +56,86 @@ log = logging.getLogger("sam_automation")
 _PAUSE_AFTER_KILL = 5.0
 
 
-def _fetch_unplayed(cfg: Any, steam_id: str) -> list[dict]:
-    """Возвращает игры с playtime_forever < playtime_target_minutes (минус exclude_ids)."""
-    games = fetch_owned_games(cfg.steam_api_key, steam_id)
-    exclude = set(cfg.exclude_ids) | load_playtime_skip_ids()
-    target = cfg.playtime_target_minutes
-    return [
-        g
-        for g in games
-        if g.get("playtime_forever", 0) < target and g["appid"] not in exclude
-    ]
+def _build_parser() -> argparse.ArgumentParser:
+    """CLI-флаги boost."""
+    parser = argparse.ArgumentParser(
+        description="Boost Playtime — набивает время во всех играх из all.txt"
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="Показать игры к набивке и выйти",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Сбросить прогресс (playtime/done.txt) и набить время заново",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true")
+    return parser
+
+
+def _prepare_progress(args: argparse.Namespace) -> None:
+    """Применяет флаг сброса прогресса до сбора списка игр."""
+    if args.reset:
+        clear_playtime_progress()
+        log.info("Сброшен прогресс playtime (--reset)")
+
+
+def _select_targets(
+    all_ids: list[int],
+    played: dict[int, int],
+    skip: set[int],
+    target: int,
+    names: dict[int, str],
+) -> list[dict]:
+    """Игры из all_ids, которым нужно набить время (порядок сохранён).
+
+    Пропускает игры из skip и те, у которых известный playtime >= target.
+    Для игр без известного playtime (нет в `played`) считаем 0 — их идлим.
+    """
+    out: list[dict] = []
+    for appid in all_ids:
+        if appid in skip:
+            continue
+        pt = played.get(appid, 0)
+        if pt >= target:
+            continue
+        out.append(
+            {
+                "appid": appid,
+                "name": names.get(appid, str(appid)),
+                "playtime_forever": pt,
+                # known=True → Steam API отдаёт playtime, факт проверяется по API
+                # (в done.txt не пишем); False → проверить нельзя, пишем в done.
+                "known": appid in played,
+            }
+        )
+    return out
+
+
+def _fetch_targets(cfg: Any, steam_id: str) -> list[dict]:
+    """Все игры из all.txt, которым нужно набить время.
+
+    Вселенная — `all.txt` (полная библиотека). Steam Web API даёт playtime
+    только для части игр; известные с playtime >= target пропускаем, остальные
+    (в т.ч. free/демо/лицензии без данных API) идлим вслепую один раз.
+    Пропускаем exclude_ids, playtime/skip.txt (не подключаются) и
+    playtime/done.txt (уже набили — resume).
+    """
+    all_ids = read_ids_ordered(ALL_IDS_FILE)
+    played = {
+        g["appid"]: g.get("playtime_forever", 0)
+        for g in fetch_owned_games(cfg.steam_api_key, steam_id)
+    }
+    skip = (
+        set(cfg.exclude_ids)
+        | load_playtime_skip_ids()
+        | load_playtime_done_ids()
+    )
+    return _select_targets(
+        all_ids, played, skip, cfg.playtime_target_minutes, load_game_names()
+    )
 
 
 def _boost_loop(games: list[dict], cfg: Any) -> None:
@@ -64,25 +143,30 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     total = len(games)
     done_count = 0
     active: dict[int, subprocess.Popen] = {}
+    # Известные игры (есть в Steam API) в done.txt не пишем — их «готовность»
+    # определяется по реальному playtime через API при следующем скане.
+    known_ids = {g["appid"] for g in games if g.get("known")}
 
     log.info(SEPARATOR)
     log.info("Boost Playtime — начало работы")
     log.info(
         "Игр к обработке: %d | Параллельно: %d | Время айдла: %d сек",
         total,
-        cfg.max_concurrent_games,
+        cfg.playtime_concurrent_games,
         cfg.playtime_idle_duration,
     )
     log.info(SEPARATOR)
 
     try:
-        for i in range(0, total, cfg.max_concurrent_games):
-            batch = games[i : i + cfg.max_concurrent_games]
+        for i in range(0, total, cfg.playtime_concurrent_games):
+            batch = games[i : i + cfg.playtime_concurrent_games]
             games_with_names = [
                 (g["appid"], g.get("name", str(g["appid"]))) for g in batch
             ]
             active = launch_games_staggered(
-                cfg.sam_game_exe_path, games_with_names
+                cfg.sam_game_exe_path,
+                games_with_names,
+                stagger=cfg.launch_stagger,
             )
 
             # Отсеять игры, не подключившиеся к Steam (playtest/демо и пр.)
@@ -102,13 +186,15 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
 
                 for appid, proc in active.items():
                     kill_process(proc)
+                    if appid not in known_ids:
+                        mark_playtime_done(appid)
                     log.info("[%d] Закрыт", appid)
 
             done_count += len(active) + len(failed)
             log.info("Прогресс: %d / %d", done_count, total)
 
             # Пауза перед следующим батчем — даём Steam освободить сессии
-            if i + cfg.max_concurrent_games < total:
+            if i + cfg.playtime_concurrent_games < total:
                 time.sleep(_PAUSE_AFTER_KILL)
 
     except KeyboardInterrupt:
@@ -128,22 +214,14 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
 
 def main() -> None:
     """Точка входа: парсит аргументы CLI и запускает цикл набивки playtime."""
-    parser = argparse.ArgumentParser(
-        description="Boost Playtime — набивает 1+ мин в играх с нулевым playtime"
-    )
-    parser.add_argument(
-        "--list",
-        action="store_true",
-        help="Показать недобранные игры и выйти",
-    )
-    parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args()
+    args = _build_parser().parse_args()
 
     setup_logging(
         verbose=args.verbose, name="boost_playtime", category="playtime/boost"
     )
     cfg = load_config()
     validate(cfg)
+    _prepare_progress(args)
 
     if not check_steam_running():
         log.error("Steam не запущен! Запусти Steam и попробуй снова.")
@@ -163,16 +241,24 @@ def main() -> None:
         sys.exit(1)
     log.info("Steam ID: %s", steam_id)
 
-    log.info(
-        "Получаю игры с playtime < %d мин через Steam API...",
-        cfg.playtime_target_minutes,
-    )
-    games = _fetch_unplayed(cfg, steam_id)
-    log.info("Недобранных игр: %d", len(games))
+    log.info("Собираю игры для набивки из all.txt (вся библиотека)...")
+    games = _fetch_targets(cfg, steam_id)
+    log.info("Игр к набивке (без уже набитых и наигранных): %d", len(games))
 
     if not games:
         log.info("Нет игр для обработки!")
         sys.exit(0)
+
+    batches = (len(games) + cfg.playtime_concurrent_games - 1) // (
+        cfg.playtime_concurrent_games
+    )
+    est_min = batches * (cfg.playtime_idle_duration + _PAUSE_AFTER_KILL) / 60
+    log.info(
+        "Оценка: ~%.0f мин (%d батчей). Прерывание безопасно — resume по "
+        "playtime/done.txt",
+        est_min,
+        batches,
+    )
 
     if args.list:
         for g in games:
