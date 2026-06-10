@@ -197,11 +197,13 @@ Delete or edit them manually if needed.
 | `no_cards.txt` | Games confirmed to have no trading cards |
 | `done.txt` | Games with no remaining card drops |
 
-**Playtime boosting** drives off `all.txt` (the whole library). Games whose Steam
-API `playtime_forever` is already at/above `playtime_target_minutes` are skipped;
-the rest (including free/demo/license apps the API has no playtime for) are idled
-once. Progress is saved to `playtime/done.txt` so re-runs resume; games that fail
-to connect go to `playtime/skip.txt`. Use `--reset` to clear `done.txt` and redo.
+**Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
+API reports playtime for are gated on the **actual** `playtime_forever`: those at
+or above `playtime_target_minutes` are skipped, and ones still below are re-boosted
+each run until they truly reach the target (they are *not* marked done on a single
+pass). Games the API has no playtime for (free/demo/license apps) can't be verified,
+so they are idled once and recorded in `playtime/done.txt` to resume. Games that
+fail to connect go to `playtime/skip.txt`. Use `--reset` to clear `done.txt`.
 
 Session logs are written to `logs/` with timestamps (`YYYY-MM-DD_HH-MM-SS.log`).
 
