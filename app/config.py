@@ -28,6 +28,7 @@ class Config:
     load_timeout: float = 3.0
     post_commit_delay: float = 0.2
     between_games_delay: float = 0.1
+    launch_stagger: float = 3.0  # пауза между стартами игр в батче (playtime)
 
     # Пути
     steam_path: str = ""  # путь к папке Steam (автоопределяется если пусто)
@@ -42,6 +43,9 @@ class Config:
     # Playtime boosting
     playtime_idle_duration: int = 120  # секунд идлить каждую игру
     playtime_target_minutes: int = 3  # минимум минут playtime для каждой игры
+    playtime_concurrent_games: int = (
+        10  # сколько игр идлить параллельно (boost)
+    )
 
 
 def load_config(config_path: str = "config.yaml") -> Config:
@@ -78,6 +82,7 @@ def load_config(config_path: str = "config.yaml") -> Config:
         "load_timeout",
         "post_commit_delay",
         "between_games_delay",
+        "launch_stagger",
     ):
         if float_key in raw:
             setattr(cfg, float_key, float(raw[float_key]))
@@ -96,6 +101,9 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     if "playtime_target_minutes" in raw:
         cfg.playtime_target_minutes = int(raw["playtime_target_minutes"])
+
+    if "playtime_concurrent_games" in raw:
+        cfg.playtime_concurrent_games = int(raw["playtime_concurrent_games"])
 
     # Резолвим относительный путь к exe от директории конфига
     if cfg.sam_game_exe_path and not os.path.isabs(cfg.sam_game_exe_path):
