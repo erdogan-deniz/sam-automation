@@ -25,3 +25,12 @@ repos:
         args: [--fix]
       - id: ruff-format        # форматирование (как black)
         name: ruff (format)
+
+  - repo: local
+    hooks:
+      - id: mypy               # статическая проверка типов (пакет app)
+        name: mypy (app)
+        entry: python -m mypy app
+        language: system
+        types: [python]
+        pass_filenames: false
