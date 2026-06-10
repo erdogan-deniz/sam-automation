@@ -146,19 +146,21 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     log.info(
         "Игр к обработке: %d | Параллельно: %d | Время айдла: %d сек",
         total,
-        cfg.max_concurrent_games,
+        cfg.playtime_concurrent_games,
         cfg.playtime_idle_duration,
     )
     log.info(SEPARATOR)
 
     try:
-        for i in range(0, total, cfg.max_concurrent_games):
-            batch = games[i : i + cfg.max_concurrent_games]
+        for i in range(0, total, cfg.playtime_concurrent_games):
+            batch = games[i : i + cfg.playtime_concurrent_games]
             games_with_names = [
                 (g["appid"], g.get("name", str(g["appid"]))) for g in batch
             ]
             active = launch_games_staggered(
-                cfg.sam_game_exe_path, games_with_names
+                cfg.sam_game_exe_path,
+                games_with_names,
+                stagger=cfg.launch_stagger,
             )
 
             # Отсеять игры, не подключившиеся к Steam (playtest/демо и пр.)
@@ -185,7 +187,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
             log.info("Прогресс: %d / %d", done_count, total)
 
             # Пауза перед следующим батчем — даём Steam освободить сессии
-            if i + cfg.max_concurrent_games < total:
+            if i + cfg.playtime_concurrent_games < total:
                 time.sleep(_PAUSE_AFTER_KILL)
 
     except KeyboardInterrupt:
@@ -240,8 +242,8 @@ def main() -> None:
         log.info("Нет игр для обработки!")
         sys.exit(0)
 
-    batches = (len(games) + cfg.max_concurrent_games - 1) // (
-        cfg.max_concurrent_games
+    batches = (len(games) + cfg.playtime_concurrent_games - 1) // (
+        cfg.playtime_concurrent_games
     )
     est_min = batches * (cfg.playtime_idle_duration + _PAUSE_AFTER_KILL) / 60
     log.info(
