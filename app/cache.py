@@ -23,6 +23,8 @@ _PLAYTIME_IDS_DIR = _IDS_DIR / "playtime"
 
 # Playtime: игры, которые не подключаются к Steam через SAM (playtest/демо и пр.)
 PLAYTIME_SKIP_FILE = _PLAYTIME_IDS_DIR / "skip.txt"
+# Playtime: игры, которым уже набили время (resume — не идлить повторно)
+PLAYTIME_DONE_FILE = _PLAYTIME_IDS_DIR / "done.txt"
 
 # Achievements
 ALL_IDS_FILE = _IDS_DIR / "all.txt"
@@ -95,6 +97,23 @@ def load_playtime_skip_ids() -> set[int]:
 def mark_playtime_skip(appid: int) -> None:
     """Дозаписывает appid в playtime/skip.txt."""
     _append_id(PLAYTIME_SKIP_FILE, appid)
+
+
+def load_playtime_done_ids() -> set[int]:
+    """Читает playtime/done.txt → set[int] (игры с уже набитым временем)."""
+    return load_ids_file(PLAYTIME_DONE_FILE)
+
+
+def mark_playtime_done(appid: int) -> None:
+    """Дозаписывает appid в playtime/done.txt."""
+    _append_id(PLAYTIME_DONE_FILE, appid)
+
+
+def clear_playtime_progress() -> None:
+    """Удаляет playtime/done.txt (для повторной набивки всех игр)."""
+    if PLAYTIME_DONE_FILE.exists():
+        PLAYTIME_DONE_FILE.unlink()
+        log.debug("Удалён файл прогресса: %s", PLAYTIME_DONE_FILE)
 
 
 def clear_error_ids() -> None:
