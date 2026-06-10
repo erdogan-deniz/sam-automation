@@ -68,3 +68,11 @@ playtime_idle_duration: 120
 
 # Целевой минимум playtime (мин). Игры ниже этого порога будут добиваться.
 playtime_target_minutes: 3
+
+# Сколько игр идлить параллельно. Главный рычаг скорости (idle платится один раз
+# на батч). Выше — больше RAM и риск 'failed to connect to global user'.
+playtime_concurrent_games: 10
+
+# Пауза между стартами игр в батче (сек). Защита от гонки за global user;
+# при большой параллельности заметно влияет на скорость.
+launch_stagger: 3
