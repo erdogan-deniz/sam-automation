@@ -13,9 +13,10 @@ from .sam_status import _check_game_status
 
 log = logging.getLogger("sam_automation")
 
-# Таймаут перепроверки статистики после Refresh (сек). Короче load_timeout:
-# если Refresh не помог за это время — игру откидываем в retry, не висим ещё
-# раз полный load_timeout (всё равно отбросит — нет смысла ждать долго).
+# МИНИМАЛЬНЫЙ таймаут перепроверки после Refresh (сек). Refresh перезапускает
+# загрузку статистики с нуля, поэтому перепроверка ждёт max(load_timeout, этот
+# минимум): игра, грузившаяся ~load_timeout, иначе детерминированно падала бы
+# в ложный ERROR на короткой перепроверке.
 _REFRESH_RECHECK_TIMEOUT = 8.0
 
 
@@ -146,15 +147,24 @@ def process_game(
     # Ранний выход: нет достижений или SAM не смог их загрузить
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
 
-    # Статистика не успела — даём ОДИН шанс через Refresh
-    if skip_reason == "retry":
-        if _click_refresh(game_window):
+    # Статистика не успела ("retry") или SAM показал error (часто транзиент) —
+    # даём ОДИН шанс через Refresh + полная перепроверка.
+    if skip_reason in ("retry", "error"):
+        clicked = _click_refresh(game_window)
+        if not clicked:
+            time.sleep(0.5)  # окно могло быть занято — одна повторная попытка
+            clicked = _click_refresh(game_window)
+        if clicked:
             log.info("Статистика не загрузилась — Refresh, повтор")
-            skip_reason, total = _check_game_status(
-                game_window, timeout=_REFRESH_RECHECK_TIMEOUT
-            )
-        # Не загрузилась даже после Refresh — это не временно (нет статистики /
-        # playtest и пр.), откидываем как error, а не крутим вечный retry.
+        else:
+            # Перепроверяем даже без клика: первая загрузка могла дозавершиться
+            log.warning("Кнопка Refresh не нажалась — перепроверка без неё")
+        skip_reason, total = _check_game_status(
+            game_window,
+            timeout=max(load_timeout, _REFRESH_RECHECK_TIMEOUT),
+        )
+        # Не загрузилась даже после Refresh — откидываем как error
+        # (retryable через --retry-errors), а не крутим вечный retry.
         if skip_reason == "retry":
             skip_reason = "error"
 
@@ -202,12 +212,7 @@ def process_game(
     if post_commit_delay > 0:
         time.sleep(post_commit_delay)
 
-    if total == 0:
-        log.info("APP STATUS: NO ACHIEVEMENTS")
-        return UnlockResult(
-            game_id=game_id, skipped=True, skip_reason="no achievements"
-        )
-
+    # Инвариант: skip_reason is None ⇒ total > 0 (см. _check_game_status)
     result.total = total
     result.newly_unlocked = total
     log.info("APP STATUS: UNLOCK (+%d)", total)
