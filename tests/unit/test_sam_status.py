@@ -15,12 +15,14 @@ def _fixed_status(monkeypatch, text: str):
     monkeypatch.setattr(ss, "_read_status_panel", lambda _w: text)
 
 
-def test_empty_status_returns_error_early(monkeypatch):
-    # Пустой статус, загрузка не началась → error через empty_grace (быстро)
+def test_empty_status_returns_retry_for_refresh(monkeypatch):
+    # Пустой статус, загрузка не началась → retry (не error): пусть получит
+    # Refresh-шанс выше. Медленная игра с достижениями выглядит так же первые
+    # секунды, поэтому НЕ откидываем её сразу в error.
     _fixed_status(monkeypatch, "")
     assert _check_game_status(
         MagicMock(), timeout=2.0, empty_grace=0.2, settle=0.1
-    ) == ("error", 0)
+    ) == ("retry", 0)
 
 
 def test_loading_then_timeout_returns_retry(monkeypatch):

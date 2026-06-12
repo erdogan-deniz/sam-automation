@@ -43,11 +43,12 @@ def _check_game_status(
     skip_reason:
         None              — OK, достижения загружены (count = сколько)
         "no achievements" — у игры нет достижений / SAM показал Error
-        "retry"           — статистика грузилась ('retrieving'), но не успела
-                            за timeout (временно — стоит повторить через Refresh)
-        "error"           — статус-бар пуст и загрузка даже не началась
-                            (playtest / битая игра): откидываем рано, через
-                            empty_grace, не ожидая полный timeout
+        "retry"           — статистику не удалось прочитать (грузилась, но не
+                            успела за timeout; ИЛИ статус-бар пуст за
+                            empty_grace). И то и другое временно — игре нужно
+                            дать Refresh-шанс (делает process_game). Медленная
+                            игра с достижениями первые секунды тоже пуста,
+                            поэтому НЕ откидываем её сразу в error.
 
     SAM проходит транзит: 'Retrieving...' → 'Error...' → 'X achievements'.
     Стабильным считаем текст, не менявшийся >= settle секунд.
@@ -76,10 +77,12 @@ def _check_game_status(
                     return "no achievements", 0
                 return "retry", 0  # неизвестный стабильный текст
 
-        # Ранний выход: загрузка не началась и статус пуст (playtest/битая)
+        # Статус пуст и загрузка не началась за empty_grace: либо битая игра,
+        # либо медленная с достижениями. Не решаем здесь — отдаём в retry,
+        # чтобы process_game дал Refresh-шанс (битая останется пустой → error).
         if not saw_loading and not last and time.time() > empty_deadline:
-            log.debug("Статус-бар пуст за %.1fs — нет данных", empty_grace)
-            return "error", 0
+            log.debug("Статус-бар пуст за %.1fs — пробую Refresh", empty_grace)
+            return "retry", 0
 
         time.sleep(0.1)
 
