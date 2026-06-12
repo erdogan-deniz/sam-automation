@@ -1,4 +1,10 @@
-"""Чтение и классификация статус-бара SAM.Game (ToolStripStatusLabel)."""
+"""Детект достижений в окне SAM.Game по списку _AchievementListView.
+
+Источник истины — заполненность списка достижений (структурный контрол),
+а не текст статус-бара: статус-бар появляется с задержкой и раньше ронял
+медленные игры в ложный ERROR. Статус-бар используется лишь для быстрого
+выхода «нет достижений» (Retrieved 0 / error), чтобы не ждать впустую.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +14,8 @@ import time
 
 log = logging.getLogger("sam_automation")
 
-_LOADING_TEXT = "retrieving stat information"
+# automation_id списка достижений в окне SAM.Game (вкладка Achievements).
+_ACHIEVEMENT_LIST_ID = "_AchievementListView"
 
 
 def _read_status_panel(game_window) -> str:
@@ -32,59 +39,66 @@ def _read_status_panel(game_window) -> str:
     return ""
 
 
+def _read_achievement_count(game_window) -> int | None:
+    """Число строк (ListItem) в _AchievementListView.
+
+    Returns:
+        int  — список найден (0 = пуст / ещё не загружен / нет достижений)
+        None — контрол ещё не готов / UIA-ошибка (окно грузится)
+    """
+    try:
+        listview = game_window.child_window(auto_id=_ACHIEVEMENT_LIST_ID)
+        return sum(
+            1
+            for child in listview.children()
+            if child.friendly_class_name() == "ListItem"
+        )
+    except Exception:
+        return None
+
+
 def _check_game_status(
     game_window,
-    timeout: float = 3.0,
+    timeout: float = 20.0,
     settle: float = 1.0,
-    empty_grace: float = 8.0,
 ) -> tuple[str | None, int]:
-    """Опрашивает статус-бар SAM.Game. Возвращает (skip_reason | None, count).
+    """Ждёт загрузки списка достижений. Возвращает (skip_reason | None, count).
 
     skip_reason:
-        None              — OK, достижения загружены (count = сколько)
-        "no achievements" — у игры нет достижений / SAM показал Error
-        "retry"           — статистику не удалось прочитать (грузилась, но не
-                            успела за timeout; ИЛИ статус-бар пуст за
-                            empty_grace). И то и другое временно — игре нужно
-                            дать Refresh-шанс (делает process_game). Медленная
-                            игра с достижениями первые секунды тоже пуста,
-                            поэтому НЕ откидываем её сразу в error.
+        None              — достижения загружены (count = сколько строк)
+        "no achievements" — SAM сообщил 'Retrieved 0' или 'error'
+        "retry"           — список так и не заполнился за timeout (временно;
+                            process_game даёт Refresh-шанс, затем error)
 
-    SAM проходит транзит: 'Retrieving...' → 'Error...' → 'X achievements'.
-    Стабильным считаем текст, не менявшийся >= settle секунд.
+    Готовность = число строк в _AchievementListView стабильно >= settle
+    секунд (загрузка завершилась). Пустой список + статус 'Retrieved 0' /
+    'error' → нет достижений (быстрый выход). Пустой список без статуса →
+    ещё грузится, ждём дальше.
     """
     deadline = time.time() + timeout
-    empty_deadline = time.time() + empty_grace
-    saw_loading = False
-    last = ""
+    last_count = -1
     stable_since = 0.0
 
     while time.time() < deadline:
-        text = _read_status_panel(game_window)
+        count = _read_achievement_count(game_window)
 
-        if text.startswith(_LOADING_TEXT):
-            saw_loading = True
-            last = ""
-        elif text:
-            if text != last:
-                last = text
+        if count and count > 0:
+            if count != last_count:
+                last_count = count
                 stable_since = time.time()
             elif time.time() - stable_since >= settle:
-                if "retrieved" in last:
-                    match = re.search(r"(\d+)", last)
-                    return None, int(match.group(1)) if match else 0
-                if "error" in last:
-                    return "no achievements", 0
-                return "retry", 0  # неизвестный стабильный текст
-
-        # Статус пуст и загрузка не началась за empty_grace: либо битая игра,
-        # либо медленная с достижениями. Не решаем здесь — отдаём в retry,
-        # чтобы process_game дал Refresh-шанс (битая останется пустой → error).
-        if not saw_loading and not last and time.time() > empty_deadline:
-            log.debug("Статус-бар пуст за %.1fs — пробую Refresh", empty_grace)
-            return "retry", 0
+                return None, count
+        else:
+            # Список пуст/не готов — быстрый выход по статус-бару
+            text = _read_status_panel(game_window)
+            if "error" in text:
+                return "no achievements", 0
+            match = re.search(r"retrieved\s+(\d+)", text)
+            if match and int(match.group(1)) == 0:
+                return "no achievements", 0
+            last_count = -1  # сброс стабилизации, если список «мигнул» в 0
 
         time.sleep(0.1)
 
-    # Таймаут: статистика грузилась, но финала не дождались → временно
+    # Не загрузилось за timeout — отдаём в retry (caller сделает Refresh)
     return "retry", 0
