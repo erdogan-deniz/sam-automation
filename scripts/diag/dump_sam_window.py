@@ -117,7 +117,11 @@ def main() -> None:
         log.info("Окно открыто. Жду %.0fс загрузки достижений...", args.wait)
         time.sleep(args.wait)
 
-        game_window = game_app.windows()[0]
+        wins = game_app.windows()
+        if not wins:
+            log.error("Окно SAM.Game исчезло за время ожидания")
+            sys.exit(1)
+        game_window = wins[0]
         lines: list[str] = []
         counts: dict[str, int] = {}
         _walk(game_window, 0, lines, counts)
