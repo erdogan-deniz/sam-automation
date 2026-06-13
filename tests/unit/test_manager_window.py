@@ -7,7 +7,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 import app.sam.manager_window as mw
+from app.exceptions import SAMGameError
 from app.sam.manager_window import _click_refresh, process_game
 
 
@@ -46,8 +49,16 @@ class _Toolbar:
 
 
 class _Window:
-    def __init__(self, *top_level):
+    def __init__(self, *top_level, aid: str = "", title: str = ""):
         self._kids = list(top_level)
+        self._aid = aid
+        self._title = title
+
+    def automation_id(self):
+        return self._aid
+
+    def window_text(self):
+        return self._title
 
     def children(self):
         return self._kids
@@ -57,16 +68,62 @@ class _Window:
 
 
 class _BrokenWindow:
+    """Окно, у которого ВСЕ UIA-вызовы бросают (как зависшее)."""
+
+    def automation_id(self):
+        raise RuntimeError("UIA сломан")
+
+    def window_text(self):
+        raise RuntimeError("UIA сломан")
+
     def children(self):
         raise RuntimeError("UIA сломан")
 
 
 class _App:
-    def __init__(self, window):
-        self._win = window
+    def __init__(self, *windows):
+        self._wins = list(windows)
 
     def windows(self):
-        return [self._win]
+        return list(self._wins)
+
+
+def _manager_window(*extra):
+    """Окно Manager: automation_id == 'Manager' (дешёвый маркер выбора)."""
+    return _Window(*extra, aid="Manager")
+
+
+# ── _find_manager_window ─────────────────────────────────────────────────────
+
+
+def test_find_manager_window_picks_by_automation_id():
+    transient = _Window(aid="SplashForm")  # не Manager
+    manager = _manager_window()
+    assert mw._find_manager_window(_App(transient, manager)) is manager
+
+
+def test_find_manager_window_picks_by_title_fallback():
+    # auto_id пуст, но в заголовке есть 'Steam Achievement Manager'
+    win = _Window(aid="", title="Steam Achievement Manager 7.0 | Some Game")
+    assert mw._find_manager_window(_App(_Window(aid="x"), win)) is win
+
+
+def test_find_manager_window_none_when_no_manager():
+    assert mw._find_manager_window(_App(_Window(aid="Other"))) is None
+
+
+def test_find_manager_window_skips_broken_windows():
+    # Зависшее окно (всё бросает) пропускается, настоящий Manager находится
+    manager = _manager_window()
+    assert mw._find_manager_window(_App(_BrokenWindow(), manager)) is manager
+
+
+def test_find_manager_window_survives_windows_error():
+    class _BadApp:
+        def windows(self):
+            raise RuntimeError("UIA busy")
+
+    assert mw._find_manager_window(_BadApp()) is None
 
 
 # ── _click_refresh ──────────────────────────────────────────────────────────
@@ -99,7 +156,7 @@ def test_click_refresh_false_on_exception():
 
 def _run(monkeypatch, *, statuses, click_results, load_timeout=20):
     """Прогоняет process_game с фейками; возвращает (result, timeouts, clicks)."""
-    app = _App(_Window())
+    app = _App(_manager_window())
     timeouts: list[float] = []
     seq = iter(statuses)
 
@@ -120,6 +177,23 @@ def _run(monkeypatch, *, statuses, click_results, load_timeout=20):
 
     result = process_game(app, 123, load_timeout=load_timeout)
     return result, timeouts, clicks["n"]
+
+
+def test_process_game_no_manager_window_raises(monkeypatch):
+    # Ни одно окно не содержит _MainTabControl → SAMGameError (retryable),
+    # детект даже не вызывается (раньше брали windows()[0] вслепую).
+    app = _App(_Window(aid="SplashForm"))
+    monkeypatch.setattr(mw.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(
+        mw, "_WINDOW_WAIT_FLOOR", 0.2
+    )  # без 15с-ожидания в тесте
+    monkeypatch.setattr(
+        mw,
+        "_check_game_status",
+        lambda *a, **k: pytest.fail("детект не должен вызываться"),
+    )
+    with pytest.raises(SAMGameError):
+        process_game(app, 123, load_timeout=0.2)
 
 
 def test_refresh_recheck_uses_full_load_timeout(monkeypatch):

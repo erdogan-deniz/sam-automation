@@ -13,6 +13,74 @@ from .sam_status import _check_game_status
 
 log = logging.getLogger("sam_automation")
 
+# Окно SAM.Game Manager: automation_id == "Manager" (как у Picker — "GamePicker").
+# Заголовок содержит "Steam Achievement Manager" — запасной маркер.
+_MANAGER_WINDOW_ID = "Manager"
+_MANAGER_TITLE_MARK = "achievement manager"
+
+# Минимум на ожидание появления окна Manager (сек). Окно-оболочка строится
+# быстро, но бюджет не должен делиться с медленной загрузкой достижений.
+_WINDOW_WAIT_FLOOR = 15.0
+
+
+def _is_manager_window(win) -> bool:
+    """True если окно — это Manager. Дешёвые проверки (без обхода children())."""
+    try:
+        if win.automation_id() == _MANAGER_WINDOW_ID:
+            return True
+    except Exception:
+        pass
+    try:
+        if _MANAGER_TITLE_MARK in win.window_text().lower():
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _find_manager_window(app: Application):
+    """Возвращает окно SAM.Game Manager, иначе None.
+
+    process_game раньше брал app.windows()[0] — ПЕРВОЕ появившееся окно. Если
+    SAM показывал переходное/служебное окно, а Manager подменял его позже,
+    ссылка указывала на не то/мёртвое окно: всё через children() оказывалось
+    пустым → каждая игра уходила в ложный ERROR. Выбираем окно по automation_id
+    (дёшево, не виснет на children() зависшего окна).
+    """
+    try:
+        wins = app.windows()
+    except Exception:
+        return None
+    for win in wins:
+        if _is_manager_window(win):
+            return win
+    return None
+
+
+def _log_window_diag(app: Application, game_id: int) -> None:
+    """Диагностика на провале детекта: какие окна открыты (id + заголовок).
+
+    Только дешёвые свойства окна — children() на зависшем окне занимает ~5с,
+    а сюда мы попадаем именно при подозрении на зависшее/не то окно.
+    """
+    try:
+        wins = app.windows()
+    except Exception as e:
+        log.warning("ДИАГ %d: app.windows() упал: %s", game_id, e)
+        return
+    log.warning("ДИАГ %d: окно Manager не найдено; окон=%d", game_id, len(wins))
+    for i, win in enumerate(wins):
+        try:
+            aid = win.automation_id()
+        except Exception as e:
+            aid = f"<err: {e}>"
+        try:
+            title = win.window_text()
+        except Exception:
+            title = "<?>"
+        log.warning("ДИАГ %d:  окно[%d] id=%r title=%r", game_id, i, aid, title)
+
+
 # МИНИМАЛЬНЫЙ таймаут перепроверки после Refresh (сек). Refresh перезапускает
 # загрузку статистики с нуля, поэтому перепроверка ждёт max(load_timeout, этот
 # минимум): игра, грузившаяся ~load_timeout, иначе детерминированно падала бы
@@ -131,18 +199,20 @@ def process_game(
     """
     result = UnlockResult(game_id=game_id)
 
-    # Ждём окно через app.windows() (обход бага find_element с 32-бит)
+    # Ждём именно окно Manager (по automation_id), пропуская переходные окна.
+    # Бюджет — отдельный от загрузки достижений: окно-оболочка появляется
+    # быстро, делить его с медленным списком нельзя.
     game_window = None
-    wait_deadline = time.time() + load_timeout
+    wait_deadline = time.time() + max(load_timeout, _WINDOW_WAIT_FLOOR)
     while time.time() < wait_deadline:
-        wins = app.windows()
-        if wins:
-            game_window = wins[0]
+        game_window = _find_manager_window(app)
+        if game_window is not None:
             break
-        time.sleep(0.05)
+        time.sleep(0.1)
 
     if game_window is None:
-        raise SAMGameError(game_id, "Окно Manager не появилось")
+        _log_window_diag(app, game_id)
+        raise SAMGameError(game_id, "Окно Manager не найдено")
 
     # Ранний выход: нет достижений или SAM не смог их загрузить
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
@@ -150,6 +220,10 @@ def process_game(
     # Статистика не успела ("retry") или SAM показал error (часто транзиент) —
     # даём ОДИН шанс через Refresh + полная перепроверка.
     if skip_reason in ("retry", "error"):
+        # Окно могло подмениться за время загрузки — перевыберем Manager.
+        refreshed = _find_manager_window(app)
+        if refreshed is not None:
+            game_window = refreshed
         clicked = _click_refresh(game_window)
         if not clicked:
             time.sleep(0.5)  # окно могло быть занято — одна повторная попытка

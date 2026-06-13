@@ -16,7 +16,7 @@ def test_load_config_missing_file_returns_defaults(tmp_path: Path) -> None:
     assert cfg.steam_api_key == ""
     assert cfg.steam_id == ""
     assert cfg.launch_delay == 3.0
-    assert cfg.load_timeout == 3.0
+    assert cfg.load_timeout == 20.0
     assert cfg.max_consecutive_errors == 100
     assert cfg.launch_stagger == 3.0
 
