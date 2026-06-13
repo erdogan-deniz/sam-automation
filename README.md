@@ -94,7 +94,7 @@ python scripts/playtime/boost.py
 | `game_ids_file` | — | Path to a text file with App IDs (one per line) |
 | `game_ids` | — | Explicit list of App IDs; overrides `scan.py` and `game_ids_file` |
 | `launch_delay` | `3` | Seconds to wait after launching SAM.Picker.exe |
-| `load_timeout` | `3` | Max seconds to wait for a game to load in SAM |
+| `load_timeout` | `20` | Max seconds to wait for a game's stats to load in SAM |
 | `post_commit_delay` | `0.2` | Pause after Commit Changes (seconds) |
 | `between_games_delay` | `0.1` | Pause between games (seconds) |
 | `max_consecutive_errors` | `100` | Consecutive error threshold before emergency stop |
