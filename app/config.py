@@ -25,7 +25,7 @@ class Config:
 
     # Таймауты (секунды)
     launch_delay: float = 3.0
-    load_timeout: float = 3.0
+    load_timeout: float = 20.0  # медленным играм нужно ~15-20с на загрузку
     post_commit_delay: float = 0.2
     between_games_delay: float = 0.1
     launch_stagger: float = 3.0  # пауза между стартами игр в батче (playtime)
