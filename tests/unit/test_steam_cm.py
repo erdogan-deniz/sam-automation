@@ -44,3 +44,37 @@ def test_outcome_network_errors_are_transient():
 def test_outcome_account_error_is_skip_not_password():
     # Banned/Disabled — не пароль: креды не удаляем, но и в интерактив не идём
     assert _cm_login_outcome(EResult.Banned) == "skip"
+
+
+# ── _steam_api_reachable: пре-чек доступности перед интерактивом ───────────
+
+
+from app.steam import steam_cm  # noqa: E402
+
+
+def test_api_reachable_true(monkeypatch):
+    class _Resp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(
+        steam_cm.urllib.request, "urlopen", lambda *a, **k: _Resp()
+    )
+    assert steam_cm._steam_api_reachable(timeout=1, attempts=1) is True
+
+
+def test_api_reachable_false_on_error(monkeypatch):
+    calls = {"n": 0}
+
+    def boom(*a, **k):
+        calls["n"] += 1
+        raise OSError("read timed out")
+
+    monkeypatch.setattr(steam_cm.urllib.request, "urlopen", boom)
+    assert steam_cm._steam_api_reachable(timeout=0.01, attempts=2) is False
+    assert calls["n"] == 2  # обе попытки сделаны
