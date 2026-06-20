@@ -20,11 +20,38 @@ from __future__ import annotations
 
 import logging
 import os
+import urllib.request
 
 # steam использует protobuf 3.x API; при наличии protobuf 4.x нужен python-режим
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 log = logging.getLogger("sam_automation")
+
+# Лёгкий публичный эндпоинт (без ключа): от доступности Steam WebAPI зависит
+# bootstrap списка CM-серверов. Недоступен → вход в CM зависнет/упадёт.
+_STEAM_API_PING = (
+    "https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/"
+)
+
+
+def _steam_api_reachable(timeout: float = 6.0, attempts: int = 2) -> bool:
+    """Быстрая проверка доступности Steam WebAPI перед входом в CM.
+
+    Если WebAPI недоступен, интерактивный вход всё равно повиснет уже ПОСЛЕ
+    запроса логина/пароля/2FA. Поэтому проверяем заранее и при недоступности
+    пропускаем CM, не запрашивая ничего.
+    """
+    for _ in range(max(1, attempts)):
+        try:
+            with urllib.request.urlopen(
+                _STEAM_API_PING, timeout=timeout
+            ) as resp:
+                if getattr(resp, "status", 200) == 200:
+                    return True
+        except Exception:
+            continue
+    return False
+
 
 # Транзиентные сетевые ошибки CM (по EResult.name): не проблема пароля —
 # повторяем/пропускаем CM, креды НЕ удаляем, в интерактив НЕ падаем.
@@ -110,6 +137,16 @@ def read_steam_cm_app_ids(
         from steam.enums.emsg import EMsg
     except ImportError:
         log.warning("Библиотека steam не установлена: pip install steam")
+        return []
+
+    # Пре-чек ДО запроса логина/пароля/2FA: если Steam WebAPI недоступен —
+    # вход в CM всё равно зависнет. Пропускаем CM (ID уже собраны из
+    # localconfig + Steam API), ничего не спрашивая.
+    if not _steam_api_reachable():
+        log.warning(
+            "Steam WebAPI недоступен — пропускаю Steam CM. ID собраны из "
+            "localconfig + Steam API; повтори scan позже для лицензий CM."
+        )
         return []
 
     client = SteamClient()
