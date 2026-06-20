@@ -26,6 +26,43 @@ os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 log = logging.getLogger("sam_automation")
 
+# Транзиентные сетевые ошибки CM (по EResult.name): не проблема пароля —
+# повторяем/пропускаем CM, креды НЕ удаляем, в интерактив НЕ падаем.
+# TryAnotherCM (48) — именно эта ошибка валила скан.
+_TRANSIENT_CM_ERRORS = frozenset(
+    {
+        "TryAnotherCM",
+        "ServiceUnavailable",
+        "Timeout",
+        "NoConnection",
+        "ConnectFailed",
+        "RemoteDisconnect",
+        "Busy",
+    }
+)
+
+
+def _cm_login_outcome(result) -> str:
+    """Классифицирует результат входа в CM по EResult.
+
+    Returns:
+        "ok"           — вход выполнен
+        "bad_password" — неверный пароль: удалить креды, можно интерактив
+        "transient"    — сетевая ошибка (TryAnotherCM и пр.): повтор/пропуск,
+                         креды сохранить, интерактив НЕ запускать
+        "skip"         — прочая ошибка аккаунта (не пароль): пропуск, креды
+                         сохранить, интерактив НЕ запускать
+    """
+    name = getattr(result, "name", str(result))
+    if name == "OK":
+        return "ok"
+    if name == "InvalidPassword":
+        return "bad_password"
+    if name in _TRANSIENT_CM_ERRORS:
+        return "transient"
+    return "skip"
+
+
 # Публичный API модуля
 # Внутренние зависимости read_steam_cm_app_ids
 # E402 ниже подавлен намеренно: импорты идут после os.environ выше
@@ -126,14 +163,30 @@ def read_steam_cm_app_ids(
             "Автоматическая авторизация аккаунта Steam под логином %s",
             saved_username,
         )
-        result = _login_with_timeout(saved_username, saved_password)
+        # Транзиентные ошибки CM (TryAnotherCM и пр.) — сетевые, не проблема
+        # пароля: пара повторов с переподключением к другому CM-серверу.
+        for attempt in range(2):
+            result = _login_with_timeout(saved_username, saved_password)
+            if result is None or _cm_login_outcome(result) != "transient":
+                break
+            log.warning(
+                "Steam CM: %s — переподключаюсь к другому CM (%d/2)",
+                result,
+                attempt + 1,
+            )
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+            gevent.sleep(2)
 
         if result is None:
+            # Таймаут подключения — сетевое, креды НЕ трогаем, пропускаем CM.
             log.warning(
-                "Steam CM: таймаут подключения (%ds), удаляю сессию",
+                "Steam CM: таймаут подключения (%ds) — пропускаю CM, "
+                "учётные данные сохранены",
                 _CONNECT_TIMEOUT,
             )
-            _clear_session()
             client.disconnect()
             return []
 
@@ -166,14 +219,23 @@ def read_steam_cm_app_ids(
                 client.disconnect()
                 return []
 
-        elif result == EResult.InvalidPassword:
-            log.warning("Steam CM: неверный пароль, удаляю сессию")
-            _clear_session()
-            saved = None
         elif result != EResult.OK:
-            log.warning("Steam CM: вход не удался (%s), удаляю сессию", result)
-            _clear_session()
-            saved = None
+            outcome = _cm_login_outcome(result)
+            if outcome == "bad_password":
+                log.warning("Steam CM: неверный пароль, удаляю сессию")
+                _clear_session()
+                saved = None  # → интерактивный ре-ввод ниже
+            else:
+                # Сетевая (transient) или ошибка аккаунта (не пароль): креды
+                # сохраняем, в интерактив НЕ падаем, CM пропускаем — скан идёт
+                # дальше с ID из localconfig + Steam API.
+                log.warning(
+                    "Steam CM: вход не удался (%s) — пропускаю CM, "
+                    "учётные данные сохранены",
+                    result,
+                )
+                client.disconnect()
+                return []
 
     if not saved and result != EResult.OK:
         if not interactive:
