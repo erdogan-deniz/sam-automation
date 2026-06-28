@@ -27,7 +27,7 @@ from .credentials import (
     _save_session,
     _save_shared_secret,
 )
-from .iauth_service import _jwt_web_cookies
+from .iauth_service import _jwt_web_cookies, _rsa_jwt_login
 from .interactive import _do_interactive_login
 from .jwt import _cm_login_with_jwt, _jwt_from_refresh_token, _save_jwt_refresh
 from .totp import _compute_steam_totp
@@ -52,4 +52,5 @@ __all__ = [
     "_cm_login_with_jwt",
     "_do_interactive_login",
     "_jwt_web_cookies",
+    "_rsa_jwt_login",
 ]
