@@ -99,10 +99,20 @@ def _cm_login_with_jwt(
     from steam.enums import EResult
     from steam.enums.emsg import EMsg
 
+    # После неудачного legacy-входа CM-канал мог остаться в нерабочем
+    # состоянии — начинаем JWT-логон с чистого соединения.
+    if client.connected:
+        client.disconnect()
+        client.sleep(1)
+
     connected = False
     with gevent.Timeout(connect_timeout, False):
         connected = client.connect()
     if not connected:
+        log.warning(
+            "Steam CM (JWT): не удалось подключиться к CM за %dс",
+            connect_timeout,
+        )
         return None
 
     auth_event = GEvent()
@@ -120,10 +130,21 @@ def _cm_login_with_jwt(
     msg.body.protocol_version = 65580
     client.send(msg)
 
-    auth_event.wait(timeout=30)
-    result = result_holder[0]
+    if not auth_event.wait(timeout=30):
+        # Ответа на ClientLogon нет: токен не принят CM либо канал не готов.
+        log.warning(
+            "Steam CM (JWT): нет ответа ClientLogOnResponse за 30с "
+            "(токен не принят CM или соединение не готово)"
+        )
+        client.disconnect()
+        return None
 
+    result = result_holder[0]
     if result != EResult.OK:
+        log.warning(
+            "Steam CM (JWT): логон отклонён: %s",
+            getattr(result, "name", result),
+        )
         client.disconnect()
 
     return result
