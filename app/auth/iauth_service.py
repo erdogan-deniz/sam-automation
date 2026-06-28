@@ -17,6 +17,7 @@ from .credentials import _load_shared_secret
 from .jwt import (
     _cm_login_with_jwt,
     _jwt_from_refresh_token,
+    _load_refresh_token,
     _save_jwt_refresh,
 )
 from .totp import _compute_steam_totp
@@ -78,9 +79,16 @@ def _jwt_web_cookies(
     )
 
     # ── Попытка восстановить сессию из кэша (без 2FA) ──
-    cookies = _jwt_from_refresh_token(cache_file)
-    if cookies:
-        return cookies
+    if for_steam_client:
+        # CM-логону нужен СЫРОЙ refresh_token (деривация access_token для
+        # client-scope даёт пустой токен и удалила бы валидный кэш).
+        cached_rt = _load_refresh_token(cache_file)
+        if cached_rt:
+            return {"refresh_token": cached_rt}
+    else:
+        cookies = _jwt_from_refresh_token(cache_file)
+        if cookies:
+            return cookies
 
     # ── Шаг 1: RSA ключ для шифрования пароля (HTTP, работает без CM) ──
     try:
@@ -300,7 +308,8 @@ def _jwt_web_cookies(
 
         cookie_val = f"{steamid}||{access_token}"
         log.info("IAuthService: JWT получен для steamid=%s", steamid)
-        return {"steamLoginSecure": cookie_val}
+        # refresh_token нужен CM-логону (ClientLogon.access_token = refresh_token).
+        return {"steamLoginSecure": cookie_val, "refresh_token": refresh_token}
 
     except Exception as e:
         log.warning("IAuthService: ошибка: %s", e)
@@ -314,12 +323,13 @@ def _jwt_web_cookies(
 def _rsa_jwt_login(
     client: Any, username: str, password: str, connect_timeout: int
 ) -> Any:
-    """Современный RSA-путь входа в CM: пароль → JWT access_token → CM-логин.
+    """Современный RSA-путь входа в CM: пароль → JWT refresh_token → CM-логин.
 
     Для аккаунтов, переведённых Steam на современный auth, legacy
     client.login(пароль) возвращает InvalidPassword даже на ВЕРНОМ пароле.
     Здесь пароль идёт через BeginAuthSessionViaCredentials (RSA), а полученный
-    access_token предъявляется в ClientLogon.
+    SteamClient-scope refresh_token предъявляется в ClientLogon (короткий
+    access_token CM отвергает с AccessDenied).
 
     Returns:
         EResult входа в CM (OK при успехе) либо None, если RSA-этап не дал
@@ -329,11 +339,16 @@ def _rsa_jwt_login(
     cookies = _jwt_web_cookies(username, password, for_steam_client=True)
     if not cookies:
         return None
-    access_token = cookies["steamLoginSecure"].split("||", 1)[1]
+    refresh_token = cookies.get("refresh_token")
+    if not refresh_token:
+        log.warning(
+            "IAuthService: refresh_token отсутствует — CM-логон невозможен"
+        )
+        return None
     # Неудачный legacy-вход роняет CM-соединение; _cm_login_with_jwt
     # переподключится сам — снимаем возможное полуоткрытое состояние.
     try:
         client.disconnect()
     except Exception:
         pass
-    return _cm_login_with_jwt(client, username, access_token, connect_timeout)
+    return _cm_login_with_jwt(client, username, refresh_token, connect_timeout)
