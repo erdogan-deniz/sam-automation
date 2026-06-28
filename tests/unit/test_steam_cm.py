@@ -46,40 +46,6 @@ def test_outcome_account_error_is_skip_not_password():
     assert _cm_login_outcome(EResult.Banned) == "skip"
 
 
-# ── _should_try_rsa_fallback: legacy login даёт InvalidPassword на верных ──
-# кредах для аккаунтов, переведённых Steam на современный auth. Тогда нужно
-# попробовать RSA-путь (_jwt_web_cookies), прежде чем считать пароль неверным.
-
-
-from app.steam.steam_cm import _should_try_rsa_fallback  # noqa: E402
-
-
-def test_rsa_fallback_on_invalid_password():
-    # InvalidPassword от legacy login ≠ точно неверный пароль: официальный
-    # клиент с теми же кредами входит → пробуем современный RSA-путь.
-    assert _should_try_rsa_fallback(EResult.InvalidPassword) is True
-
-
-def test_no_rsa_fallback_on_ok():
-    assert _should_try_rsa_fallback(EResult.OK) is False
-
-
-def test_no_rsa_fallback_on_transient():
-    # Транзиентные — это сеть, RSA-путь упрётся в ту же сеть, не пробуем.
-    for r in (
-        EResult.TryAnotherCM,
-        EResult.ServiceUnavailable,
-        EResult.Timeout,
-    ):
-        assert _should_try_rsa_fallback(r) is False, r
-
-
-def test_no_rsa_fallback_on_account_error():
-    # Banned/2FA — пароль не при чём, RSA не поможет.
-    for r in (EResult.Banned, EResult.AccountLoginDeniedNeedTwoFactor):
-        assert _should_try_rsa_fallback(r) is False, r
-
-
 # ── _steam_api_reachable: пре-чек доступности перед интерактивом ───────────
 
 

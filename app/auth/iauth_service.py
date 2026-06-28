@@ -6,13 +6,47 @@ import base64
 import logging
 import urllib.parse
 import urllib.request
+from typing import Any
 
 from ._constants import _CRED_DIR
 from .credentials import _load_shared_secret
-from .jwt import _jwt_from_refresh_token, _save_jwt_refresh
+from .jwt import (
+    _cm_login_with_jwt,
+    _jwt_from_refresh_token,
+    _save_jwt_refresh,
+)
 from .totp import _compute_steam_totp
 
 log = logging.getLogger("sam_automation")
+
+# EAuthSessionGuardType (проверено по installed proto steammessages_auth_pb2):
+#   0 Unknown, 1 None, 2 EmailCode, 3 DeviceCode (TOTP мобильного аутентификатора),
+#   4 DeviceConfirmation (подтверждение в приложении, КОДА НЕТ),
+#   5 EmailConfirmation (подтверждение по email, кода нет), 6 MachineToken.
+_GUARD_EMAIL_CODE = 2
+_GUARD_DEVICE_CODE = 3
+_GUARD_DEVICE_CONFIRM = 4
+_GUARD_EMAIL_CONFIRM = 5
+
+
+def _guard_action(confirmation_type: int) -> str:
+    """Что делать с типом Steam Guard подтверждения (EAuthSessionGuardType).
+
+    Returns:
+        "email_code"  — код из email (тип 2): запросить ввод
+        "device_code" — TOTP мобильного аутентификатора (тип 3): авто из
+                        shared_secret либо ручной ввод
+        "confirm"     — подтверждение в приложении/по email (типы 4, 5): КОДА
+                        НЕТ, только поллинг (пользователь подтверждает вне утилиты)
+        "skip"        — прочее (Unknown/None/MachineToken): нечего вводить
+    """
+    if confirmation_type == _GUARD_EMAIL_CODE:
+        return "email_code"
+    if confirmation_type == _GUARD_DEVICE_CODE:
+        return "device_code"
+    if confirmation_type in (_GUARD_DEVICE_CONFIRM, _GUARD_EMAIL_CONFIRM):
+        return "confirm"
+    return "skip"
 
 
 def _jwt_web_cookies(username: str, password: str) -> dict | None:
@@ -129,21 +163,35 @@ def _jwt_web_cookies(username: str, password: str) -> dict | None:
         steamid = str(b.steamid)
         interval = max(b.interval or 5.0, 1.0)
 
-        # ── Шаг 4: 2FA / email код если нужен ──
-        for conf in b.allowed_confirmations:
-            ctype = conf.confirmation_type
-            # EAuthSessionGuardType: 2=email, 4=totp, 5=machineToken
-            if ctype == 2:
-                auto_code = None
-                prompt = "\n[Steam JWT] Введи код из email: "
-            elif ctype == 4:
+        # ── Шаг 4: Steam Guard (2FA) по типам allowed_confirmations ──
+        # _guard_action различает код (email/TOTP) и внешнее подтверждение
+        # (в приложении/по email — кода нет, только ждём поллингом).
+        actions = {
+            _guard_action(c.confirmation_type): c.confirmation_type
+            for c in b.allowed_confirmations
+        }
+        needs_confirm = False
+        ctype = None
+        if "device_code" in actions:  # TOTP — можем сгенерировать сами
+            ctype = actions["device_code"]
+        elif "email_code" in actions:
+            ctype = actions["email_code"]
+        elif "confirm" in actions:
+            needs_confirm = True
+
+        if ctype is not None:
+            if _guard_action(ctype) == "device_code":
                 shared = _load_shared_secret(username)
                 auto_code = _compute_steam_totp(shared) if shared else None
                 if auto_code:
                     log.info("IAuthService: 2FA код сгенерирован автоматически")
-                prompt = "\n[Steam JWT] Введи 2FA (TOTP) код: "
+                prompt = (
+                    "\n[Steam JWT] Введи код Steam Guard "
+                    "(мобильный аутентификатор): "
+                )
             else:
-                continue
+                auto_code = None
+                prompt = "\n[Steam JWT] Введи код из email: "
 
             accepted = False
             for _try in range(3):
@@ -169,18 +217,13 @@ def _jwt_web_cookies(username: str, password: str) -> dict | None:
                     )
                     continue
                 er = upd.header.eresult
-                if er == EResult.OK:
-                    accepted = True
-                    break
-                # eresult=29 (DuplicateRequest) — код уже был принят Steam ранее
-                if int(er) == 29:
-                    log.debug(
-                        "IAuthService: eresult=29 (DuplicateRequest) — продолжаю polling"
-                    )
+                # eresult=29 (DuplicateRequest) — код уже принят Steam ранее
+                if er == EResult.OK or int(er) == 29:
                     accepted = True
                     break
                 log.warning(
-                    "IAuthService: код отклонён (%s) — введи новый код", er
+                    "IAuthService: код отклонён (%s) — введи новый код",
+                    getattr(er, "name", er),
                 )
                 prompt = "\n[Steam JWT] Введи свежий код: "
 
@@ -188,11 +231,18 @@ def _jwt_web_cookies(username: str, password: str) -> dict | None:
                 log.warning("IAuthService: код не принят после 3 попыток")
                 client.disconnect()
                 return None
-            break
+        elif needs_confirm:
+            log.info(
+                "IAuthService: подтверди вход в приложении Steam Mobile "
+                "(или по ссылке из email) — ожидаю подтверждения..."
+            )
 
         # ── Шаг 5: polling до получения токенов ──
+        # Внешнее подтверждение требует времени на действие пользователя —
+        # даём более длинное окно поллинга.
+        poll_attempts = 30 if needs_confirm else 15
         access_token = refresh_token = ""
-        for _attempt in range(15):
+        for _attempt in range(poll_attempts):
             client.sleep(interval)
             poll = client.send_um_and_wait(
                 "Authentication.PollAuthSessionStatus#1",
@@ -232,3 +282,30 @@ def _jwt_web_cookies(username: str, password: str) -> dict | None:
         except Exception:
             pass
         return None
+
+
+def _rsa_jwt_login(
+    client: Any, username: str, password: str, connect_timeout: int
+) -> Any:
+    """Современный RSA-путь входа в CM: пароль → JWT access_token → CM-логин.
+
+    Для аккаунтов, переведённых Steam на современный auth, legacy
+    client.login(пароль) возвращает InvalidPassword даже на ВЕРНОМ пароле.
+    Здесь пароль идёт через BeginAuthSessionViaCredentials (RSA), а полученный
+    access_token предъявляется в ClientLogon.
+
+    Returns:
+        EResult входа в CM (OK при успехе) либо None, если RSA-этап не дал
+        токена (неверный пароль/2FA/сетевая ошибка — см. логи _jwt_web_cookies).
+    """
+    cookies = _jwt_web_cookies(username, password)
+    if not cookies:
+        return None
+    access_token = cookies["steamLoginSecure"].split("||", 1)[1]
+    # Неудачный legacy-вход роняет CM-соединение; _cm_login_with_jwt
+    # переподключится сам — снимаем возможное полуоткрытое состояние.
+    try:
+        client.disconnect()
+    except Exception:
+        pass
+    return _cm_login_with_jwt(client, username, access_token, connect_timeout)
