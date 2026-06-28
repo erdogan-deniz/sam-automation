@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from ._constants import _CRED_DIR, _JWT_REFRESH_FILE
@@ -11,26 +12,32 @@ from ._constants import _CRED_DIR, _JWT_REFRESH_FILE
 log = logging.getLogger("sam_automation")
 
 
-def _save_jwt_refresh(steamid: str, refresh_token: str) -> None:
-    """Сохраняет JWT refresh-токен на диск для повторного использования без 2FA."""
+def _save_jwt_refresh(
+    steamid: str, refresh_token: str, path: Path = _JWT_REFRESH_FILE
+) -> None:
+    """Сохраняет JWT refresh-токен на диск для повторного использования без 2FA.
+
+    path различает scope токена (WebBrowser-куки vs SteamClient-логон в CM).
+    """
     _CRED_DIR.mkdir(parents=True, exist_ok=True)
-    _JWT_REFRESH_FILE.write_text(
+    path.write_text(
         json.dumps({"steamid": steamid, "refresh_token": refresh_token}),
         encoding="utf-8",
     )
-    log.debug("IAuthService: refresh_token сохранён")
+    log.debug("IAuthService: refresh_token сохранён (%s)", path.name)
 
 
-def _jwt_from_refresh_token() -> dict | None:
+def _jwt_from_refresh_token(path: Path = _JWT_REFRESH_FILE) -> dict | None:
     """Пробует получить новый access_token из кэшированного refresh_token.
 
-    Не требует 2FA. Возвращает None если кэш пуст или токен истёк.
+    Не требует 2FA. Возвращает None если кэш пуст или токен истёк. path
+    различает scope токена (WebBrowser-куки vs SteamClient-логон в CM).
     """
-    if not _JWT_REFRESH_FILE.exists():
+    if not path.exists():
         return None
 
     try:
-        data = json.loads(_JWT_REFRESH_FILE.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
         steamid = data.get("steamid", "")
         refresh_token = data.get("refresh_token", "")
         if not steamid or not refresh_token:
@@ -67,12 +74,12 @@ def _jwt_from_refresh_token() -> dict | None:
                 log.debug(
                     "IAuthService: refresh_token истёк или недействителен"
                 )
-                _JWT_REFRESH_FILE.unlink(missing_ok=True)
+                path.unlink(missing_ok=True)
                 return None
 
             access_token = resp.body.access_token
             if not access_token:
-                _JWT_REFRESH_FILE.unlink(missing_ok=True)
+                path.unlink(missing_ok=True)
                 return None
 
             log.info("IAuthService: JWT обновлён через refresh_token (без 2FA)")

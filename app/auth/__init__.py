@@ -12,6 +12,7 @@
 # re-export всех констант и функций для backward compat (from app.auth import ...)
 from ._constants import (
     _CRED_DIR,
+    _JWT_REFRESH_CLIENT_FILE,
     _JWT_REFRESH_FILE,
     _KEYRING_2FA_SERVICE,
     _KEYRING_SERVICE,
@@ -39,6 +40,7 @@ __all__ = [
     "_KEYRING_SERVICE",
     "_KEYRING_2FA_SERVICE",
     "_JWT_REFRESH_FILE",
+    "_JWT_REFRESH_CLIENT_FILE",
     "_compute_steam_totp",
     "_load_shared_secret",
     "_save_shared_secret",
