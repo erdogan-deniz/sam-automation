@@ -8,7 +8,11 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from ._constants import _CRED_DIR
+from ._constants import (
+    _CRED_DIR,
+    _JWT_REFRESH_CLIENT_FILE,
+    _JWT_REFRESH_FILE,
+)
 from .credentials import _load_shared_secret
 from .jwt import (
     _cm_login_with_jwt,
@@ -49,22 +53,32 @@ def _guard_action(confirmation_type: int) -> str:
     return "skip"
 
 
-def _jwt_web_cookies(username: str, password: str) -> dict | None:
-    """Получает JWT-куки Steam Community через IAuthenticationService (CM протокол).
+def _jwt_web_cookies(
+    username: str, password: str, *, for_steam_client: bool = False
+) -> dict | None:
+    """Получает JWT-токен через IAuthenticationService (CM unified messages).
 
-    Использует новый (2023+) Steam auth API через CM unified messages:
+    Использует новый (2023+) Steam auth API:
       1. RSA-шифрует пароль (PKCS1_v1.5 с ключом от Steam)
       2. BeginAuthSessionViaCredentials → получает client_id + request_id
       3. Если нужен 2FA/email код — запрашивает у пользователя
       4. PollAuthSessionStatus → access_token (JWT)
       5. Формирует steamLoginSecure = "{steamid}||{access_token}"
 
+    for_steam_client=True выпускает токен с platform_type=SteamClient (для логона
+    в CM); иначе WebBrowser-scope (для веб-кук). Это РАЗНЫЕ scope — кэшируются в
+    разные файлы, иначе CM-логон даёт AccessDenied на веб-токене.
+
     Возвращает dict с JWT-совместимым steamLoginSecure.
     """
     import json
 
+    cache_file = (
+        _JWT_REFRESH_CLIENT_FILE if for_steam_client else _JWT_REFRESH_FILE
+    )
+
     # ── Попытка восстановить сессию из кэша (без 2FA) ──
-    cookies = _jwt_from_refresh_token()
+    cookies = _jwt_from_refresh_token(cache_file)
     if cookies:
         return cookies
 
@@ -124,20 +138,33 @@ def _jwt_web_cookies(username: str, password: str) -> dict | None:
             client.disconnect()
             return None
 
-        # BeginAuthSessionViaCredentials
+        # BeginAuthSessionViaCredentials. Scope токена определяется platform_type:
+        #   SteamClient(1) → токен валиден для логона в CM (ClientLogon)
+        #   WebBrowser(2)  → токен для веб-кук (steamLoginSecure)
+        # Для SteamClient передаётся device_details, website_id не нужен.
+        begin_params: dict = {
+            "account_name": username,
+            "encrypted_password": enc_pw,
+            "encryption_timestamp": ts,
+            "remember_login": True,
+            "persistence": 1,
+            "guard_data": "",
+        }
+        if for_steam_client:
+            begin_params["platform_type"] = 1  # SteamClient
+            begin_params["device_details"] = {
+                "device_friendly_name": "sam-automation",
+                "platform_type": 1,  # SteamClient
+                "os_type": 16,  # EOSType.Windows10
+            }
+        else:
+            begin_params["platform_type"] = 2  # WebBrowser
+            begin_params["website_id"] = "Community"
+            begin_params["device_friendly_name"] = "sam-automation"
+
         begin = client.send_um_and_wait(
             "Authentication.BeginAuthSessionViaCredentials#1",
-            {
-                "account_name": username,
-                "encrypted_password": enc_pw,
-                "encryption_timestamp": ts,
-                "remember_login": True,
-                "persistence": 1,
-                "website_id": "Community",
-                "device_friendly_name": "sam-automation",
-                "platform_type": 2,  # EAuthTokenPlatformType_SteamClient
-                "guard_data": "",
-            },
+            begin_params,
             timeout=15,
         )
 
@@ -269,7 +296,7 @@ def _jwt_web_cookies(username: str, password: str) -> dict | None:
             return None
 
         if refresh_token:
-            _save_jwt_refresh(steamid, refresh_token)
+            _save_jwt_refresh(steamid, refresh_token, cache_file)
 
         cookie_val = f"{steamid}||{access_token}"
         log.info("IAuthService: JWT получен для steamid=%s", steamid)
@@ -298,7 +325,8 @@ def _rsa_jwt_login(
         EResult входа в CM (OK при успехе) либо None, если RSA-этап не дал
         токена (неверный пароль/2FA/сетевая ошибка — см. логи _jwt_web_cookies).
     """
-    cookies = _jwt_web_cookies(username, password)
+    # for_steam_client=True: токен SteamClient-scope, иначе CM даёт AccessDenied.
+    cookies = _jwt_web_cookies(username, password, for_steam_client=True)
     if not cookies:
         return None
     access_token = cookies["steamLoginSecure"].split("||", 1)[1]
