@@ -90,21 +90,6 @@ def _cm_login_outcome(result) -> str:
     return "skip"
 
 
-def _should_try_rsa_fallback(result) -> bool:
-    """Стоит ли пробовать современный RSA-путь (_jwt_web_cookies).
-
-    Legacy client.login() отвечает InvalidPassword даже на ВЕРНЫХ кредах для
-    аккаунтов, которые Steam перевёл на современный auth (официальный клиент с
-    теми же кредами при этом входит). В таком случае пароль не выбрасываем, а
-    пробуем RSA-путь (BeginAuthSessionViaCredentials). Реально неверный пароль
-    провалит и RSA-путь — обхода ошибки не происходит.
-
-    Только InvalidPassword: транзиентные упрутся в ту же сеть, ошибки аккаунта
-    (Banned/2FA) от смены протокола не лечатся.
-    """
-    return getattr(result, "name", str(result)) == "InvalidPassword"
-
-
 # Публичный API модуля
 # Внутренние зависимости read_steam_cm_app_ids
 # E402 ниже подавлен намеренно: импорты идут после os.environ выше
@@ -118,9 +103,9 @@ from app.auth import (  # noqa: E402
     _compute_steam_totp,
     _do_interactive_login,
     _jwt_from_refresh_token,
-    _jwt_web_cookies,
     _load_session,
     _load_shared_secret,
+    _rsa_jwt_login,
     _save_session,
 )
 from app.cookies import get_web_cookies  # noqa: F401, E402
@@ -275,9 +260,20 @@ def read_steam_cm_app_ids(
         elif result != EResult.OK:
             outcome = _cm_login_outcome(result)
             if outcome == "bad_password":
-                log.warning("Steam CM: неверный пароль, удаляю сессию")
-                _clear_session()
-                saved = None  # → интерактивный ре-ввод ниже
+                # InvalidPassword может означать НЕ опечатку, а отказ legacy
+                # ClientLogon для modern-auth аккаунта. Пробуем RSA-путь ДО
+                # удаления валидных кредов.
+                result = _rsa_jwt_login(
+                    client, saved_username, saved_password, _CONNECT_TIMEOUT
+                )
+                if result == EResult.OK:
+                    log.info(
+                        "Steam CM: вход через RSA/JWT (%s)", saved_username
+                    )
+                else:
+                    log.warning("Steam CM: неверный пароль, удаляю сессию")
+                    _clear_session()
+                    saved = None  # → интерактивный ре-ввод ниже
             else:
                 # Сетевая (transient) или ошибка аккаунта (не пароль): креды
                 # сохраняем, в интерактив НЕ падаем, CM пропускаем — скан идёт
@@ -315,27 +311,11 @@ def read_steam_cm_app_ids(
                 )
                 return []
 
+        # _do_interactive_login сам пробует RSA-путь на InvalidPassword
+        # (legacy ClientLogon отвергает верный пароль для modern-auth аккаунтов).
         result, username, captured_password = _do_interactive_login(
             client, username
         )
-
-        # Legacy client.login() отвечает InvalidPassword даже на верных кредах
-        # для аккаунтов на современном auth (официальный клиент входит).
-        # Пробуем RSA-путь: пароль → BeginAuthSessionViaCredentials →
-        # refresh_token → JWT-логин в CM.
-        if _should_try_rsa_fallback(result) and captured_password:
-            log.info(
-                "Steam CM: legacy-вход дал %s — пробую современный RSA-путь",
-                getattr(result, "name", result),
-            )
-            jwt_cookies = _jwt_web_cookies(username, captured_password)
-            if jwt_cookies:
-                access_token = jwt_cookies["steamLoginSecure"].split("||", 1)[1]
-                result = _cm_login_with_jwt(
-                    client, username, access_token, _CONNECT_TIMEOUT
-                )
-                if result == EResult.OK:
-                    log.info("Steam CM: вход через RSA/JWT (%s)", username)
 
     if result != EResult.OK:
         log.warning(
