@@ -30,7 +30,12 @@ from .credentials import (
 )
 from .iauth_service import _jwt_web_cookies, _rsa_jwt_login
 from .interactive import _do_interactive_login
-from .jwt import _cm_login_with_jwt, _jwt_from_refresh_token, _save_jwt_refresh
+from .jwt import (
+    _cm_login_with_jwt,
+    _jwt_from_refresh_token,
+    _load_refresh_token,
+    _save_jwt_refresh,
+)
 from .totp import _compute_steam_totp
 
 __all__ = [
@@ -51,6 +56,7 @@ __all__ = [
     "_ask_keep_credentials",
     "_save_jwt_refresh",
     "_jwt_from_refresh_token",
+    "_load_refresh_token",
     "_cm_login_with_jwt",
     "_do_interactive_login",
     "_jwt_web_cookies",
