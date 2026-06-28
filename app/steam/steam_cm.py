@@ -103,7 +103,7 @@ from app.auth import (  # noqa: E402
     _cm_login_with_jwt,
     _compute_steam_totp,
     _do_interactive_login,
-    _jwt_from_refresh_token,
+    _load_refresh_token,
     _load_session,
     _load_shared_secret,
     _rsa_jwt_login,
@@ -182,15 +182,15 @@ def read_steam_cm_app_ids(
         )
     )
 
-    # Сначала JWT (без пароля и 2FA) — SteamClient-scope токен из refresh_token
-    # (клиентский кэш; веб-кэш playwright для CM-логона дал бы AccessDenied).
+    # Сначала JWT (без пароля и 2FA) — СЫРОЙ SteamClient-scope refresh_token из
+    # клиентского кэша (его кладут в ClientLogon.access_token; деривация
+    # access_token дала бы пустой/web-токен → AccessDenied).
     result = None
     if saved_username:
-        jwt_cookies = _jwt_from_refresh_token(_JWT_REFRESH_CLIENT_FILE)
-        if jwt_cookies:
-            access_token = jwt_cookies["steamLoginSecure"].split("||", 1)[1]
+        refresh_token = _load_refresh_token(_JWT_REFRESH_CLIENT_FILE)
+        if refresh_token:
             result = _cm_login_with_jwt(
-                client, saved_username, access_token, _CONNECT_TIMEOUT
+                client, saved_username, refresh_token, _CONNECT_TIMEOUT
             )
             if result == EResult.OK:
                 log.info("Steam CM: вход через JWT (%s)", saved_username)
