@@ -1,4 +1,4 @@
-"""JWT refresh-токен и CM-логин через access_token."""
+"""JWT refresh-токен и CM-логин через refresh_token (поле ClientLogon.access_token)."""
 
 from __future__ import annotations
 
@@ -25,6 +25,23 @@ def _save_jwt_refresh(
         encoding="utf-8",
     )
     log.debug("IAuthService: refresh_token сохранён (%s)", path.name)
+
+
+def _load_refresh_token(path: Path = _JWT_REFRESH_FILE) -> str | None:
+    """Читает СЫРОЙ refresh_token из кэша без сетевого обращения.
+
+    Для логона в CM нужен именно refresh_token (его кладут в поле
+    ClientLogon.access_token); деривация access_token не нужна и для client-scope
+    даёт пустой токен.
+    """
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    refresh_token = data.get("refresh_token", "")
+    return refresh_token or None
 
 
 def _jwt_from_refresh_token(path: Path = _JWT_REFRESH_FILE) -> dict | None:
@@ -97,15 +114,20 @@ def _jwt_from_refresh_token(path: Path = _JWT_REFRESH_FILE) -> dict | None:
 
 
 def _cm_login_with_jwt(
-    client: Any, username: str, access_token: str, connect_timeout: int
+    client: Any, username: str, refresh_token: str, connect_timeout: int
 ) -> Any:
-    """Логинится в Steam CM используя JWT access_token (без пароля и 2FA).
+    """Логинится в Steam CM используя JWT refresh_token (без пароля и 2FA).
 
-    Повторяет последовательность рабочего client.login(), но с access_token
-    вместо пароля. Критично: _pre_login() не только подключается, но и ДОЖИДАЕТСЯ
-    EVENT_CHANNEL_SECURED (шифрование канала) — без этого CM молча игнорирует
-    ClientLogon (нет ответа). Заголовок ClientLogon обязан нести steamid для
-    маршрутизации; ручная сборка без него и без channel_secured и давала таймаут.
+    ВАЖНО про токен: поле протокола ClientLogon.access_token названо Valve
+    обманчиво — в него кладётся именно REFRESH_TOKEN (SteamClient-scope, aud
+    содержит 'client'), а не короткоживущий access_token. Короткий access_token
+    (только web/derive) CM отвергает с AccessDenied. Подтверждено SteamKit2,
+    node-steam-user, steam.py.
+
+    Повторяет последовательность рабочего client.login(): _pre_login() не только
+    подключается, но и ДОЖИДАЕТСЯ EVENT_CHANNEL_SECURED (шифрование канала) — без
+    этого CM молча игнорирует ClientLogon. Заголовок ClientLogon обязан нести
+    steamid для маршрутизации.
     """
     import gevent
     from steam.core.msg import MsgProto
@@ -131,7 +153,7 @@ def _cm_login_with_jwt(
 
     client.username = username
 
-    # ClientLogon как в client.login(), но с access_token вместо пароля.
+    # ClientLogon как в client.login(), но с токеном вместо пароля.
     msg = MsgProto(EMsg.ClientLogon)
     msg.header.steamid = SteamID(type="Individual", universe="Public")
     msg.body.protocol_version = 65580
@@ -141,7 +163,8 @@ def _cm_login_with_jwt(
     msg.body.should_remember_password = True
     msg.body.supports_rate_limit_response = True
     msg.body.account_name = username
-    msg.body.access_token = access_token
+    # Поле named access_token, но значение — refresh_token (см. docstring).
+    msg.body.access_token = refresh_token
     client.send(msg)
 
     resp = client.wait_msg(EMsg.ClientLogOnResponse, timeout=30)
