@@ -96,6 +96,7 @@ def _cm_login_outcome(result) -> str:
 # (protobuf-режим должен быть выставлен до загрузки библиотеки steam).
 from app.auth import (  # noqa: E402
     _CRED_DIR,
+    _JWT_REFRESH_CLIENT_FILE,
     _USERNAME_FILE,
     _ask_keep_credentials,
     _clear_session,
@@ -181,10 +182,11 @@ def read_steam_cm_app_ids(
         )
     )
 
-    # Сначала JWT (без пароля и 2FA) — только CM-токен из refresh_token
+    # Сначала JWT (без пароля и 2FA) — SteamClient-scope токен из refresh_token
+    # (клиентский кэш; веб-кэш playwright для CM-логона дал бы AccessDenied).
     result = None
     if saved_username:
-        jwt_cookies = _jwt_from_refresh_token()
+        jwt_cookies = _jwt_from_refresh_token(_JWT_REFRESH_CLIENT_FILE)
         if jwt_cookies:
             access_token = jwt_cookies["steamLoginSecure"].split("||", 1)[1]
             result = _cm_login_with_jwt(
