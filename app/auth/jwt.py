@@ -92,46 +92,53 @@ def _jwt_from_refresh_token() -> dict | None:
 def _cm_login_with_jwt(
     client: Any, username: str, access_token: str, connect_timeout: int
 ) -> Any:
-    """Логинится в Steam CM используя JWT access_token (без пароля и 2FA)."""
-    import gevent
-    from gevent.event import Event as GEvent
-    from steam.core.msg import MsgProto
-    from steam.enums import EResult
-    from steam.enums.emsg import EMsg
+    """Логинится в Steam CM используя JWT access_token (без пароля и 2FA).
 
-    # После неудачного legacy-входа CM-канал мог остаться в нерабочем
-    # состоянии — начинаем JWT-логон с чистого соединения.
+    Повторяет последовательность рабочего client.login(), но с access_token
+    вместо пароля. Критично: _pre_login() не только подключается, но и ДОЖИДАЕТСЯ
+    EVENT_CHANNEL_SECURED (шифрование канала) — без этого CM молча игнорирует
+    ClientLogon (нет ответа). Заголовок ClientLogon обязан нести steamid для
+    маршрутизации; ручная сборка без него и без channel_secured и давала таймаут.
+    """
+    import gevent
+    from steam.core.msg import MsgProto
+    from steam.enums import EOSType, EResult
+    from steam.enums.emsg import EMsg
+    from steam.steamid import SteamID
+
+    # После неудачного legacy-входа канал мог зависнуть — чистое соединение.
     if client.connected:
         client.disconnect()
         client.sleep(1)
 
-    connected = False
+    # _pre_login: подключение + ожидание шифрования канала (channel_secured).
+    eresult = None
     with gevent.Timeout(connect_timeout, False):
-        connected = client.connect()
-    if not connected:
+        eresult = client._pre_login()
+    if eresult != EResult.OK:
         log.warning(
-            "Steam CM (JWT): не удалось подключиться к CM за %dс",
-            connect_timeout,
+            "Steam CM (JWT): подготовка соединения не удалась: %s",
+            getattr(eresult, "name", eresult),
         )
         return None
 
-    auth_event = GEvent()
-    result_holder = [None]
+    client.username = username
 
-    def on_logon(msg):
-        result_holder[0] = EResult(msg.body.eresult)
-        auth_event.set()
-
-    client.once(EMsg.ClientLogOnResponse, on_logon)
-
+    # ClientLogon как в client.login(), но с access_token вместо пароля.
     msg = MsgProto(EMsg.ClientLogon)
+    msg.header.steamid = SteamID(type="Individual", universe="Public")
+    msg.body.protocol_version = 65580
+    msg.body.client_package_version = 1561159470
+    msg.body.client_os_type = EOSType.Windows10
+    msg.body.client_language = "english"
+    msg.body.should_remember_password = True
+    msg.body.supports_rate_limit_response = True
     msg.body.account_name = username
     msg.body.access_token = access_token
-    msg.body.protocol_version = 65580
     client.send(msg)
 
-    if not auth_event.wait(timeout=30):
-        # Ответа на ClientLogon нет: токен не принят CM либо канал не готов.
+    resp = client.wait_msg(EMsg.ClientLogOnResponse, timeout=30)
+    if resp is None:
         log.warning(
             "Steam CM (JWT): нет ответа ClientLogOnResponse за 30с "
             "(токен не принят CM или соединение не готово)"
@@ -139,12 +146,9 @@ def _cm_login_with_jwt(
         client.disconnect()
         return None
 
-    result = result_holder[0]
+    result = EResult(resp.body.eresult)
     if result != EResult.OK:
-        log.warning(
-            "Steam CM (JWT): логон отклонён: %s",
-            getattr(result, "name", result),
-        )
+        log.warning("Steam CM (JWT): логон отклонён: %s", result.name)
         client.disconnect()
 
     return result
