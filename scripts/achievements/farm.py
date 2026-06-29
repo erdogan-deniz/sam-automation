@@ -27,6 +27,7 @@ from app.cache import (
     mark_error_id,
     mark_no_achievements,
 )
+from app.catalog import load_with_ids, prioritize_by_with
 from app.config import load_config
 from app.exceptions import SAMError, SAMTooManyErrors
 from app.game_list import load_game_ids
@@ -230,6 +231,16 @@ def main() -> None:
 
     if not args.no_resume:
         game_ids = _apply_resume_filter(game_ids)
+
+    # Advisory-приоритет: игры с подтверждёнными достижениями (with.txt) —
+    # вперёд. Состав списка не меняется, только порядок.
+    catalog_with = load_with_ids()
+    game_ids = prioritize_by_with(game_ids, catalog_with)
+    n_priority = len(set(game_ids) & catalog_with)
+    if n_priority:
+        log.info(
+            "Каталог: %d игр с достижениями обрабатываются первыми", n_priority
+        )
 
     if not game_ids:
         done = len(load_done_ids())
