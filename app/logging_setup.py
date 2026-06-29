@@ -21,6 +21,18 @@ def centered(text: str, width: int = 70, char: str = "═") -> str:
     return f"{bar} {text} {bar}"
 
 
+def ensure_utf8_stdout() -> None:
+    """Переключает stdout на UTF-8 для не-Unicode терминалов (cp1251 и т.п.).
+
+    Нужно для вывода ═, ✗ и кириллицы через print(); errors='replace' страхует.
+    """
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def setup_logging(
     verbose: bool = False, name: str = "sam", category: str = ""
 ) -> logging.Logger:
@@ -42,13 +54,8 @@ def setup_logging(
         datefmt="%H:%M:%S",
     )
 
-    # Консоль — UTF-8 + errors='replace' для не-Unicode терминалов (cp1251 и т.п.).
-    # encoding="utf-8" переключает кодировку (нужно для ═, ✗ и пр.); errors страхует.
-    if hasattr(sys.stdout, "reconfigure"):
-        try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+    # Консоль — UTF-8 для не-Unicode терминалов (нужно для ═, ✗ и пр.).
+    ensure_utf8_stdout()
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(logging.DEBUG if verbose else logging.INFO)
     console.setFormatter(fmt)
