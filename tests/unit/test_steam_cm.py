@@ -13,7 +13,10 @@ os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 from steam.enums import EResult  # noqa: E402
 
-from app.steam.steam_cm import _cm_login_outcome  # noqa: E402
+from app.steam.steam_cm import (  # noqa: E402
+    _cm_login_outcome,
+    _password_failure_action,
+)
 
 
 def test_outcome_ok():
@@ -44,6 +47,25 @@ def test_outcome_network_errors_are_transient():
 def test_outcome_account_error_is_skip_not_password():
     # Banned/Disabled — не пароль: креды не удаляем, но и в интерактив не идём
     assert _cm_login_outcome(EResult.Banned) == "skip"
+
+
+# ── _password_failure_action: маршрутизация после неуспешного логина ───────
+
+
+def test_password_failure_invalid_password_tries_rsa():
+    # InvalidPassword мог отвергнуть ВАЛИДНЫЕ креды modern-auth аккаунта →
+    # RSA-путь ДО удаления кредов.
+    assert _password_failure_action(EResult.InvalidPassword) == "try_rsa"
+
+
+def test_password_failure_transient_skips_cm():
+    # Сетевая (TryAnotherCM) — креды сохранить, CM пропустить, не RSA.
+    assert _password_failure_action(EResult.TryAnotherCM) == "skip_cm"
+
+
+def test_password_failure_account_error_skips_cm():
+    # Ошибка аккаунта (не пароль) → пропуск CM, креды сохранить.
+    assert _password_failure_action(EResult.Banned) == "skip_cm"
 
 
 # ── _steam_api_reachable: пре-чек доступности перед интерактивом ───────────
