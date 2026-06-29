@@ -90,6 +90,19 @@ def _cm_login_outcome(result) -> str:
     return "skip"
 
 
+def _password_failure_action(result) -> str:
+    """Что делать при неуспешном (не OK/None/2FA) логине по сохранённым кредам.
+
+    "try_rsa" — bad_password: legacy ClientLogon мог отвергнуть ВАЛИДНЫЕ креды
+                modern-auth аккаунта, поэтому пробуем RSA-путь ДО удаления.
+    "skip_cm" — transient/skip: сетевая или ошибка аккаунта (не пароль) —
+                креды сохранить, CM пропустить, в интерактив не падать.
+    """
+    if _cm_login_outcome(result) == "bad_password":
+        return "try_rsa"
+    return "skip_cm"
+
+
 # Публичный API модуля
 # Внутренние зависимости read_steam_cm_app_ids
 # E402 ниже подавлен намеренно: импорты идут после os.environ выше
@@ -260,8 +273,7 @@ def read_steam_cm_app_ids(
                 return []
 
         elif result != EResult.OK:
-            outcome = _cm_login_outcome(result)
-            if outcome == "bad_password":
+            if _password_failure_action(result) == "try_rsa":
                 # InvalidPassword может означать НЕ опечатку, а отказ legacy
                 # ClientLogon для modern-auth аккаунта. Пробуем RSA-путь ДО
                 # удаления валидных кредов.
