@@ -94,3 +94,18 @@ def remaining_to_classify(
     """
     classified = set(with_ids) | set(zero_ids) | set(empty_ids)
     return sorted(set(all_ids) - classified)
+
+
+def prioritize_by_with(
+    game_ids: list[int], with_ids: Iterable[int]
+) -> list[int]:
+    """Ставит игры из with.txt (Store подтвердил достижения) в начало списка.
+
+    Относительный порядок внутри обеих групп сохраняется. advisory: состав
+    списка НЕ меняется — только переупорядочивается, чтобы SAM сначала
+    обрабатывал игры с гарантированными достижениями.
+    """
+    with_set = set(with_ids)
+    prioritized = [gid for gid in game_ids if gid in with_set]
+    rest = [gid for gid in game_ids if gid not in with_set]
+    return prioritized + rest
