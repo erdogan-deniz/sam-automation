@@ -20,11 +20,75 @@ from __future__ import annotations
 
 import logging
 import os
+import urllib.request
 
 # steam использует protobuf 3.x API; при наличии protobuf 4.x нужен python-режим
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 log = logging.getLogger("sam_automation")
+
+# Лёгкий публичный эндпоинт (без ключа): от доступности Steam WebAPI зависит
+# bootstrap списка CM-серверов. Недоступен → вход в CM зависнет/упадёт.
+_STEAM_API_PING = (
+    "https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/"
+)
+
+
+def _steam_api_reachable(timeout: float = 6.0, attempts: int = 2) -> bool:
+    """Быстрая проверка доступности Steam WebAPI перед входом в CM.
+
+    Если WebAPI недоступен, интерактивный вход всё равно повиснет уже ПОСЛЕ
+    запроса логина/пароля/2FA. Поэтому проверяем заранее и при недоступности
+    пропускаем CM, не запрашивая ничего.
+    """
+    for _ in range(max(1, attempts)):
+        try:
+            with urllib.request.urlopen(
+                _STEAM_API_PING, timeout=timeout
+            ) as resp:
+                if getattr(resp, "status", 200) == 200:
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+# Транзиентные сетевые ошибки CM (по EResult.name): не проблема пароля —
+# повторяем/пропускаем CM, креды НЕ удаляем, в интерактив НЕ падаем.
+# TryAnotherCM (48) — именно эта ошибка валила скан.
+_TRANSIENT_CM_ERRORS = frozenset(
+    {
+        "TryAnotherCM",
+        "ServiceUnavailable",
+        "Timeout",
+        "NoConnection",
+        "ConnectFailed",
+        "RemoteDisconnect",
+        "Busy",
+    }
+)
+
+
+def _cm_login_outcome(result) -> str:
+    """Классифицирует результат входа в CM по EResult.
+
+    Returns:
+        "ok"           — вход выполнен
+        "bad_password" — неверный пароль: удалить креды, можно интерактив
+        "transient"    — сетевая ошибка (TryAnotherCM и пр.): повтор/пропуск,
+                         креды сохранить, интерактив НЕ запускать
+        "skip"         — прочая ошибка аккаунта (не пароль): пропуск, креды
+                         сохранить, интерактив НЕ запускать
+    """
+    name = getattr(result, "name", str(result))
+    if name == "OK":
+        return "ok"
+    if name == "InvalidPassword":
+        return "bad_password"
+    if name in _TRANSIENT_CM_ERRORS:
+        return "transient"
+    return "skip"
+
 
 # Публичный API модуля
 # Внутренние зависимости read_steam_cm_app_ids
@@ -32,15 +96,17 @@ log = logging.getLogger("sam_automation")
 # (protobuf-режим должен быть выставлен до загрузки библиотеки steam).
 from app.auth import (  # noqa: E402
     _CRED_DIR,
+    _JWT_REFRESH_CLIENT_FILE,
     _USERNAME_FILE,
     _ask_keep_credentials,
     _clear_session,
     _cm_login_with_jwt,
     _compute_steam_totp,
     _do_interactive_login,
-    _jwt_from_refresh_token,
+    _load_refresh_token,
     _load_session,
     _load_shared_secret,
+    _rsa_jwt_login,
     _save_session,
 )
 from app.cookies import get_web_cookies  # noqa: F401, E402
@@ -75,6 +141,16 @@ def read_steam_cm_app_ids(
         log.warning("Библиотека steam не установлена: pip install steam")
         return []
 
+    # Пре-чек ДО запроса логина/пароля/2FA: если Steam WebAPI недоступен —
+    # вход в CM всё равно зависнет. Пропускаем CM (ID уже собраны из
+    # localconfig + Steam API), ничего не спрашивая.
+    if not _steam_api_reachable():
+        log.warning(
+            "Steam WebAPI недоступен — пропускаю Steam CM. ID собраны из "
+            "localconfig + Steam API; повтори scan позже для лицензий CM."
+        )
+        return []
+
     client = SteamClient()
     client.set_credential_location(str(_CRED_DIR))
 
@@ -106,14 +182,15 @@ def read_steam_cm_app_ids(
         )
     )
 
-    # Сначала JWT (без пароля и 2FA) — только CM-токен из refresh_token
+    # Сначала JWT (без пароля и 2FA) — СЫРОЙ SteamClient-scope refresh_token из
+    # клиентского кэша (его кладут в ClientLogon.access_token; деривация
+    # access_token дала бы пустой/web-токен → AccessDenied).
     result = None
     if saved_username:
-        jwt_cookies = _jwt_from_refresh_token()
-        if jwt_cookies:
-            access_token = jwt_cookies["steamLoginSecure"].split("||", 1)[1]
+        refresh_token = _load_refresh_token(_JWT_REFRESH_CLIENT_FILE)
+        if refresh_token:
             result = _cm_login_with_jwt(
-                client, saved_username, access_token, _CONNECT_TIMEOUT
+                client, saved_username, refresh_token, _CONNECT_TIMEOUT
             )
             if result == EResult.OK:
                 log.info("Steam CM: вход через JWT (%s)", saved_username)
@@ -126,14 +203,30 @@ def read_steam_cm_app_ids(
             "Автоматическая авторизация аккаунта Steam под логином %s",
             saved_username,
         )
-        result = _login_with_timeout(saved_username, saved_password)
+        # Транзиентные ошибки CM (TryAnotherCM и пр.) — сетевые, не проблема
+        # пароля: пара повторов с переподключением к другому CM-серверу.
+        for attempt in range(2):
+            result = _login_with_timeout(saved_username, saved_password)
+            if result is None or _cm_login_outcome(result) != "transient":
+                break
+            log.warning(
+                "Steam CM: %s — переподключаюсь к другому CM (%d/2)",
+                result,
+                attempt + 1,
+            )
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+            gevent.sleep(2)
 
         if result is None:
+            # Таймаут подключения — сетевое, креды НЕ трогаем, пропускаем CM.
             log.warning(
-                "Steam CM: таймаут подключения (%ds), удаляю сессию",
+                "Steam CM: таймаут подключения (%ds) — пропускаю CM, "
+                "учётные данные сохранены",
                 _CONNECT_TIMEOUT,
             )
-            _clear_session()
             client.disconnect()
             return []
 
@@ -166,14 +259,34 @@ def read_steam_cm_app_ids(
                 client.disconnect()
                 return []
 
-        elif result == EResult.InvalidPassword:
-            log.warning("Steam CM: неверный пароль, удаляю сессию")
-            _clear_session()
-            saved = None
         elif result != EResult.OK:
-            log.warning("Steam CM: вход не удался (%s), удаляю сессию", result)
-            _clear_session()
-            saved = None
+            outcome = _cm_login_outcome(result)
+            if outcome == "bad_password":
+                # InvalidPassword может означать НЕ опечатку, а отказ legacy
+                # ClientLogon для modern-auth аккаунта. Пробуем RSA-путь ДО
+                # удаления валидных кредов.
+                result = _rsa_jwt_login(
+                    client, saved_username, saved_password, _CONNECT_TIMEOUT
+                )
+                if result == EResult.OK:
+                    log.info(
+                        "Steam CM: вход через RSA/JWT (%s)", saved_username
+                    )
+                else:
+                    log.warning("Steam CM: неверный пароль, удаляю сессию")
+                    _clear_session()
+                    saved = None  # → интерактивный ре-ввод ниже
+            else:
+                # Сетевая (transient) или ошибка аккаунта (не пароль): креды
+                # сохраняем, в интерактив НЕ падаем, CM пропускаем — скан идёт
+                # дальше с ID из localconfig + Steam API.
+                log.warning(
+                    "Steam CM: вход не удался (%s) — пропускаю CM, "
+                    "учётные данные сохранены",
+                    getattr(result, "name", result),
+                )
+                client.disconnect()
+                return []
 
     if not saved and result != EResult.OK:
         if not interactive:
@@ -200,12 +313,16 @@ def read_steam_cm_app_ids(
                 )
                 return []
 
+        # _do_interactive_login сам пробует RSA-путь на InvalidPassword
+        # (legacy ClientLogon отвергает верный пароль для modern-auth аккаунтов).
         result, username, captured_password = _do_interactive_login(
             client, username
         )
 
     if result != EResult.OK:
-        log.warning("Steam CM: вход не удался: %s", result)
+        log.warning(
+            "Steam CM: вход не удался: %s", getattr(result, "name", result)
+        )
         client.disconnect()
         return []
 

@@ -19,6 +19,7 @@ pycryptodome>=3.18      # RSA encryption for Steam IAuthenticationService login
 
 # ── Browser Automation ────────────────────────────────────────
 playwright>=1.40        # CDP cookie extraction (bypasses v20 Chrome encryption)
+cryptography>=41.0      # AES-GCM decryption of Chrome v10 cookies (app/cookies/chrome.py)
 
 # ── GUI ───────────────────────────────────────────────────────
 customtkinter>=5.2.0    # Modern dark-themed UI (tkinter wrapper)
@@ -28,4 +29,5 @@ pytest>=8.0             # Unit test runner
 
 # ── Dev Tooling ───────────────────────────────────────────────
 ruff>=0.15              # Linter + formatter (pinned via .pre-commit-config rev)
-pre-commit>=4.0         # Git pre-commit hooks (ruff lint + format, basic checks)
+pre-commit>=4.0         # Git pre-commit hooks (ruff lint + format, mypy, basic checks)
+mypy>=1.11              # Static type checker (scoped to app/, see pyproject.toml)

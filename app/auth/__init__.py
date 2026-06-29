@@ -12,6 +12,7 @@
 # re-export всех констант и функций для backward compat (from app.auth import ...)
 from ._constants import (
     _CRED_DIR,
+    _JWT_REFRESH_CLIENT_FILE,
     _JWT_REFRESH_FILE,
     _KEYRING_2FA_SERVICE,
     _KEYRING_SERVICE,
@@ -27,9 +28,14 @@ from .credentials import (
     _save_session,
     _save_shared_secret,
 )
-from .iauth_service import _jwt_web_cookies
+from .iauth_service import _jwt_web_cookies, _rsa_jwt_login
 from .interactive import _do_interactive_login
-from .jwt import _cm_login_with_jwt, _jwt_from_refresh_token, _save_jwt_refresh
+from .jwt import (
+    _cm_login_with_jwt,
+    _jwt_from_refresh_token,
+    _load_refresh_token,
+    _save_jwt_refresh,
+)
 from .totp import _compute_steam_totp
 
 __all__ = [
@@ -39,6 +45,7 @@ __all__ = [
     "_KEYRING_SERVICE",
     "_KEYRING_2FA_SERVICE",
     "_JWT_REFRESH_FILE",
+    "_JWT_REFRESH_CLIENT_FILE",
     "_compute_steam_totp",
     "_load_shared_secret",
     "_save_shared_secret",
@@ -49,7 +56,9 @@ __all__ = [
     "_ask_keep_credentials",
     "_save_jwt_refresh",
     "_jwt_from_refresh_token",
+    "_load_refresh_token",
     "_cm_login_with_jwt",
     "_do_interactive_login",
     "_jwt_web_cookies",
+    "_rsa_jwt_login",
 ]
