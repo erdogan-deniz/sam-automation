@@ -60,6 +60,31 @@ python scripts/achievements/farm.py
 #    --no-resume     process every game this run, ignoring saved progress
 ```
 
+### Library stats (CLI)
+
+```bash
+# Summary of the achievements library:
+# total / with achievements / without / unlocked / errors / remaining + progress %
+python scripts/stats.py
+```
+
+### Achievements catalog (advisory, CLI)
+
+```bash
+# Classify the library via the Steam Store API into with.txt / store_zero.txt.
+# Cached and resumable — re-run to continue. Store API is ~1.2s per game.
+python scripts/categorize.py
+
+#    --limit N   cap Store requests this run (the full library takes hours)
+#    --reset     wipe the catalog and start over
+```
+
+> The catalog is **advisory only** — it never causes a game to be skipped.
+> Only SAM can terminally mark a game as having no achievements (`without.txt`).
+> The Store API is unreliable (demos, region-locked, or delisted apps report an
+> empty achievements block even when achievements exist), so its "0 achievements"
+> verdict goes to a separate `store_zero.txt` that farming ignores.
+
 ### Card farming (CLI)
 
 ```bash
@@ -134,12 +159,14 @@ sam-automation/
 │   ├── sam/                # SAM process automation (launcher, UI)
 │   ├── steam/              # Steam data access (API, CM, local files)
 │   ├── cache.py            # State file helpers
+│   ├── catalog.py          # Advisory achievements catalog (Store API)
 │   ├── config.py           # config.yaml loader
 │   ├── exceptions.py       # Custom exception hierarchy
 │   ├── game_list.py        # App ID source merging
 │   ├── id_file.py          # Text file ID list helpers
 │   ├── logging_setup.py    # File + console logging
 │   ├── safety.py           # Consecutive-error tracker
+│   ├── stats.py            # Library stats summary
 │   └── unlock_result.py    # Achievement unlock result type
 ├── gui/                    # GUI (CustomTkinter)
 │   ├── app.py              # Main window
@@ -147,6 +174,8 @@ sam-automation/
 │   └── tabs/               # Tab components (achievements, cards, settings)
 ├── scripts/
 │   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
+│   ├── stats.py            # Library stats summary
+│   ├── categorize.py       # Advisory achievements catalog (Store API)
 │   ├── achievements/
 │   │   └── farm.py         # Main achievement unlock loop
 │   ├── cards/
@@ -159,7 +188,7 @@ sam-automation/
 │       ├── names.json      # AppID → game name cache
 │       └── ids/
 │           ├── all.txt             # Master list of App IDs (from scan.py)
-│           ├── achievements/       # unlocked.txt, error.txt, without.txt
+│           ├── achievements/       # unlocked, error, without + catalog (with, store_zero)
 │           └── cards/              # has_cards.txt, no_cards.txt, done.txt
 ├── logs/                   # Session logs (gitignored)
 ├── external/
@@ -187,7 +216,9 @@ Delete or edit them manually if needed.
 | --- | --- |
 | `unlocked.txt` | Successfully processed games |
 | `error.txt` | Games that errored out (retryable) |
-| `without.txt` | Games with no achievements (skipped permanently) |
+| `without.txt` | Games **SAM** confirmed have no achievements (skipped permanently) |
+| `with.txt` | Catalog: Store-confirmed to have achievements (advisory priority) |
+| `store_zero.txt` | Catalog: Store reported 0 achievements — advisory, farming does **not** skip these |
 
 **Cards** (`data/games/ids/cards/`)
 
