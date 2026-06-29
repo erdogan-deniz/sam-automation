@@ -89,3 +89,34 @@ def test_remaining_ignores_stale_ids_outside_library() -> None:
         empty_ids={7},
     )
     assert remaining == [2]
+
+
+# ── prioritize_by_with: with.txt-игры вперёд (advisory, порядок) ──
+
+
+def test_prioritize_moves_with_games_to_front_stable() -> None:
+    # with={2,4} → они в начале, относительный порядок обеих групп сохранён.
+    assert catalog.prioritize_by_with([1, 2, 3, 4, 5], {2, 4}) == [
+        2,
+        4,
+        1,
+        3,
+        5,
+    ]
+
+
+def test_prioritize_empty_with_keeps_order() -> None:
+    # Пустой каталог (не запускали categorize) → список без изменений.
+    assert catalog.prioritize_by_with([1, 2, 3], set()) == [1, 2, 3]
+
+
+def test_prioritize_ignores_with_ids_not_in_list() -> None:
+    # id из with.txt, которых нет в списке farm, ничего не вставляют.
+    assert catalog.prioritize_by_with([1, 2], {99}) == [1, 2]
+
+
+def test_prioritize_preserves_all_games_no_dupes() -> None:
+    # advisory: ни одна игра не теряется и не дублируется — только переупорядочена.
+    out = catalog.prioritize_by_with([3, 1, 2], {1})
+    assert sorted(out) == [1, 2, 3]
+    assert len(out) == 3
