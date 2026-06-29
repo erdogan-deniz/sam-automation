@@ -29,15 +29,17 @@ from app.cache import ALL_IDS_FILE  # noqa: E402
 from app.catalog import (  # noqa: E402
     classify_achievements,
     clear_catalog,
+    load_store_empty_ids,
     load_store_zero_ids,
     load_with_ids,
+    mark_store_empty,
     mark_store_zero,
     mark_with,
     remaining_to_classify,
 )
 from app.id_file import load_ids_file  # noqa: E402
 from app.logging_setup import SEPARATOR, setup_logging  # noqa: E402
-from app.steam.store_api import fetch_achievement_count  # noqa: E402
+from app.steam.store_api import fetch_achievement_info  # noqa: E402
 
 log = logging.getLogger("sam_automation")
 
@@ -70,7 +72,10 @@ def main(argv: list[str] | None = None) -> None:
 
     all_ids = load_ids_file(ALL_IDS_FILE)
     remaining = remaining_to_classify(
-        all_ids, load_with_ids(), load_store_zero_ids()
+        all_ids,
+        load_with_ids(),
+        load_store_zero_ids(),
+        load_store_empty_ids(),
     )
     if args.limit > 0:
         remaining = remaining[: args.limit]
@@ -83,16 +88,19 @@ def main(argv: list[str] | None = None) -> None:
     )
     log.info(SEPARATOR)
 
-    with_n = zero_n = unknown_n = 0
+    with_n = zero_n = empty_n = unknown_n = 0
     total = len(remaining)
     for i, appid in enumerate(remaining, 1):
-        bucket = classify_achievements(fetch_achievement_count(appid))
+        bucket = classify_achievements(fetch_achievement_info(appid))
         if bucket == "with":
             mark_with(appid)
             with_n += 1
         elif bucket == "store_zero":
             mark_store_zero(appid)
             zero_n += 1
+        elif bucket == "store_empty":
+            mark_store_empty(appid)
+            empty_n += 1
         else:
             unknown_n += 1
         log.info("[%d/%d] %d → %s", i, total, appid, bucket)
@@ -101,9 +109,10 @@ def main(argv: list[str] | None = None) -> None:
 
     log.info(SEPARATOR)
     log.info(
-        "Готово: with=%d, store_zero=%d, unknown=%d (перезапросятся)",
+        "Готово: with=%d, store_zero=%d, store_empty=%d, unknown=%d (перезапрос)",
         with_n,
         zero_n,
+        empty_n,
         unknown_n,
     )
     log.info(SEPARATOR)
