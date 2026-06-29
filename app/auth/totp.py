@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import time
 
 
@@ -16,7 +17,12 @@ def _compute_steam_totp(shared_secret: str) -> str:
     import hmac
     import struct
 
-    secret = base64.b64decode(shared_secret)
+    try:
+        secret = base64.b64decode(shared_secret)
+    except (binascii.Error, ValueError):
+        # Повреждённый/неполный secret — не роняем логон: вызывающий код
+        # трактует "" как «нет авто-кода» и спрашивает 2FA вручную.
+        return ""
     msg = struct.pack(">Q", int(time.time()) // 30)
     mac = hmac.new(secret, msg, hashlib.sha1).digest()
     start = mac[19] & 0xF
