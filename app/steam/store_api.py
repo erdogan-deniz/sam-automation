@@ -7,6 +7,7 @@ import logging
 import time
 import urllib.error
 import urllib.request
+from typing import NamedTuple
 
 log = logging.getLogger("sam_automation")
 
@@ -48,16 +49,27 @@ def _has_trading_cards(appid: int) -> bool | None:
     return any(cat.get("id") == _TRADING_CARDS_CATEGORY for cat in categories)
 
 
-def fetch_achievement_count(appid: int) -> int | None:
-    """Сколько достижений у игры по Store API.
+class AchievementInfo(NamedTuple):
+    """Исход запроса достижений к Store API.
 
-    Returns:
-        N   — блок achievements ЕСТЬ, total == N (включая 0).
-        None — блок отсутствует / success=false / ошибка запроса = UNKNOWN.
+    total     — число достижений, если блок ЕСТЬ (включая 0); иначе None.
+    responded — Store ОТВЕТИЛ (пусть и без данных): True. Транзиентная ошибка
+                сети/HTTP (нужен ретрай): False.
+    """
 
-    КРИТИЧНО: отсутствие блока (playtest/демо/регион-лок/снято с продажи)
-    НЕ равно «0 достижений». Схлопывание unknown в 0 теряло игры с
-    достижениями (откат каталога v1.1.0). Поэтому 0 только при явном total==0.
+    total: int | None
+    responded: bool
+
+
+def fetch_achievement_info(appid: int) -> AchievementInfo:
+    """Запрашивает число достижений игры у Store API.
+
+    КРИТИЧНО (урок отката v1.1.0): отсутствие блока achievements
+    (playtest/демо/регион-лок/снято с продажи) НЕ равно «0 достижений». Поэтому:
+      - total=N, responded=True   — блок есть (0 только при явном total==0);
+      - total=None, responded=True — Store ответил, но данных нет (data:[]/
+        success=false) → стабильный store_empty (advisory, перезапрос не нужен);
+      - total=None, responded=False — ошибка сети/HTTP → нужен ретрай.
     """
     url = f"{_STORE_API}?appids={appid}&filters=achievements&l=english"
     try:
@@ -68,20 +80,22 @@ def fetch_achievement_count(appid: int) -> int | None:
         if e.code == 429:
             log.warning("Store API: rate limit, жду 30с...")
             time.sleep(30)
-        return None
+        return AchievementInfo(None, responded=False)
     except Exception:
-        return None
+        return AchievementInfo(None, responded=False)
 
     app_data = data.get(str(appid), {})
     if not app_data.get("success"):
-        return None  # приложение недоступно (DLC/удалено/регион) → unknown
+        return AchievementInfo(
+            None, responded=True
+        )  # страницы нет (DLC/регион)
     inner = app_data.get("data", {})
     if not isinstance(inner, dict):
-        return None
+        return AchievementInfo(None, responded=True)  # data:[] и т.п.
     achievements = inner.get("achievements")
     if not isinstance(achievements, dict):
-        return None  # блока нет → unknown (НЕ 0)
+        return AchievementInfo(None, responded=True)  # блока нет
     total = achievements.get("total")
     if not isinstance(total, int):
-        return None
-    return total
+        return AchievementInfo(None, responded=True)
+    return AchievementInfo(total, responded=True)

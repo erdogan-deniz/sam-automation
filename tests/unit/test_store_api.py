@@ -1,7 +1,12 @@
-"""Тесты Store API: подсчёт достижений (app/steam/store_api.py).
+"""Тесты Store API: информация о достижениях (app/steam/store_api.py).
 
-Критично (требование переделки каталога): отсутствие блока achievements →
-None (unknown), 0 только если блок ЕСТЬ и total==0. Store ненадёжен —
+fetch_achievement_info различает ТРИ исхода:
+  - total=N, responded=True   — блок achievements есть (N>=0);
+  - total=None, responded=True — Store ОТВЕТИЛ, но блока нет (data:[]/
+    success=false): стабильное «нет данных» → каталог store_empty;
+  - total=None, responded=False — транзиентная ошибка сети/HTTP → ретрай.
+
+Критично (урок отката v1.1.0): отсутствие блока НЕ равно «0 достижений» —
 playtest/демо/регион-лок отдают пустой блок даже при реальных достижениях.
 """
 
@@ -36,12 +41,14 @@ def _patch_urlopen(monkeypatch, payload=None, exc=None) -> None:
     monkeypatch.setattr(store.urllib.request, "urlopen", _fake)
 
 
-def test_count_present_returns_total(monkeypatch) -> None:
+def test_count_present_returns_total_and_responded(monkeypatch) -> None:
     _patch_urlopen(
         monkeypatch,
         {"570": {"success": True, "data": {"achievements": {"total": 42}}}},
     )
-    assert store.fetch_achievement_count(570) == 42
+    info = store.fetch_achievement_info(570)
+    assert info.total == 42
+    assert info.responded is True
 
 
 def test_count_zero_when_block_present_and_total_zero(monkeypatch) -> None:
@@ -49,37 +56,56 @@ def test_count_zero_when_block_present_and_total_zero(monkeypatch) -> None:
         monkeypatch,
         {"570": {"success": True, "data": {"achievements": {"total": 0}}}},
     )
-    assert store.fetch_achievement_count(570) == 0
+    info = store.fetch_achievement_info(570)
+    assert info.total == 0
+    assert info.responded is True
 
 
-def test_missing_achievements_block_is_unknown_not_zero(monkeypatch) -> None:
-    # success=True, но блока achievements нет → None (НЕ 0!). Корень бага v1.1.0.
+def test_missing_block_is_responded_empty_not_zero(monkeypatch) -> None:
+    # success=True, но блока achievements нет → total=None, responded=True.
     _patch_urlopen(
         monkeypatch,
         {"570": {"success": True, "data": {"name": "Game", "type": "game"}}},
     )
-    assert store.fetch_achievement_count(570) is None
+    info = store.fetch_achievement_info(570)
+    assert info.total is None
+    assert info.responded is True
 
 
-def test_unsuccessful_response_is_unknown(monkeypatch) -> None:
-    # success=false (DLC/удалено/регион-лок) → None, не 0.
+def test_empty_data_list_is_responded_empty(monkeypatch) -> None:
+    # Реальный кейс appid 10 (CS): data:[] → Store ответил, данных нет.
+    _patch_urlopen(monkeypatch, {"10": {"success": True, "data": []}})
+    info = store.fetch_achievement_info(10)
+    assert info.total is None
+    assert info.responded is True
+
+
+def test_unsuccessful_response_is_responded_empty(monkeypatch) -> None:
+    # success=false (DLC/удалено/регион) — Store ответил, страницы нет.
     _patch_urlopen(monkeypatch, {"570": {"success": False}})
-    assert store.fetch_achievement_count(570) is None
+    info = store.fetch_achievement_info(570)
+    assert info.total is None
+    assert info.responded is True
 
 
-def test_http_error_is_unknown(monkeypatch) -> None:
+def test_http_error_is_transient_not_responded(monkeypatch) -> None:
     err = urllib.error.HTTPError("u", 500, "err", {}, None)
     _patch_urlopen(monkeypatch, exc=err)
-    assert store.fetch_achievement_count(570) is None
+    info = store.fetch_achievement_info(570)
+    assert info.total is None
+    assert info.responded is False
 
 
-def test_rate_limit_returns_unknown_without_real_sleep(monkeypatch) -> None:
+def test_rate_limit_is_transient_without_real_sleep(monkeypatch) -> None:
     monkeypatch.setattr(store.time, "sleep", lambda *_a: None)
     err = urllib.error.HTTPError("u", 429, "rate", {}, None)
     _patch_urlopen(monkeypatch, exc=err)
-    assert store.fetch_achievement_count(570) is None
+    info = store.fetch_achievement_info(570)
+    assert info.responded is False
 
 
-def test_network_error_is_unknown(monkeypatch) -> None:
+def test_network_error_is_transient(monkeypatch) -> None:
     _patch_urlopen(monkeypatch, exc=OSError("boom"))
-    assert store.fetch_achievement_count(570) is None
+    info = store.fetch_achievement_info(570)
+    assert info.total is None
+    assert info.responded is False
