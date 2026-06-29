@@ -27,6 +27,22 @@ def _save_jwt_refresh(
     log.debug("IAuthService: refresh_token сохранён (%s)", path.name)
 
 
+# Только эти EResult означают, что refresh_token ОКОНЧАТЕЛЬНО недействителен и
+# кэш можно удалять. Транзиентные (None/таймаут/сеть), Fail и пустой токен при OK
+# кэш НЕ трогают — иначе кратковременный сбой стирает валидный токен и заставляет
+# вводить пароль/2FA каждый раз (подозреваемый корень #1).
+_REFRESH_DEAD_ERRORS = frozenset(
+    {"Expired", "AccessDenied", "Revoked", "InvalidParam"}
+)
+
+
+def _refresh_token_dead(eresult) -> bool:
+    """True только если сервер явно сообщил, что refresh_token недействителен."""
+    if eresult is None:
+        return False
+    return getattr(eresult, "name", str(eresult)) in _REFRESH_DEAD_ERRORS
+
+
 def _load_refresh_token(path: Path = _JWT_REFRESH_FILE) -> str | None:
     """Читает СЫРОЙ refresh_token из кэша без сетевого обращения.
 
@@ -88,15 +104,23 @@ def _jwt_from_refresh_token(path: Path = _JWT_REFRESH_FILE) -> dict | None:
             client.disconnect()
 
             if resp is None or resp.header.eresult != EResult.OK:
-                log.debug(
-                    "IAuthService: refresh_token истёк или недействителен"
-                )
-                path.unlink(missing_ok=True)
+                eresult = None if resp is None else resp.header.eresult
+                # Удаляем кэш ТОЛЬКО при явном протухании/отказе; транзиентные
+                # (нет ответа, таймаут) сохраняют валидный токен.
+                if _refresh_token_dead(eresult):
+                    log.debug("IAuthService: refresh_token недействителен")
+                    path.unlink(missing_ok=True)
+                else:
+                    log.debug(
+                        "IAuthService: refresh_token временно недоступен (%s) "
+                        "— кэш сохранён",
+                        getattr(eresult, "name", eresult),
+                    )
                 return None
 
             access_token = resp.body.access_token
             if not access_token:
-                path.unlink(missing_ok=True)
+                # OK, но деривация не вернула токен — refresh валиден, кэш НЕ трём.
                 return None
 
             log.info("IAuthService: JWT обновлён через refresh_token (без 2FA)")
