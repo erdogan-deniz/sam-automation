@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from .credentials import _load_shared_secret
+from .iauth_service import _rsa_jwt_login
 from .totp import _compute_steam_totp
 
 log = logging.getLogger("sam_automation")
@@ -66,6 +67,8 @@ def _do_interactive_login(client: Any, username: str) -> tuple[Any, str, str]:
     )
     auth_code = two_factor_code = None
     prompt_for_unavailable = True
+    rsa_tried = False
+    invalid_pw_tries = 0
 
     result = _login_timed(username, password)
     if result is None:
@@ -84,6 +87,25 @@ def _do_interactive_login(client: Any, username: str) -> tuple[Any, str, str]:
         client.sleep(0.1)
 
         if result == EResult.InvalidPassword:
+            # Legacy ClientLogon отвергает ВЕРНЫЙ пароль для аккаунтов на
+            # современном auth → один раз пробуем RSA-путь. Затем для реальной
+            # опечатки ограниченно переспрашиваем пароль, НЕ зацикливаясь
+            # (иначе modern-auth аккаунт крутит «Неверный пароль» бесконечно).
+            if not rsa_tried:
+                rsa_tried = True
+                rsa_result = _rsa_jwt_login(
+                    client, username, password, _LOGIN_TIMEOUT
+                )
+                if rsa_result == EResult.OK:
+                    log.info("Steam CM: вход через RSA/JWT (%s)", username)
+                    return EResult.OK, username, password
+                log.warning(
+                    "Steam CM: RSA-путь не дал входа (%s)",
+                    getattr(rsa_result, "name", rsa_result),
+                )
+            invalid_pw_tries += 1
+            if invalid_pw_tries >= 2:
+                return EResult.InvalidPassword, username, password
             password = _getpass_stars(
                 "[Steam Client Master] Неверный пароль от учётной записи Steam. Введите пароль снова: "
             )
