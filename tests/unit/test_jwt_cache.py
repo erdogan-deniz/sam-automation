@@ -13,7 +13,30 @@ import os
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
-from app.auth.jwt import _load_refresh_token  # noqa: E402
+from steam.enums import EResult  # noqa: E402
+
+from app.auth.jwt import _load_refresh_token, _refresh_token_dead  # noqa: E402
+
+
+def test_dead_on_explicit_invalidation():
+    # Явные сигналы протухания/отзыва → кэш удалять.
+    for r in (
+        EResult.Expired,
+        EResult.AccessDenied,
+        EResult.Revoked,
+        EResult.InvalidParam,
+    ):
+        assert _refresh_token_dead(r) is True, r
+
+
+def test_not_dead_on_transient_none():
+    # Нет ответа (таймаут/сеть) — НЕ удалять валидный кэш (подозр. корень #1).
+    assert _refresh_token_dead(None) is False
+
+
+def test_not_dead_on_transient_eresults():
+    for r in (EResult.Timeout, EResult.TryAnotherCM, EResult.Fail, EResult.OK):
+        assert _refresh_token_dead(r) is False, r
 
 
 def test_load_refresh_token_reads_raw(tmp_path):
