@@ -1,9 +1,10 @@
-"""JWT refresh-токен и CM-логин через access_token."""
+"""JWT refresh-токен и CM-логин через refresh_token (поле ClientLogon.access_token)."""
 
 from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from ._constants import _CRED_DIR, _JWT_REFRESH_FILE
@@ -11,26 +12,65 @@ from ._constants import _CRED_DIR, _JWT_REFRESH_FILE
 log = logging.getLogger("sam_automation")
 
 
-def _save_jwt_refresh(steamid: str, refresh_token: str) -> None:
-    """Сохраняет JWT refresh-токен на диск для повторного использования без 2FA."""
+def _save_jwt_refresh(
+    steamid: str, refresh_token: str, path: Path = _JWT_REFRESH_FILE
+) -> None:
+    """Сохраняет JWT refresh-токен на диск для повторного использования без 2FA.
+
+    path различает scope токена (WebBrowser-куки vs SteamClient-логон в CM).
+    """
     _CRED_DIR.mkdir(parents=True, exist_ok=True)
-    _JWT_REFRESH_FILE.write_text(
+    path.write_text(
         json.dumps({"steamid": steamid, "refresh_token": refresh_token}),
         encoding="utf-8",
     )
-    log.debug("IAuthService: refresh_token сохранён")
+    log.debug("IAuthService: refresh_token сохранён (%s)", path.name)
 
 
-def _jwt_from_refresh_token() -> dict | None:
+# Только эти EResult означают, что refresh_token ОКОНЧАТЕЛЬНО недействителен и
+# кэш можно удалять. Транзиентные (None/таймаут/сеть), Fail и пустой токен при OK
+# кэш НЕ трогают — иначе кратковременный сбой стирает валидный токен и заставляет
+# вводить пароль/2FA каждый раз (подозреваемый корень #1).
+_REFRESH_DEAD_ERRORS = frozenset(
+    {"Expired", "AccessDenied", "Revoked", "InvalidParam"}
+)
+
+
+def _refresh_token_dead(eresult) -> bool:
+    """True только если сервер явно сообщил, что refresh_token недействителен."""
+    if eresult is None:
+        return False
+    return getattr(eresult, "name", str(eresult)) in _REFRESH_DEAD_ERRORS
+
+
+def _load_refresh_token(path: Path = _JWT_REFRESH_FILE) -> str | None:
+    """Читает СЫРОЙ refresh_token из кэша без сетевого обращения.
+
+    Для логона в CM нужен именно refresh_token (его кладут в поле
+    ClientLogon.access_token); деривация access_token не нужна и для client-scope
+    даёт пустой токен.
+    """
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    refresh_token = data.get("refresh_token", "")
+    return refresh_token or None
+
+
+def _jwt_from_refresh_token(path: Path = _JWT_REFRESH_FILE) -> dict | None:
     """Пробует получить новый access_token из кэшированного refresh_token.
 
-    Не требует 2FA. Возвращает None если кэш пуст или токен истёк.
+    Не требует 2FA. Возвращает None если кэш пуст или токен истёк. path
+    различает scope токена (WebBrowser-куки vs SteamClient-логон в CM).
     """
-    if not _JWT_REFRESH_FILE.exists():
+    if not path.exists():
         return None
 
     try:
-        data = json.loads(_JWT_REFRESH_FILE.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
         steamid = data.get("steamid", "")
         refresh_token = data.get("refresh_token", "")
         if not steamid or not refresh_token:
@@ -64,15 +104,23 @@ def _jwt_from_refresh_token() -> dict | None:
             client.disconnect()
 
             if resp is None or resp.header.eresult != EResult.OK:
-                log.debug(
-                    "IAuthService: refresh_token истёк или недействителен"
-                )
-                _JWT_REFRESH_FILE.unlink(missing_ok=True)
+                eresult = None if resp is None else resp.header.eresult
+                # Удаляем кэш ТОЛЬКО при явном протухании/отказе; транзиентные
+                # (нет ответа, таймаут) сохраняют валидный токен.
+                if _refresh_token_dead(eresult):
+                    log.debug("IAuthService: refresh_token недействителен")
+                    path.unlink(missing_ok=True)
+                else:
+                    log.debug(
+                        "IAuthService: refresh_token временно недоступен (%s) "
+                        "— кэш сохранён",
+                        getattr(eresult, "name", eresult),
+                    )
                 return None
 
             access_token = resp.body.access_token
             if not access_token:
-                _JWT_REFRESH_FILE.unlink(missing_ok=True)
+                # OK, но деривация не вернула токен — refresh валиден, кэш НЕ трём.
                 return None
 
             log.info("IAuthService: JWT обновлён через refresh_token (без 2FA)")
@@ -90,40 +138,71 @@ def _jwt_from_refresh_token() -> dict | None:
 
 
 def _cm_login_with_jwt(
-    client: Any, username: str, access_token: str, connect_timeout: int
+    client: Any, username: str, refresh_token: str, connect_timeout: int
 ) -> Any:
-    """Логинится в Steam CM используя JWT access_token (без пароля и 2FA)."""
-    import gevent
-    from gevent.event import Event as GEvent
-    from steam.core.msg import MsgProto
-    from steam.enums import EResult
-    from steam.enums.emsg import EMsg
+    """Логинится в Steam CM используя JWT refresh_token (без пароля и 2FA).
 
-    connected = False
+    ВАЖНО про токен: поле протокола ClientLogon.access_token названо Valve
+    обманчиво — в него кладётся именно REFRESH_TOKEN (SteamClient-scope, aud
+    содержит 'client'), а не короткоживущий access_token. Короткий access_token
+    (только web/derive) CM отвергает с AccessDenied. Подтверждено SteamKit2,
+    node-steam-user, steam.py.
+
+    Повторяет последовательность рабочего client.login(): _pre_login() не только
+    подключается, но и ДОЖИДАЕТСЯ EVENT_CHANNEL_SECURED (шифрование канала) — без
+    этого CM молча игнорирует ClientLogon. Заголовок ClientLogon обязан нести
+    steamid для маршрутизации.
+    """
+    import gevent
+    from steam.core.msg import MsgProto
+    from steam.enums import EOSType, EResult
+    from steam.enums.emsg import EMsg
+    from steam.steamid import SteamID
+
+    # После неудачного legacy-входа канал мог зависнуть — чистое соединение.
+    if client.connected:
+        client.disconnect()
+        client.sleep(1)
+
+    # _pre_login: подключение + ожидание шифрования канала (channel_secured).
+    eresult = None
     with gevent.Timeout(connect_timeout, False):
-        connected = client.connect()
-    if not connected:
+        eresult = client._pre_login()
+    if eresult != EResult.OK:
+        log.warning(
+            "Steam CM (JWT): подготовка соединения не удалась: %s",
+            getattr(eresult, "name", eresult),
+        )
         return None
 
-    auth_event = GEvent()
-    result_holder = [None]
+    client.username = username
 
-    def on_logon(msg):
-        result_holder[0] = EResult(msg.body.eresult)
-        auth_event.set()
-
-    client.once(EMsg.ClientLogOnResponse, on_logon)
-
+    # ClientLogon как в client.login(), но с токеном вместо пароля.
     msg = MsgProto(EMsg.ClientLogon)
-    msg.body.account_name = username
-    msg.body.access_token = access_token
+    msg.header.steamid = SteamID(type="Individual", universe="Public")
     msg.body.protocol_version = 65580
+    msg.body.client_package_version = 1561159470
+    msg.body.client_os_type = EOSType.Windows10
+    msg.body.client_language = "english"
+    msg.body.should_remember_password = True
+    msg.body.supports_rate_limit_response = True
+    msg.body.account_name = username
+    # Поле named access_token, но значение — refresh_token (см. docstring).
+    msg.body.access_token = refresh_token
     client.send(msg)
 
-    auth_event.wait(timeout=30)
-    result = result_holder[0]
+    resp = client.wait_msg(EMsg.ClientLogOnResponse, timeout=30)
+    if resp is None:
+        log.warning(
+            "Steam CM (JWT): нет ответа ClientLogOnResponse за 30с "
+            "(токен не принят CM или соединение не готово)"
+        )
+        client.disconnect()
+        return None
 
+    result = EResult(resp.body.eresult)
     if result != EResult.OK:
+        log.warning("Steam CM (JWT): логон отклонён: %s", result.name)
         client.disconnect()
 
     return result

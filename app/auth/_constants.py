@@ -13,5 +13,8 @@ _USERNAME_FILE = _CRED_DIR / "username.txt"
 _LEGACY_SESSION_FILE = _CRED_DIR / "steam_helper_session.json"
 _KEYRING_SERVICE = "sam-automation"
 _KEYRING_2FA_SERVICE = "sam-automation-2fa"
-# Кэш JWT refresh-токена для повторного получения access_token без 2FA
+# Кэш JWT refresh-токена для повторного получения access_token без 2FA.
+# WebBrowser-scope (веб-куки playwright) и SteamClient-scope (логон в CM) — это
+# токены РАЗНОГО scope, их нельзя смешивать → отдельные файлы.
 _JWT_REFRESH_FILE = _CRED_DIR / "jwt_refresh.json"
+_JWT_REFRESH_CLIENT_FILE = _CRED_DIR / "jwt_refresh_client.json"
