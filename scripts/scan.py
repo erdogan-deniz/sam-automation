@@ -1,4 +1,4 @@
-"""Сканирование библиотеки Steam → запись ids.txt.
+"""Сканирование библиотеки Steam → запись all.txt.
 
 Собирает ID из трёх источников:
   1. localconfig.vdf — локальная история этой машины (основной источник)
@@ -6,7 +6,7 @@
   3. Steam CM        — все лицензии аккаунта (требует логин, самый полный)
 
 Использование:
-    python scripts/achievements/scan.py  # читает config.yaml, пишет ids.txt
+    python scripts/scan.py  # читает config.yaml, пишет all.txt
 """
 
 from __future__ import annotations
