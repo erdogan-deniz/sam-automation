@@ -12,31 +12,30 @@
 from __future__ import annotations
 
 import queue
-import signal
 import subprocess
 import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
 
-# Мягкий сигнал остановки: на Windows CTRL_BREAK_EVENT, иначе SIGINT.
-# Скрипт ловит его как KeyboardInterrupt и сам закрывает своих детей
-# (SAM.Game.exe) через finally/atexit — жёсткий terminate() это ломает.
-_GRACEFUL_SIGNAL = getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT)
-# Флаг нужен, чтобы CTRL_BREAK доставлялся ТОЛЬКО дочернему процессу,
-# а не задел саму GUI. На не-Windows платформах = 0 (no-op).
-_NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-_STOP_GRACE_SECONDS = 8.0  # сколько ждём самоочистки перед жёстким добиванием
+from gui import win_job
 
 
 class ScriptRunner:
-    """Запускает Python-скрипт как subprocess, стримит вывод через очередь."""
+    """Запускает Python-скрипт как subprocess, стримит вывод через очередь.
+
+    Дочерний процесс помещается в Win32 Job Object (KILL_ON_JOB_CLOSE), так
+    что stop() убивает ВСЁ дерево — сам скрипт И его внуков SAM.Game.exe.
+    Это надёжнее сигналов: не зависит от обработчиков и прерываемости
+    time.sleep, поэтому Stop/Esc/закрытие окна не оставляют сирот.
+    """
 
     def __init__(self) -> None:
         self.on_output: Callable[[str], None] | None = None
         self.on_finish: Callable[[int], None] | None = None
 
         self._proc: subprocess.Popen | None = None
+        self._job: int | None = None
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._running = False
 
@@ -54,6 +53,10 @@ class ScriptRunner:
         self._running = True
         cmd = [sys.executable, str(script_path), *(args or [])]
 
+        # Создаём job ДО запуска и помещаем в него процесс сразу после старта.
+        # Скрипт делает многосекундный setup до первого SAM.Game.exe, так что
+        # к моменту появления внуков он уже в job → внуки наследуют членство.
+        self._job = win_job.create_kill_on_close_job()
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -61,43 +64,26 @@ class ScriptRunner:
             text=True,
             encoding="utf-8",
             errors="replace",
-            creationflags=_NEW_GROUP,
         )
+        win_job.assign_process(self._job, self._proc.pid)
 
         thread = threading.Thread(target=self._read_output, daemon=True)
         thread.start()
 
     def stop(self) -> None:
-        """Мягко останавливает subprocess, добивая только если завис.
+        """Убивает всё дерево процессов (скрипт + внуки SAM.Game.exe).
 
-        Шлёт CTRL_BREAK/SIGINT — скрипт ловит его как KeyboardInterrupt и
-        сам закрывает своих детей (SAM.Game.exe) + освобождает run-lock.
-        Если за _STOP_GRACE_SECONDS не завершился — жёсткий terminate().
+        Через Job Object — надёжно, без зависимости от сигналов/сна. Фолбэк
+        на terminate() самого процесса, если job недоступен (не-Windows).
         """
         if not (self._proc and self._running):
             return
-        proc = self._proc
-        try:
-            proc.send_signal(_GRACEFUL_SIGNAL)
-        except (OSError, ValueError):
-            # Не удалось послать сигнал (нет группы/процесс мёртв) — жёстко.
+        if self._job is not None:
+            win_job.terminate_job(self._job)
+            self._job = None
+        else:
             try:
-                proc.terminate()
-            except OSError:
-                pass
-            return
-        threading.Thread(
-            target=self._terminate_after_grace, args=(proc,), daemon=True
-        ).start()
-
-    @staticmethod
-    def _terminate_after_grace(proc: subprocess.Popen) -> None:
-        """Добивает процесс, если он не завершился сам за grace-период."""
-        try:
-            proc.wait(timeout=_STOP_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            try:
-                proc.terminate()
+                self._proc.terminate()
             except OSError:
                 pass
 
@@ -114,6 +100,10 @@ class ScriptRunner:
                     returncode = self._proc.returncode if self._proc else -1
                     self._running = False
                     self._proc = None
+                    # Закрываем job-хендл завершившегося прогона (процессов
+                    # в нём уже нет — просто освобождаем ресурс).
+                    win_job.terminate_job(self._job)
+                    self._job = None
                     if self.on_finish:
                         self.on_finish(returncode)
                     break
