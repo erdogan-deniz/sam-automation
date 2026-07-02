@@ -1,8 +1,10 @@
 """SAM Card Farming — автоматический фарм Steam trading card drops.
 
-Открывает игры через SAM.Game.exe (создаёт фейковую игровую сессию),
-периодически проверяет через Steam Community, остались ли card drops.
-Закрывает игру как только drops заканчиваются, открывает следующую.
+Открывает игры через SAM.Game.exe (создаёт фейковую игровую сессию).
+Fast-mode цикл: идлит пачку игр, затем закрывает ВСЕ разом (аккаунт
+выходит из in-game — Steam сбрасывает накопленные карты), выжидает
+паузу, перечитывает остатки через Steam Community и запускает следующую
+пачку. Игра с 0 остатком помечается done.
 
 Использование:
     python scripts/cards/farm.py
@@ -48,6 +50,9 @@ _FLUSH_PAUSE_SECONDS = (
     # даём Steam выдать накопленные карты (zero-transition flush)
 )
 _PAUSE_BETWEEN_GAMES = 3  # сек, пауза перед открытием следующей игры из очереди
+_MAX_NO_PROGRESS = (
+    10  # циклов без убывания остатка → считаем игру застрявшей и пропускаем
+)
 
 
 def _kill_game(appid: int, proc: subprocess.Popen) -> None:
@@ -93,6 +98,8 @@ def _farm_loop(
     queue: deque[tuple[int, int]] = deque(games_with_drops)
     active: dict[int, subprocess.Popen] = {}
     check_failures: dict[int, int] = {}
+    last_remaining: dict[int, int] = {}  # для детекта застрявших игр
+    no_progress: dict[int, int] = {}  # циклов подряд без убывания остатка
     game_names = load_game_names()
 
     log.info(SEPARATOR)
@@ -106,9 +113,9 @@ def _farm_loop(
     )
     log.info(SEPARATOR)
 
-    _open_next(queue, active, cfg, game_names)
-
     try:
+        _open_next(queue, active, cfg, game_names)
+
         while active:
             log.info(
                 "До следующей проверки осталось %d минут ...",
@@ -138,8 +145,29 @@ def _farm_loop(
                 if remaining == 0:
                     log.info("APP ID: %d — Card drops закончились", appid)
                     check_failures.pop(appid, None)
+                    no_progress.pop(appid, None)
+                    last_remaining.pop(appid, None)
                     mark_card_done(appid)
                 elif remaining > 0:
+                    prev = last_remaining.get(appid)
+                    if prev is not None and remaining >= prev:
+                        stalls = no_progress.get(appid, 0) + 1
+                        if stalls >= _MAX_NO_PROGRESS:
+                            log.warning(
+                                "APP ID: %d — остаток не убывает %d циклов, "
+                                "пропускаю (возможно, дропы не идут)",
+                                appid,
+                                stalls,
+                            )
+                            no_progress.pop(appid, None)
+                            last_remaining.pop(appid, None)
+                            check_failures.pop(appid, None)
+                            mark_card_done(appid)
+                            continue
+                        no_progress[appid] = stalls
+                    else:
+                        no_progress.pop(appid, None)
+                    last_remaining[appid] = remaining
                     check_failures[appid] = 0
                     queue.append((appid, remaining))
                 else:
@@ -147,6 +175,8 @@ def _farm_loop(
                     check_failures[appid] = failures
                     if failures >= _MAX_CHECK_FAILURES:
                         check_failures.pop(appid, None)
+                        no_progress.pop(appid, None)
+                        last_remaining.pop(appid, None)
                         mark_card_done(appid)
                     else:
                         queue.append((appid, remaining))
@@ -157,8 +187,13 @@ def _farm_loop(
     except KeyboardInterrupt:
         log.info("Прервано (Ctrl+C). Закрываю все активные игры...")
     finally:
-        for appid, proc in active.items():
-            _kill_game(appid, proc)
+        for appid, proc in list(active.items()):
+            try:
+                _kill_game(appid, proc)
+            except Exception:
+                log.warning(
+                    "Не удалось закрыть APP ID %d при завершении", appid
+                )
 
     log.info(SEPARATOR)
     log.info("Card farming завершён")

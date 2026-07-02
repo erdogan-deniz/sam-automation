@@ -104,3 +104,69 @@ def test_aborts_after_consecutive_page_failures(
     assert result == [(111, 2)]
     # не должен дойти до 5-й страницы (оборвался на 3 подряд провалах)
     assert 5 not in calls
+
+
+def test_prev_html_size_reset_after_skip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Пропуск страницы не должен ломать size-эвристику конца пагинации.
+
+    Стр.1 и стр.3 имеют одинаковую байт-длину (одинаковые шаблоны).
+    Стр.2 стойко падает и пропускается. Если prev_html_size не сброшен,
+    стр.3 ложно примется за «повтор последней» → её игра потеряется.
+    """
+    # 111 и 333 — по 3 цифры, 2 и 4 — по 1 цифре: длины строк совпадают.
+    pages = {
+        1: _page_with_game(111, 2),
+        3: _page_with_game(333, 4),
+        4: _PAGE_END,
+    }
+    assert len(pages[1]) == len(pages[3])  # предпосылка теста
+    _install(monkeypatch, pages, fail_counts={2: 99})
+
+    result = card_checker.fetch_games_with_card_drops({}, "76561190000000000")
+
+    assert (111, 2) in result
+    assert (333, 4) in result
+
+
+def test_absolute_page_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Без content-стопа пагинация обрывается по абсолютному капу страниц."""
+    # Каждая страница уникальна (свой appid и длина) → ни size-повтор,
+    # ни badge_row==0 не сработают; остановить должен только кап.
+    pages = {
+        p: _page_with_game(1000 + p, 1, filler="z" * p) for p in range(1, 100)
+    }
+    calls = _install(monkeypatch, pages, fail_counts={})
+
+    result = card_checker.fetch_games_with_card_drops({}, "76561190000000000")
+
+    assert len(result) == card_checker._MAX_BADGE_PAGES
+    assert (card_checker._MAX_BADGE_PAGES + 1) not in calls
+
+
+def _gamecards_html(drops: int) -> str:
+    return (
+        f'<span class="progress_info_bold">{drops} card drops remaining</span>'
+    )
+
+
+def test_check_cards_remaining_retries_transient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Одиночный SSL-блип в перечитке не даёт -1 — читается с ретраем."""
+    calls = {"n": 0}
+
+    def fake_fetch(opener: object, url: str) -> str:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("SSL boom")
+        return _gamecards_html(2)
+
+    monkeypatch.setattr(card_checker, "_make_opener", lambda cookies: object())
+    monkeypatch.setattr(card_checker, "_fetch_page", fake_fetch)
+    monkeypatch.setattr(card_checker.time, "sleep", lambda *_: None)
+
+    result = card_checker.check_cards_remaining({}, "76561190000000000", 774241)
+
+    assert result == 2  # не -1: транзиентный отказ пережит ретраем
