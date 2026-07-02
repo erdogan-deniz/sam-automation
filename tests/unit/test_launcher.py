@@ -240,3 +240,21 @@ def test_idle_split_zero_idle_still_checks_each_process(monkeypatch):
 
     assert survivors == []
     assert failed == [20]
+
+
+def test_idle_split_zero_poll_interval_terminates(monkeypatch):
+    # poll_interval<=0 не должен зацикливаться: кламп до 0.1 двигает часы к deadline.
+    clock, _ = _patch_clock_and_kill(monkeypatch)
+    monkeypatch.setattr(launcher, "_has_error_window", lambda pid: False)
+    active = {10: _FakeProc(1, None)}  # процесс жив весь idle
+
+    survivors, failed = idle_and_split_survivors(
+        active, idle_duration=1, poll_interval=0
+    )
+
+    assert survivors == [10]
+    assert failed == []
+    # кламп сработал: ни одного sleep(0) (иначе часы бы не двигались → вечный
+    # цикл) и цикл сошёлся за конечное число шагов
+    assert clock.sleeps and all(s > 0 for s in clock.sleeps)
+    assert len(clock.sleeps) < 100
