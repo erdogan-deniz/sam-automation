@@ -43,8 +43,9 @@ log = logging.getLogger("sam_automation")
 _MAX_CHECK_FAILURES = (
     5  # после N неудачных проверок подряд считаем дропы закончившимися
 )
-_PAUSE_AFTER_KILL = (
-    10  # сек, даём Steam обновить данные после закрытия SAM.Game.exe
+_FLUSH_PAUSE_SECONDS = (
+    20  # сек: после закрытия ВСЕХ игр аккаунт выходит из in-game —
+    # даём Steam выдать накопленные карты (zero-transition flush)
 )
 _PAUSE_BETWEEN_GAMES = 3  # сек, пауза перед открытием следующей игры из очереди
 
@@ -81,7 +82,14 @@ def _farm_loop(
     cookies: dict[str, str],
     steam_id: str,
 ) -> None:
-    """Основной цикл фарма: открывает игры, периодически проверяет дропы."""
+    """Fast-mode цикл фарма.
+
+    Карта выдаётся сервером Steam в момент, когда аккаунт выходит из
+    in-game состояния (закрыты ВСЕ игры). Поэтому цикл идлит пачку, затем
+    убивает ВСЕ игры разом (коллапс в ноль), даёт паузу на сброс и только
+    потом перечитывает остатки. Kill+relaunch по одной не работает: пока
+    крутятся остальные, аккаунт всегда в игре и сброс не срабатывает.
+    """
     queue: deque[tuple[int, int]] = deque(games_with_drops)
     active: dict[int, subprocess.Popen] = {}
     check_failures: dict[int, int] = {}
@@ -109,46 +117,42 @@ def _farm_loop(
             log.info(SEPARATOR)
             time.sleep(cfg.card_check_interval * 60)
 
-            for appid in list(active):
+            # Коллапс в ноль: убиваем ВСЕ разом → аккаунт выходит из игры.
+            log.info(
+                "Закрываю все игры для сброса накопленных карт (%d шт.) ...",
+                len(active),
+            )
+            batch = list(active.items())
+            for appid, proc in batch:
+                _kill_game(appid, proc)
+            active.clear()
+
+            # Пауза на сброс: даём Steam выдать накопленные карты.
+            time.sleep(_FLUSH_PAUSE_SECONDS)
+
+            # Перечитываем остатки по каждой закрытой игре.
+            for appid, _proc in batch:
                 remaining = check_cards_remaining(cookies, steam_id, appid)
                 time.sleep(1.0)  # пауза между запросами
 
                 if remaining == 0:
                     log.info("APP ID: %d — Card drops закончились", appid)
-                    _kill_game(appid, active.pop(appid))
                     check_failures.pop(appid, None)
                     mark_card_done(appid)
-                    _open_next(queue, active, cfg, game_names)
                 elif remaining > 0:
-                    _kill_game(appid, active[appid])
-                    time.sleep(_PAUSE_AFTER_KILL)
-                    proc = launch_game(cfg.sam_game_exe_path, appid)
-                    active[appid] = proc
-                    name = game_names.get(appid, "")
-                    if name:
-                        log.info("APP NAME: %s", name)
-                    log.info("APP PID: %d", proc.pid)
-                    log.info("APP CARDS: %d", remaining)
-                    log.info(SEPARATOR)
                     check_failures[appid] = 0
+                    queue.append((appid, remaining))
                 else:
                     failures = check_failures.get(appid, 0) + 1
                     check_failures[appid] = failures
                     if failures >= _MAX_CHECK_FAILURES:
-                        _kill_game(appid, active.pop(appid))
                         check_failures.pop(appid, None)
                         mark_card_done(appid)
-                        _open_next(queue, active, cfg, game_names)
                     else:
-                        _kill_game(appid, active[appid])
-                        time.sleep(_PAUSE_AFTER_KILL)
-                        proc = launch_game(cfg.sam_game_exe_path, appid)
-                        active[appid] = proc
-                        name = game_names.get(appid, "")
-                        if name:
-                            log.info("APP NAME: %s", name)
-                        log.info("APP PID: %d", proc.pid)
-                        log.info(SEPARATOR)
+                        queue.append((appid, remaining))
+
+            # Перезапуск следующей пачки из очереди (включая выживших).
+            _open_next(queue, active, cfg, game_names)
 
     except KeyboardInterrupt:
         log.info("Прервано (Ctrl+C). Закрываю все активные игры...")
