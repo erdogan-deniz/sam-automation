@@ -21,6 +21,9 @@ _REQUEST_DELAY = 1.0  # секунд между запросами (rate limit)
 _PAGE_RETRIES = 3  # попыток на страницу при транзиентной сетевой ошибке
 _PAGE_RETRY_DELAY = 2.0  # секунд между попытками одной страницы
 _MAX_CONSEC_PAGE_FAILURES = 3  # подряд нечитаемых страниц → обрыв пагинации
+_MAX_BADGE_PAGES = (
+    40  # абсолютный предел страниц (защита от бесконечного цикла)
+)
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +110,12 @@ def fetch_games_with_card_drops(
     consec_failures = 0  # подряд нечитаемых страниц
 
     while True:
+        if page > _MAX_BADGE_PAGES:
+            log.warning(
+                "Достигнут предел в %d страниц — обрываю пагинацию.",
+                _MAX_BADGE_PAGES,
+            )
+            break
         url = (
             f"{_COMMUNITY_BASE}/profiles/{steam_id}/badges/?l=english&p={page}"
         )
@@ -129,6 +138,9 @@ def fetch_games_with_card_drops(
                     consec_failures,
                 )
                 break
+            # Пропущенная страница обнуляет size-эвристику: иначе следующая
+            # хорошая страница ложно сравнится с несоседней и оборвёт скрейп.
+            prev_html_size = -1
             page += 1
             continue
         consec_failures = 0
@@ -213,7 +225,7 @@ def check_cards_remaining(
     url = f"{_COMMUNITY_BASE}/profiles/{steam_id}/gamecards/{appid}/?l=english"
     log.debug("[%d] Проверяю card drops: %s", appid, url)
     try:
-        html = _fetch_page(opener, url)
+        html = _fetch_page_with_retry(opener, url)
     except RuntimeError as e:
         log.warning("[%d] Ошибка при проверке card drops: %s", appid, e)
         return -1

@@ -74,19 +74,22 @@ CLI-флаги (argparse в `_build_parser`, farm.py:165-176) — существ
 - ВНИМАНИЕ: `launch_stagger: float = 3.0` — это ключ playtime; farm.py его НЕ читает. Пауза между стартами в card-фарме — хардкод-константа `_PAUSE_BETWEEN_GAMES=3` в farm.py.
 
 # ЗНАЧИМЫЕ ПОВЕДЕНИЯ / РИСКИ
-- Модель работы = параллельный батч с reopen-on-interval. `_open_next` запускает игры пока очередь непуста И `len(active) < cfg.max_concurrent_games` (farm.py:64). Stagger: `time.sleep(_PAUSE_BETWEEN_GAMES=3s)` перед каждым `launch_game` (farm.py:49,66-67). Idle: главный цикл спит `cfg.card_check_interval*60` сек (farm.py:110). Reopen: при remaining>0 игра убивается и перезапускается после `_PAUSE_AFTER_KILL=10s` (farm.py:46-48,122-125).
-- Пер-проверка в `_farm_loop` (farm.py:112-151), для каждого активного appid, `time.sleep(1.0)` между запросами по играм (farm.py:114):
-  - `remaining==0` → лог, kill + active.pop, check_failures.pop, `mark_card_done(appid)`, `_open_next` (116-121).
-  - `remaining>0` → kill, sleep 10s, relaunch, лог, `check_failures[appid]=0` (122-133).
-  - `remaining<0` (=-1) → инкремент `check_failures[appid]`; если `>= _MAX_CHECK_FAILURES`(5) → считать done: kill+pop, `mark_card_done`, `_open_next`; иначе kill, sleep 10s, relaunch (134-151).
+> ОБНОВЛЕНО 2026-07-02 (Fast-mode + hardening): цикл больше НЕ делает per-game reopen. Механика дропа — коллапс аккаунта в «ноль игр» сбрасывает накопленные карты (zero-transition flush). Номера строк ниже могли сдвинуться — сверяйся с кодом.
+
+- Модель работы = Fast-mode коллапс в ноль. `_open_next` запускает игры пока очередь непуста И `len(active) < cfg.max_concurrent_games`. Stagger: `time.sleep(_PAUSE_BETWEEN_GAMES=3s)` перед каждым `launch_game`. Idle: цикл спит `cfg.card_check_interval*60` сек.
+- `_farm_loop` за цикл: (1) идлит пачку `cfg.card_check_interval` мин; (2) убивает ВСЕ активные разом (`batch = list(active.items())` → `_kill_game` → `active.clear()`); (3) спит `_FLUSH_PAUSE_SECONDS=20` (сброс карт); (4) перечитывает остатки по каждой закрытой игре, `time.sleep(1.0)` между запросами; (5) `_open_next` запускает следующую пачку (включая выживших).
+  - `remaining==0` → лог, `check_failures/no_progress/last_remaining.pop`, `mark_card_done(appid)` (НЕ перезапускается).
+  - `remaining>0` → requeue `queue.append((appid, remaining))` + `check_failures[appid]=0`. Stall-guard: если остаток не убывает `_MAX_NO_PROGRESS=10` циклов подряд → `mark_card_done` (пропуск застрявшей игры, гарантия завершения).
+  - `remaining<0` (=-1, «неизвестно») → инкремент `check_failures[appid]`; `>= _MAX_CHECK_FAILURES`(5) → `mark_card_done`; иначе requeue.
 - Резюм-фильтра НЕТ: `cards/done.txt` пишется (`mark_card_done`), но НИКОГДА не читается для пропуска игр. Дедуп при рестарте — Steam просто перестаёт отдавать завершённые игры в badges-скрейпе. Имена игр из кэша через `load_game_names()`.
-- Источник истины «сколько карт» — живой HTML (badges + gamecards), НЕ inventory/badge API и НЕ локальный кэш. Любое изменение HTML-структуры Steam молча ломает парсинг (card_checker.py:116-123 только warn).
-- `check_cards_remaining` возвращает `-1` и на сетевую ошибку, И на нераспарсенную страницу — трактовать `-1` как «неизвестно», НЕ «0». `-1` считается «done» только после 5 подряд провалов.
-- KeyboardInterrupt ловится ТОЛЬКО внутри `_farm_loop` (try/except → лог, farm.py:153-154); `finally` убивает все оставшиеся active через `_kill_game` (155-157). Ctrl+C во время setup-фазы специально НЕ обрабатывается; очистка опирается на `finally` + atexit-релиз лока.
+- Источник истины «сколько карт» — живой HTML (badges + gamecards), НЕ inventory/badge API и НЕ локальный кэш. Любое изменение HTML-структуры Steam молча ломает парсинг (только warn).
+- `check_cards_remaining` читает gamecards ЧЕРЕЗ `_fetch_page_with_retry` (3 попытки); возвращает `-1` и на устойчивую сетевую ошибку, И на нераспарсенную страницу — трактовать `-1` как «неизвестно», НЕ «0».
+- Пагинация badges (`fetch_games_with_card_drops`) устойчива: ретрай каждой страницы (`_fetch_page_with_retry`), пропуск стойкого отказа (сброс `prev_html_size=-1`), обрыв после `_MAX_CONSEC_PAGE_FAILURES=3` подряд ИЛИ `_MAX_BADGE_PAGES=40`. Стоп по content: `badge_row==0`/приватный/равная байт-длина соседних.
+- KeyboardInterrupt ловится ТОЛЬКО внутри `_farm_loop` (включая начальный `_open_next` — он ВНУТРИ try); `finally` убивает оставшиеся active через `_kill_game`, каждый в своём try/except (сбой одного не осиротит остальных). Ctrl+C во время setup-фазы опирается на atexit-релиз лока.
 - Run-lock один общий (`data/.sam_run.lock`): farm/boost/cards нельзя запускать параллельно.
-- Константы: `_MAX_CHECK_FAILURES=5`, `_PAUSE_AFTER_KILL=10s`, `_PAUSE_BETWEEN_GAMES=3s`. Тост «Card farming завершён» в конце `_farm_loop`.
+- Константы: `_MAX_CHECK_FAILURES=5`, `_FLUSH_PAUSE_SECONDS=20`, `_PAUSE_BETWEEN_GAMES=3s`, `_MAX_NO_PROGRESS=10`. Тост «Card farming завершён» в конце `_farm_loop`.
 - Приватный профиль даёт пустой результат с одним warning-логом, НЕ error. Требуется 17-значный steamid64 + валидные web-cookies.
-- Пагинация badges полагается на хрупкую эвристику: стоп при равной байт-длине html соседних страниц.
+- НЕ проверено e2e: сам факт, что коллапс в ноль сбрасывает дроп за 20с — гипотеза (документирован Idle Master Fast mode + наблюдение юзера), не подтверждена реальным прогоном. `_FLUSH_PAUSE_SECONDS=20` — неизмеренная константа; если мало — дроп увидится следующим циклом (не потеря).
 
 # МЕТОД
 1. Сначала ЗАДАЧА/СИМПТОМ выше — заполни и воспроизведи. Корень ищи по доказательствам (systematic-debugging) ДО любого фикса.
