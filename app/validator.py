@@ -58,14 +58,15 @@ def _check_numeric_bounds(cfg: Config) -> list[str]:
     (шторм запусков SAM.Game.exe).
     """
     errors: list[str] = []
-    mcg = cfg.max_concurrent_games
-    if mcg < 1:
-        errors.append(f"max_concurrent_games must be >= 1 (got {mcg})")
-    elif mcg > _MAX_CONCURRENT_LIMIT:
-        errors.append(
-            f"max_concurrent_games too high: {mcg} "
-            f"(max {_MAX_CONCURRENT_LIMIT})"
-        )
+    for field in ("max_concurrent_games", "playtime_concurrent_games"):
+        val = getattr(cfg, field)
+        if val < 1:
+            # 0 → ZeroDivisionError/range-error в boost; <0 → тихий no-op.
+            errors.append(f"{field} must be >= 1 (got {val})")
+        elif val > _MAX_CONCURRENT_LIMIT:
+            errors.append(
+                f"{field} too high: {val} (max {_MAX_CONCURRENT_LIMIT})"
+            )
     if cfg.card_check_interval < 1:
         errors.append(
             f"card_check_interval must be >= 1 minute "
