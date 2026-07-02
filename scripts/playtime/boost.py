@@ -42,6 +42,7 @@ from app.sam import (
     check_steam_running,
     ensure_sam,
     idle_and_split_survivors,
+    kill_all_sam_games,
     kill_process,
     launch_games_staggered,
 )
@@ -203,6 +204,9 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
         log.info("Прервано (Ctrl+C). Закрываю активные игры...")
         for appid, proc in active.items():
             kill_process(proc)
+        # Страховка: Ctrl+C во время запуска батча мог оставить уже стартовавшие
+        # SAM.Game.exe вне active — добить все, чтобы не осиротить.
+        kill_all_sam_games()
         # Не помечаем как done — батч мог не набрать достаточно времени
 
     log.info(SEPARATOR)
