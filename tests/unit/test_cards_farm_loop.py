@@ -293,3 +293,28 @@ def test_collapse_kill_failure_does_not_abort_cycle() -> None:
 
     done = {aid for (k, aid) in events if k == "done"}
     assert done == {111, 222}  # обе перечитаны и закрыты, несмотря на сбой kill
+
+
+def test_interrupted_run_uses_interrupted_toast() -> None:
+    """Ctrl+C-прогон НЕ рапортует success — тост «прерван»."""
+    events = _run(
+        {111: [0], 222: [0]},
+        [(111, 2), (222, 3)],
+        interrupt_on_idle=True,
+    )
+
+    assert "прерван" in _last_toast(events).lower()
+    assert _last_toast(events) != "Card farming завершён"
+
+
+def test_failed_launch_flagged_in_toast() -> None:
+    """Игра, которую не удалось запустить, отражается в тосте с оговоркой."""
+    events = _run(
+        {111: [0], 333: [0]},
+        [(111, 1), (222, 1), (333, 1)],
+        max_concurrent=1,
+        launch_raises_for={222},
+    )
+
+    assert "оговорками" in _last_toast(events)
+    assert _last_toast(events) != "Card farming завершён"
