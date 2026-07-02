@@ -44,11 +44,15 @@ def _run(
     check_script: dict[int, list[int]],
     games: list[tuple[int, int]],
     max_concurrent: int = 5,
+    interrupt_on_idle: bool = False,
+    kill_raises_for: set[int] | None = None,
 ) -> list[tuple[str, object]]:
     """Гоняет _farm_loop на фейках, возвращает список событий по порядку."""
     farm = _load()
     events: list[tuple[str, object]] = []
     scripts = {aid: deque(vals) for aid, vals in check_script.items()}
+    kill_raises = kill_raises_for or set()
+    idle_secs = 10 * 60  # cfg.card_check_interval * 60
 
     def fake_launch(exe: str, appid: int) -> _FakeProc:
         events.append(("launch", appid))
@@ -56,6 +60,8 @@ def _run(
 
     def fake_kill(proc: _FakeProc) -> None:
         events.append(("kill", proc.appid))
+        if proc.appid in kill_raises:
+            raise RuntimeError(f"kill boom {proc.appid}")
 
     def fake_check(cookies: object, sid: str, appid: int) -> int:
         events.append(("check", appid))
@@ -64,15 +70,18 @@ def _run(
     def fake_done(appid: int) -> None:
         events.append(("done", appid))
 
+    def fake_sleep(s: float) -> None:
+        events.append(("sleep", s))
+        if interrupt_on_idle and s == idle_secs:
+            raise KeyboardInterrupt
+
     farm.launch_game = fake_launch  # type: ignore[assignment]
     farm.kill_process = fake_kill  # type: ignore[assignment]
     farm.check_cards_remaining = fake_check  # type: ignore[assignment]
     farm.mark_card_done = fake_done  # type: ignore[assignment]
     farm.load_game_names = lambda: {}  # type: ignore[assignment]
     farm.toast = lambda *a, **k: None  # type: ignore[assignment]
-    farm.time = SimpleNamespace(  # type: ignore[assignment]
-        sleep=lambda s: events.append(("sleep", s))
-    )
+    farm.time = SimpleNamespace(sleep=fake_sleep)  # type: ignore[assignment]
 
     cfg = SimpleNamespace(
         max_concurrent_games=max_concurrent,
@@ -126,3 +135,81 @@ def test_survivors_requeued_and_done_marked() -> None:
     assert 222 in done
     assert launches.count(111) == 1  # done в цикле 1 — не перезапускалась
     assert launches.count(222) == 2  # выжила в цикле 1 — перезапущена
+
+
+def test_minus_one_requeued_until_max_then_done() -> None:
+    """remaining=-1 накапливает failures; на _MAX_CHECK_FAILURES → done."""
+    farm = _load()
+    n = farm._MAX_CHECK_FAILURES
+    events = _run({111: [-1] * n}, [(111, 2)], max_concurrent=1)
+
+    done = [aid for (k, aid) in events if k == "done"]
+    launches = [aid for (k, aid) in events if k == "launch"]
+    checks = [aid for (k, aid) in events if k == "check"]
+
+    assert done == [111]  # помечена done ровно один раз
+    assert len(checks) == n  # ушла в done на n-й проверке
+    # перезапущена после каждой из первых n-1 неудач + начальный запуск
+    assert launches.count(111) == n
+
+
+def test_minus_one_failures_reset_by_success() -> None:
+    """Успешная проверка сбрасывает счётчик — нет преждевременного done."""
+    farm = _load()
+    n = farm._MAX_CHECK_FAILURES
+    # n-1 отказов, затем 0 → должна закрыться как done, но НЕ по лимиту неудач
+    script = [-1] * (n - 1) + [0]
+    events = _run({111: script}, [(111, 2)], max_concurrent=1)
+
+    done = [aid for (k, aid) in events if k == "done"]
+    assert done == [111]  # закрылась по remaining==0, счётчик не переполнился
+
+
+def test_stall_guard_terminates_stuck_game() -> None:
+    """Игра с неубывающим остатком помечается done и цикл завершается."""
+    farm = _load()
+    stuck = [5] * (farm._MAX_NO_PROGRESS + 5)
+    events = _run({111: stuck}, [(111, 5)], max_concurrent=1)
+
+    done = [aid for (k, aid) in events if k == "done"]
+    assert 111 in done  # stall-guard прервал бесконечный перезапуск
+
+
+def test_batching_max_concurrent_one() -> None:
+    """max_concurrent=1: игры фармятся по одной, каждая ровно один раз."""
+    events = _run(
+        {111: [0], 222: [0], 333: [0]},
+        [(111, 1), (222, 1), (333, 1)],
+        max_concurrent=1,
+    )
+
+    done = [aid for (k, aid) in events if k == "done"]
+    launches = [aid for (k, aid) in events if k == "launch"]
+
+    assert done == [111, 222, 333]
+    assert launches == [111, 222, 333]  # каждая запущена один раз, по очереди
+
+
+def test_keyboard_interrupt_kills_all_active() -> None:
+    """Ctrl+C во время idle — finally закрывает все активные игры."""
+    events = _run(
+        {111: [0], 222: [0]},
+        [(111, 2), (222, 3)],
+        interrupt_on_idle=True,
+    )
+
+    killed = {aid for (k, aid) in events if k == "kill"}
+    assert killed == {111, 222}
+
+
+def test_finally_kill_guard_isolates_failure() -> None:
+    """Сбой закрытия одной игры в finally не мешает закрыть остальные."""
+    events = _run(
+        {111: [0], 222: [0]},
+        [(111, 2), (222, 3)],
+        interrupt_on_idle=True,
+        kill_raises_for={111},
+    )
+
+    killed = [aid for (k, aid) in events if k == "kill"]
+    assert 222 in killed  # не осиротела из-за падения kill(111)
