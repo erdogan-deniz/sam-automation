@@ -47,6 +47,33 @@ def _check_file_paths(cfg: Config) -> list[str]:
     return errors
 
 
+_MAX_CONCURRENT_LIMIT = 20  # разумный потолок; выше — почти наверняка опечатка
+
+
+def _check_numeric_bounds(cfg: Config) -> list[str]:
+    """Проверяет числовые параметры (руками отредактированный config.yaml).
+
+    Ловит max_concurrent_games:0 (тихий no-op «успех»), отрицательный
+    card_check_interval (busy-loop/крэш) и абсурдно большую конкурентность
+    (шторм запусков SAM.Game.exe).
+    """
+    errors: list[str] = []
+    mcg = cfg.max_concurrent_games
+    if mcg < 1:
+        errors.append(f"max_concurrent_games must be >= 1 (got {mcg})")
+    elif mcg > _MAX_CONCURRENT_LIMIT:
+        errors.append(
+            f"max_concurrent_games too high: {mcg} "
+            f"(max {_MAX_CONCURRENT_LIMIT})"
+        )
+    if cfg.card_check_interval < 1:
+        errors.append(
+            f"card_check_interval must be >= 1 minute "
+            f"(got {cfg.card_check_interval})"
+        )
+    return errors
+
+
 # ── Phase 2: external checks ──────────────────────────────────────────────
 
 
@@ -107,6 +134,7 @@ def validate(cfg: Config) -> None:
     errors: list[str] = []
     errors.extend(_check_required_fields(cfg))
     errors.extend(_check_file_paths(cfg))
+    errors.extend(_check_numeric_bounds(cfg))
     if errors:
         _report_and_exit(errors)
 
