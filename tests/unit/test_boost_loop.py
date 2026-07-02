@@ -80,6 +80,9 @@ def test_boost_loop_ctrl_c_kills_active_without_marking_done(monkeypatch):
     monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
     monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
     monkeypatch.setattr(boost, "kill_process", killed.append)
+    # Замокать, иначе тест зовёт настоящий win32 TerminateProcess по всем
+    # SAM.Game.exe — убьёт активный boost/farm, если он идёт во время pytest.
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: None)
     monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
     monkeypatch.setattr(
         boost,
