@@ -36,7 +36,13 @@ from app.config import load_config
 from app.logging_setup import SEPARATOR, setup_logging
 from app.notify import toast
 from app.run_lock import acquire_run_lock, release_run_lock
-from app.sam import check_steam_running, ensure_sam, kill_process, launch_game
+from app.sam import (
+    check_steam_running,
+    ensure_sam,
+    kill_all_sam_games,
+    kill_process,
+    launch_game,
+)
 from app.steam import get_web_cookies, resolve_steam_id
 from app.validator import validate
 
@@ -70,7 +76,13 @@ def _open_next(
     while queue and len(active) < cfg.max_concurrent_games:
         appid, cnt = queue.popleft()
         time.sleep(_PAUSE_BETWEEN_GAMES)
-        proc = launch_game(cfg.sam_game_exe_path, appid)
+        try:
+            proc = launch_game(cfg.sam_game_exe_path, appid)
+        except RuntimeError as e:
+            # Транзиентный сбой запуска (AV-локи, WinError) не должен рушить
+            # весь прогон — пропускаем эту игру, не зацикливаясь на ней.
+            log.warning("APP ID: %d — не удалось запустить: %s", appid, e)
+            continue
         active[appid] = proc
         name = game_names.get(appid, "")
         if name:
@@ -100,6 +112,8 @@ def _farm_loop(
     check_failures: dict[int, int] = {}
     last_remaining: dict[int, int] = {}  # для детекта застрявших игр
     no_progress: dict[int, int] = {}  # циклов подряд без убывания остатка
+    stalled: list[int] = []  # брошены как застрявшие (остаток не убывал)
+    unverified: list[int] = []  # брошены: не удалось определить остаток
     game_names = load_game_names()
 
     log.info(SEPARATOR)
@@ -131,7 +145,12 @@ def _farm_loop(
             )
             batch = list(active.items())
             for appid, proc in batch:
-                _kill_game(appid, proc)
+                try:
+                    _kill_game(appid, proc)
+                except Exception:
+                    log.warning(
+                        "Не удалось закрыть APP ID %d при сбросе", appid
+                    )
             active.clear()
 
             # Пауза на сброс: даём Steam выдать накопленные карты.
@@ -155,14 +174,14 @@ def _farm_loop(
                         if stalls >= _MAX_NO_PROGRESS:
                             log.warning(
                                 "APP ID: %d — остаток не убывает %d циклов, "
-                                "пропускаю (возможно, дропы не идут)",
+                                "бросаю (НЕ помечаю done — дропы не идут)",
                                 appid,
                                 stalls,
                             )
                             no_progress.pop(appid, None)
                             last_remaining.pop(appid, None)
                             check_failures.pop(appid, None)
-                            mark_card_done(appid)
+                            stalled.append(appid)
                             continue
                         no_progress[appid] = stalls
                     else:
@@ -174,10 +193,16 @@ def _farm_loop(
                     failures = check_failures.get(appid, 0) + 1
                     check_failures[appid] = failures
                     if failures >= _MAX_CHECK_FAILURES:
+                        log.warning(
+                            "APP ID: %d — не удалось определить остаток за %d "
+                            "проверок, бросаю (НЕ помечаю done)",
+                            appid,
+                            failures,
+                        )
                         check_failures.pop(appid, None)
                         no_progress.pop(appid, None)
                         last_remaining.pop(appid, None)
-                        mark_card_done(appid)
+                        unverified.append(appid)
                     else:
                         queue.append((appid, remaining))
 
@@ -194,11 +219,29 @@ def _farm_loop(
                 log.warning(
                     "Не удалось закрыть APP ID %d при завершении", appid
                 )
+        # Страховка: добиваем любые оставшиеся SAM.Game.exe (напр. процесс,
+        # запущенный, но ещё не попавший в active при Ctrl+C). Безопасно —
+        # run-lock гарантирует, что параллельно нет других SAM-скриптов.
+        kill_all_sam_games()
 
     log.info(SEPARATOR)
-    log.info("Card farming завершён")
-    log.info(SEPARATOR)
-    toast("SAM Automation — Cards", "Card farming завершён")
+    if stalled or unverified:
+        log.warning(
+            "Card farming завершён С ОГОВОРКАМИ: застряло %d, не проверено %d "
+            "(эти игры НЕ помечены done и будут переоткрыты в след. прогоне)",
+            len(stalled),
+            len(unverified),
+        )
+        log.info(SEPARATOR)
+        toast(
+            "SAM Automation — Cards",
+            f"Завершён с оговорками: застряло {len(stalled)}, "
+            f"не проверено {len(unverified)}",
+        )
+    else:
+        log.info("Card farming завершён")
+        log.info(SEPARATOR)
+        toast("SAM Automation — Cards", "Card farming завершён")
 
 
 def _build_parser() -> argparse.ArgumentParser:
