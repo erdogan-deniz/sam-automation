@@ -37,8 +37,17 @@ def test_interval_negative_is_error() -> None:
     assert validator._check_numeric_bounds(_cfg(card_check_interval=-5))
 
 
+def test_playtime_concurrent_zero_is_error() -> None:
+    # 0 → ZeroDivisionError/range-error в boost.py
+    assert validator._check_numeric_bounds(_cfg(playtime_concurrent_games=0))
+
+
 def test_valid_bounds_no_error() -> None:
     errs = validator._check_numeric_bounds(
-        _cfg(max_concurrent_games=1, card_check_interval=10)
+        _cfg(
+            max_concurrent_games=1,
+            playtime_concurrent_games=1,
+            card_check_interval=10,
+        )
     )
     assert errs == []
