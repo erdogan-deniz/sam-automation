@@ -46,15 +46,19 @@ def _run(
     max_concurrent: int = 5,
     interrupt_on_idle: bool = False,
     kill_raises_for: set[int] | None = None,
+    launch_raises_for: set[int] | None = None,
 ) -> list[tuple[str, object]]:
     """Гоняет _farm_loop на фейках, возвращает список событий по порядку."""
     farm = _load()
     events: list[tuple[str, object]] = []
     scripts = {aid: deque(vals) for aid, vals in check_script.items()}
     kill_raises = kill_raises_for or set()
+    launch_raises = launch_raises_for or set()
     idle_secs = 10 * 60  # cfg.card_check_interval * 60
 
     def fake_launch(exe: str, appid: int) -> _FakeProc:
+        if appid in launch_raises:
+            raise RuntimeError(f"launch boom {appid}")
         events.append(("launch", appid))
         return _FakeProc(appid)
 
@@ -80,7 +84,8 @@ def _run(
     farm.check_cards_remaining = fake_check  # type: ignore[assignment]
     farm.mark_card_done = fake_done  # type: ignore[assignment]
     farm.load_game_names = lambda: {}  # type: ignore[assignment]
-    farm.toast = lambda *a, **k: None  # type: ignore[assignment]
+    farm.toast = lambda title, msg: events.append(("toast", msg))  # type: ignore[assignment]
+    farm.kill_all_sam_games = lambda: events.append(("sweep", None))  # type: ignore[assignment]
     farm.time = SimpleNamespace(sleep=fake_sleep)  # type: ignore[assignment]
 
     cfg = SimpleNamespace(
@@ -137,8 +142,8 @@ def test_survivors_requeued_and_done_marked() -> None:
     assert launches.count(222) == 2  # выжила в цикле 1 — перезапущена
 
 
-def test_minus_one_requeued_until_max_then_done() -> None:
-    """remaining=-1 накапливает failures; на _MAX_CHECK_FAILURES → done."""
+def test_minus_one_retries_then_leaves_rotation() -> None:
+    """remaining=-1 накапливает failures; на _MAX_CHECK_FAILURES бросается."""
     farm = _load()
     n = farm._MAX_CHECK_FAILURES
     events = _run({111: [-1] * n}, [(111, 2)], max_concurrent=1)
@@ -147,8 +152,8 @@ def test_minus_one_requeued_until_max_then_done() -> None:
     launches = [aid for (k, aid) in events if k == "launch"]
     checks = [aid for (k, aid) in events if k == "check"]
 
-    assert done == [111]  # помечена done ровно один раз
-    assert len(checks) == n  # ушла в done на n-й проверке
+    assert done == []  # НЕ помечается done (честность отчёта)
+    assert len(checks) == n  # бросили ровно на n-й проверке (цикл завершился)
     # перезапущена после каждой из первых n-1 неудач + начальный запуск
     assert launches.count(111) == n
 
@@ -166,13 +171,14 @@ def test_minus_one_failures_reset_by_success() -> None:
 
 
 def test_stall_guard_terminates_stuck_game() -> None:
-    """Игра с неубывающим остатком помечается done и цикл завершается."""
+    """Игра с неубывающим остатком бросается и цикл завершается (не виснет)."""
     farm = _load()
     stuck = [5] * (farm._MAX_NO_PROGRESS + 5)
     events = _run({111: stuck}, [(111, 5)], max_concurrent=1)
 
     done = [aid for (k, aid) in events if k == "done"]
-    assert 111 in done  # stall-guard прервал бесконечный перезапуск
+    # цикл завершился (не исчерпал deque → не завис) и НЕ пометил игру done
+    assert 111 not in done
 
 
 def test_batching_max_concurrent_one() -> None:
@@ -213,3 +219,77 @@ def test_finally_kill_guard_isolates_failure() -> None:
 
     killed = [aid for (k, aid) in events if k == "kill"]
     assert 222 in killed  # не осиротела из-за падения kill(111)
+
+
+def _last_toast(events: list[tuple[str, object]]) -> str:
+    msgs = [m for (k, m) in events if k == "toast"]
+    return str(msgs[-1]) if msgs else ""
+
+
+def test_stall_giveup_does_not_mark_done_and_flags_toast() -> None:
+    """Застрявшая игра НЕ помечается done; финальный тост — с оговоркой."""
+    farm = _load()
+    stuck = [5] * (farm._MAX_NO_PROGRESS + 5)
+    events = _run({111: stuck}, [(111, 5)], max_concurrent=1)
+
+    done = [aid for (k, aid) in events if k == "done"]
+    assert 111 not in done  # застряла — не «выполнена»
+    assert "Card farming завершён" != _last_toast(events)  # тост не «чистый»
+
+
+def test_minus_one_giveup_does_not_mark_done_and_flags_toast() -> None:
+    """Неопределимая (-1) игра НЕ помечается done; тост — с оговоркой."""
+    farm = _load()
+    n = farm._MAX_CHECK_FAILURES
+    events = _run({111: [-1] * n}, [(111, 2)], max_concurrent=1)
+
+    done = [aid for (k, aid) in events if k == "done"]
+    assert 111 not in done  # не смогли проверить — не «выполнена»
+    assert "Card farming завершён" != _last_toast(events)
+
+
+def test_clean_completion_uses_plain_toast() -> None:
+    """Все игры честно закрылись (0) → обычный тост без оговорок."""
+    events = _run({111: [0], 222: [0]}, [(111, 2), (222, 3)])
+
+    done = {aid for (k, aid) in events if k == "done"}
+    assert done == {111, 222}
+    assert _last_toast(events) == "Card farming завершён"
+
+
+def test_finally_sweeps_orphans_on_interrupt() -> None:
+    """При Ctrl+C finally вызывает kill_all_sam_games (страховка от сирот)."""
+    events = _run(
+        {111: [0], 222: [0]},
+        [(111, 2), (222, 3)],
+        interrupt_on_idle=True,
+    )
+
+    assert ("sweep", None) in events
+
+
+def test_open_next_skips_failed_launch() -> None:
+    """Сбой launch_game одной игры не рушит прогон — она пропускается."""
+    events = _run(
+        {111: [0], 333: [0]},
+        [(111, 1), (222, 1), (333, 1)],
+        max_concurrent=1,
+        launch_raises_for={222},
+    )
+
+    launches = [aid for (k, aid) in events if k == "launch"]
+    done = {aid for (k, aid) in events if k == "done"}
+    assert 222 not in launches  # упавший запуск пропущен
+    assert done == {111, 333}  # остальные отфармлены, прогон не упал
+
+
+def test_collapse_kill_failure_does_not_abort_cycle() -> None:
+    """Сбой kill в фазе коллапса не прерывает перечитку и прогон."""
+    events = _run(
+        {111: [0], 222: [0]},
+        [(111, 2), (222, 2)],
+        kill_raises_for={111},
+    )
+
+    done = {aid for (k, aid) in events if k == "done"}
+    assert done == {111, 222}  # обе перечитаны и закрыты, несмотря на сбой kill

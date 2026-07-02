@@ -12,11 +12,21 @@
 from __future__ import annotations
 
 import queue
+import signal
 import subprocess
 import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
+
+# Мягкий сигнал остановки: на Windows CTRL_BREAK_EVENT, иначе SIGINT.
+# Скрипт ловит его как KeyboardInterrupt и сам закрывает своих детей
+# (SAM.Game.exe) через finally/atexit — жёсткий terminate() это ломает.
+_GRACEFUL_SIGNAL = getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT)
+# Флаг нужен, чтобы CTRL_BREAK доставлялся ТОЛЬКО дочернему процессу,
+# а не задел саму GUI. На не-Windows платформах = 0 (no-op).
+_NEW_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+_STOP_GRACE_SECONDS = 8.0  # сколько ждём самоочистки перед жёстким добиванием
 
 
 class ScriptRunner:
@@ -51,15 +61,45 @@ class ScriptRunner:
             text=True,
             encoding="utf-8",
             errors="replace",
+            creationflags=_NEW_GROUP,
         )
 
         thread = threading.Thread(target=self._read_output, daemon=True)
         thread.start()
 
     def stop(self) -> None:
-        """Завершает subprocess."""
-        if self._proc and self._running:
-            self._proc.terminate()
+        """Мягко останавливает subprocess, добивая только если завис.
+
+        Шлёт CTRL_BREAK/SIGINT — скрипт ловит его как KeyboardInterrupt и
+        сам закрывает своих детей (SAM.Game.exe) + освобождает run-lock.
+        Если за _STOP_GRACE_SECONDS не завершился — жёсткий terminate().
+        """
+        if not (self._proc and self._running):
+            return
+        proc = self._proc
+        try:
+            proc.send_signal(_GRACEFUL_SIGNAL)
+        except (OSError, ValueError):
+            # Не удалось послать сигнал (нет группы/процесс мёртв) — жёстко.
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+            return
+        threading.Thread(
+            target=self._terminate_after_grace, args=(proc,), daemon=True
+        ).start()
+
+    @staticmethod
+    def _terminate_after_grace(proc: subprocess.Popen) -> None:
+        """Добивает процесс, если он не завершился сам за grace-период."""
+        try:
+            proc.wait(timeout=_STOP_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
 
     def poll_output(self) -> None:
         """Вызывается из главного потока (через widget.after).
