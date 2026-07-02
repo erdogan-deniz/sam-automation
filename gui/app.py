@@ -80,6 +80,11 @@ class SAMAutomationApp(ctk.CTk):
         self._playtime.stop()
 
     def _on_close(self) -> None:
-        """Отменяет хоткей и закрывает окно."""
+        """Останавливает запущенные скрипты, отменяет хоткей и закрывает окно.
+
+        Без остановки закрытие окна (X) оставило бы farm.py крутиться в фоне
+        (держа run-lock и оставляя SAM.Game.exe в игре).
+        """
+        self._stop_all()
         self._hotkey.unregister()
         self.destroy()
