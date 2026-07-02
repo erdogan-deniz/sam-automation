@@ -102,6 +102,57 @@ def test_boost_loop_ctrl_c_kills_active_without_marking_done(monkeypatch):
     assert len(killed) == 2  # все активные убиты
 
 
+def test_boost_loop_ctrl_c_after_failure_keeps_skip(monkeypatch):
+    # Провал задетектирован и записан в skip во время idle, ЗАТЕМ Ctrl+C →
+    # skip сохранён (on_failed пишет в момент детекции, не после возврата).
+    skip: list[int] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", skip.append)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+
+    def fail_then_interrupt(active, idle, on_failed=None):
+        on_failed(30)  # провал зафиксирован в skip
+        raise KeyboardInterrupt  # затем прерывание
+
+    monkeypatch.setattr(boost, "idle_and_split_survivors", fail_then_interrupt)
+
+    games = [{"appid": 30, "name": "C", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())
+
+    assert skip == [30]  # skip пережил Ctrl+C
+
+
+def test_boost_loop_ctrl_c_during_launch_kills_all_sam(monkeypatch):
+    # Ctrl+C во время staggered-запуска батча: процессы уже стартовали, но ещё
+    # не в active → обычный проход их не тронет. Страховка kill_all_sam_games
+    # добивает все SAM.Game.exe, чтобы не осиротить.
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    swept: list[bool] = []
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: swept.append(True))
+
+    def launch_interrupts(exe, games, stagger):
+        raise KeyboardInterrupt  # прерывание во время запуска батча
+
+    monkeypatch.setattr(boost, "launch_games_staggered", launch_interrupts)
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # не должно пробросить наружу
+
+    assert swept == [True]  # страховка добила процессы
+
+
 def test_boost_loop_multi_batch_pauses_between_not_after(monkeypatch):
     monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
     monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
