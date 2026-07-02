@@ -18,6 +18,9 @@ log = logging.getLogger("sam_automation")
 
 _COMMUNITY_BASE = "https://steamcommunity.com"
 _REQUEST_DELAY = 1.0  # секунд между запросами (rate limit)
+_PAGE_RETRIES = 3  # попыток на страницу при транзиентной сетевой ошибке
+_PAGE_RETRY_DELAY = 2.0  # секунд между попытками одной страницы
+_MAX_CONSEC_PAGE_FAILURES = 3  # подряд нечитаемых страниц → обрыв пагинации
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +60,28 @@ def _fetch_page(opener: urllib.request.OpenerDirector, url: str) -> str:
         raise RuntimeError(f"Ошибка подключения к {url}: {e.reason}") from e
 
 
+def _fetch_page_with_retry(
+    opener: urllib.request.OpenerDirector,
+    url: str,
+    retries: int = _PAGE_RETRIES,
+) -> str:
+    """Читает страницу с ретраями — дёрганый SSL Steam не теряет страницу."""
+    for attempt in range(retries):
+        try:
+            return _fetch_page(opener, url)
+        except RuntimeError as e:
+            if attempt == retries - 1:
+                raise
+            log.warning(
+                "Ошибка страницы (попытка %d/%d): %s — повтор",
+                attempt + 1,
+                retries,
+                e,
+            )
+            time.sleep(_PAGE_RETRY_DELAY)
+    raise RuntimeError("unreachable")  # для mypy: цикл всегда возвращает/кидает
+
+
 # ---------------------------------------------------------------------------
 #  Публичный API
 # ---------------------------------------------------------------------------
@@ -79,6 +104,7 @@ def fetch_games_with_card_drops(
     results: list[tuple[int, int]] = []
     page = 1
     prev_html_size = 0  # для детектирования повторяющихся страниц
+    consec_failures = 0  # подряд нечитаемых страниц
 
     while True:
         url = (
@@ -86,12 +112,26 @@ def fetch_games_with_card_drops(
         )
         log.debug("Получаю страницу значков: %s", url)
         try:
-            html = _fetch_page(opener, url)
+            html = _fetch_page_with_retry(opener, url)
         except RuntimeError as e:
+            consec_failures += 1
             log.warning(
-                "Ошибка при получении страницы значков (стр. %d): %s", page, e
+                "Стр. %d не читается после %d попыток: %s (подряд неудач: %d)",
+                page,
+                _PAGE_RETRIES,
+                e,
+                consec_failures,
             )
-            break
+            if consec_failures >= _MAX_CONSEC_PAGE_FAILURES:
+                log.warning(
+                    "%d страниц подряд не читаются — обрываю пагинацию. "
+                    "Список игр может быть неполным из-за проблем со связью.",
+                    consec_failures,
+                )
+                break
+            page += 1
+            continue
+        consec_failures = 0
 
         log.debug("Получено %d байт для стр. %d", len(html), page)
 
