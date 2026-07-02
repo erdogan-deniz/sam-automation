@@ -71,6 +71,7 @@ def _open_next(
     active: dict[int, subprocess.Popen],
     cfg: Any,
     game_names: dict,
+    failed: list[int] | None = None,
 ) -> None:
     """Открывает следующую игру из очереди если есть место."""
     while queue and len(active) < cfg.max_concurrent_games:
@@ -82,6 +83,8 @@ def _open_next(
             # Транзиентный сбой запуска (AV-локи, WinError) не должен рушить
             # весь прогон — пропускаем эту игру, не зацикливаясь на ней.
             log.warning("APP ID: %d — не удалось запустить: %s", appid, e)
+            if failed is not None:
+                failed.append(appid)
             continue
         active[appid] = proc
         name = game_names.get(appid, "")
@@ -114,6 +117,8 @@ def _farm_loop(
     no_progress: dict[int, int] = {}  # циклов подряд без убывания остатка
     stalled: list[int] = []  # брошены как застрявшие (остаток не убывал)
     unverified: list[int] = []  # брошены: не удалось определить остаток
+    failed_launch: list[int] = []  # не удалось запустить SAM.Game.exe
+    interrupted = False
     game_names = load_game_names()
 
     log.info(SEPARATOR)
@@ -128,7 +133,7 @@ def _farm_loop(
     log.info(SEPARATOR)
 
     try:
-        _open_next(queue, active, cfg, game_names)
+        _open_next(queue, active, cfg, game_names, failed_launch)
 
         while active:
             log.info(
@@ -207,9 +212,10 @@ def _farm_loop(
                         queue.append((appid, remaining))
 
             # Перезапуск следующей пачки из очереди (включая выживших).
-            _open_next(queue, active, cfg, game_names)
+            _open_next(queue, active, cfg, game_names, failed_launch)
 
     except KeyboardInterrupt:
+        interrupted = True
         log.info("Прервано (Ctrl+C). Закрываю все активные игры...")
     finally:
         for appid, proc in list(active.items()):
@@ -225,18 +231,23 @@ def _farm_loop(
         kill_all_sam_games()
 
     log.info(SEPARATOR)
-    if stalled or unverified:
+    if interrupted:
+        log.warning("Card farming ПРЕРВАН — обработаны не все игры")
+        log.info(SEPARATOR)
+        toast("SAM Automation — Cards", "Card farming прерван")
+    elif failed_launch or stalled or unverified:
         log.warning(
-            "Card farming завершён С ОГОВОРКАМИ: застряло %d, не проверено %d "
-            "(эти игры НЕ помечены done и будут переоткрыты в след. прогоне)",
+            "Card farming завершён С ОГОВОРКАМИ: не запущено %d, застряло %d, "
+            "не проверено %d (НЕ помечены done, переоткроются в след. прогоне)",
+            len(failed_launch),
             len(stalled),
             len(unverified),
         )
         log.info(SEPARATOR)
         toast(
             "SAM Automation — Cards",
-            f"Завершён с оговорками: застряло {len(stalled)}, "
-            f"не проверено {len(unverified)}",
+            f"С оговорками: не запущено {len(failed_launch)}, "
+            f"застряло {len(stalled)}, не проверено {len(unverified)}",
         )
     else:
         log.info("Card farming завершён")
