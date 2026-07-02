@@ -12,7 +12,7 @@ from pywinauto import Application
 
 from ..exceptions import SAMConnectionError, SAMLaunchError
 from .picker_session import PickerSession
-from .win32_utils import _has_error_window, _kill_pid
+from .win32_utils import _get_sam_game_pids, _has_error_window, _kill_pid
 
 log = logging.getLogger("sam_automation")
 
@@ -189,3 +189,15 @@ def kill_process(proc: subprocess.Popen) -> None:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             pass
+
+
+def kill_all_sam_games() -> None:
+    """Убивает ВСЕ процессы SAM.Game.exe по PID через Win32 API.
+
+    Страховка при Ctrl+C во время staggered-запуска батча: часть процессов уже
+    стартовала, но ещё не попала в active вызывающего, поэтому обычный проход по
+    active их не тронет — они бы осиротели. boost держит run-lock (farm
+    параллельно не идёт), так что убить все SAM.Game.exe безопасно.
+    """
+    for pid in _get_sam_game_pids():
+        _kill_pid(pid)
