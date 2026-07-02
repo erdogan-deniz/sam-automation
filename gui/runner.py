@@ -4,7 +4,7 @@
     runner = ScriptRunner()
     runner.on_output = lambda line: print(line)
     runner.on_finish = lambda code: print(f"exit {code}")
-    runner.run("scripts/achievements/scan.py", [])
+    runner.run("scripts/scan.py", [])
     # ...
     runner.stop()
 """
