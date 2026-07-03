@@ -36,7 +36,7 @@ from app.cache import (
 from app.config import load_config
 from app.id_file import read_ids_ordered
 from app.logging_setup import SEPARATOR, setup_logging
-from app.notify import toast
+from app.notify import send_telegram, toast
 from app.run_lock import acquire_run_lock, release_run_lock
 from app.sam import (
     check_steam_running,
@@ -215,6 +215,9 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     toast(
         "SAM Automation — Playtime",
         f"Готово: {done_count} / {total} игр обработано",
+    )
+    send_telegram(
+        f"✅ Playtime boost: {done_count} / {total} игр обработано", cfg
     )
 
 
