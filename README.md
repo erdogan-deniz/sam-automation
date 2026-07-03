@@ -127,6 +127,10 @@ python scripts/playtime/boost.py
 | `card_check_interval` | `10` | Minutes between card drop checks (card farming) |
 | `playtime_idle_duration` | `120` | Seconds to idle each game (playtime boost) |
 | `playtime_target_minutes` | `3` | Minimum playtime per game; games below this are boosted |
+| `playtime_concurrent_games` | `10` | How many games to idle in parallel (playtime boost) |
+| `launch_stagger` | `3` | Seconds between staggered game launches within a batch (playtime boost) |
+| `telegram_bot_token` | — | Telegram Bot API token; enables remote completion/error notifications (optional) |
+| `telegram_chat_id` | — | Telegram chat ID to send notifications to (optional) |
 
 ## Getting a Steam API Key and Steam ID
 
