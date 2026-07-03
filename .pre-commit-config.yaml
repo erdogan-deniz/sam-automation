@@ -34,3 +34,9 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+      - id: forbid-config-yaml  # секреты: config.yaml нельзя в индекс
+        name: forbid committing config.yaml (secrets)
+        entry: "config.yaml нельзя коммитить (секреты) — трекается только config.example.yaml"
+        language: fail
+        files: '^config\.yaml$'
