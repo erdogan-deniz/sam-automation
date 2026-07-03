@@ -37,22 +37,22 @@ main() flow (номера строк):
 Хелперы в farm.py:
 - `_kill_game(appid, proc)` → `kill_process(proc)` (farm.py:52-54)
 - `_open_next(queue, active, cfg, game_names)` — запускает пока есть место и логирует APP NAME / APP PID / APP CARDS + SEPARATOR (farm.py:57-75)
-- `_farm_loop(games_with_drops, cfg, cookies, steam_id)` — главный цикл (farm.py:78-162)
-- `_build_parser()` (farm.py:165-176)
-- `_prepare_progress(args)` (farm.py:179-183)
-- `main()` (farm.py:186-241)
+- `_farm_loop(games_with_drops, cfg, cookies, steam_id)` — главный цикл (farm.py:99)
+- `_build_parser()` (farm.py:265)
+- `_prepare_progress(args)` (farm.py:279)
+- `main()` (farm.py:286)
 
-CLI-флаги (argparse в `_build_parser`, farm.py:165-176) — существуют ТОЛЬКО эти два:
-- `--reset` (store_true) — сбросить прогресс (удалить `cards/done.txt`) и начать заново (farm.py:170-174)
-- `-v` / `--verbose` (store_true) — verbose logging (farm.py:175)
+CLI-флаги (argparse в `_build_parser`, farm.py:265) — существуют ТОЛЬКО эти два:
+- `--reset` (store_true) — сбросить прогресс (удалить `cards/done.txt`) и начать заново
+- `-v` / `--verbose` (store_true) — verbose logging
 НЕТ флагов `--retry-errors` / `--no-*` / интервала / concurrency.
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - `scripts/cards/farm.py` — точка входа фарма; `main` (186-241), `_farm_loop` (78-162), `_open_next` (57-75), `_kill_game` (52-54), `_build_parser` (165-176), `_prepare_progress` (179-183). Локальные имена игр берёт через `load_game_names()` из `app.cache` (farm.py:26,88).
 - `scripts/cards/scan.py` — печать таблицы игр с дропами; список строит `fetch_games_with_card_drops(cookies, steam_id)` (scan.py:57), enrich имён через `fetch_owned_games` (scan.py:59-62, best-effort → `?`), сортировка вывода DESC по дропам `-x[1]` (scan.py:71). Без CLI-флагов.
 - `app/cards/card_checker.py` — живой скрейп Steam Community:
-  - `fetch_games_with_card_drops(cookies, steam_id) -> list[tuple[int,int]]` (card_checker.py:65-154): пагинация GET `https://steamcommunity.com/profiles/{steam_id}/badges/?l=english&p={page}`, парсер `_BadgesPageParser`, возвращает `(appid, cards_remaining)` СОРТ. ASC по остатку (line 149); стоп-условия пагинации: HTTP/URL error (break, 90-94), повтор страницы по равной байт-длине html (99-103), приватный профиль `profile_private`/`This profile is private` (107-115), `parser.badge_row_count==0` (134-136); пауза `_REQUEST_DELAY=1.0s` между страницами (147).
-  - `check_cards_remaining(cookies, steam_id, appid) -> int` (card_checker.py:157-184): одиночная проверка GET `https://steamcommunity.com/profiles/{steam_id}/gamecards/{appid}/?l=english`, парсер `_GameCardsParser`; `>0` = осталось, `0` = закончились, `-1` = не удалось определить (fetch RuntimeError ИЛИ парсер не совпал).
+  - `fetch_games_with_card_drops(cookies, steam_id) -> list[tuple[int,int]]` (card_checker.py:93-206): пагинация GET `https://steamcommunity.com/profiles/{steam_id}/badges/?l=english&p={page}`, парсер `_BadgesPageParser`, возвращает `(appid, cards_remaining)` СОРТ. ASC по остатку. Пагинация УСТОЙЧИВА: каждая страница через `_fetch_page_with_retry` (3 попытки, card_checker.py:66); стойкий отказ страницы ПРОПУСКАЕТСЯ (`prev_html_size=-1; page+=1; continue`), обрыв ТОЛЬКО после `_MAX_CONSEC_PAGE_FAILURES=3` подряд (card_checker.py:23) ИЛИ `_MAX_BADGE_PAGES=40`. НЕ break на первой SSL/HTTP-ошибке — это был баг, терявший игры при ~8% сбоев Steam Community. Стоп по content: приватный профиль `profile_private`/`This profile is private` (159), `parser.badge_row_count==0` (186), равная байт-длина соседних страниц; пауза `_REQUEST_DELAY=1.0s` между страницами (20).
+  - `check_cards_remaining(cookies, steam_id, appid) -> int` (card_checker.py:209-236): проверка остатка GET `https://steamcommunity.com/profiles/{steam_id}/gamecards/{appid}/?l=english` ЧЕРЕЗ `_fetch_page_with_retry` (3 попытки — НЕ одиночный GET), парсер `_GameCardsParser`; `>0` = осталось, `0` = закончились, `-1` = не удалось определить (устойчивая сетевая ошибка ИЛИ парсер не совпал).
   - `_make_opener(cookies)` (28-46): urllib opener + CookieJar + хардкод User-Agent Chrome/120 + Accept-Language en-US. `_fetch_page(opener, url)` (49-57): timeout=15, utf-8 errors='replace', HTTPError→RuntimeError, URLError→RuntimeError. `_COMMUNITY_BASE='https://steamcommunity.com'` (19).
 - `app/cards/card_parsers.py` — HTMLParser'ы:
   - `_BadgesPageParser` (14-98): следит за вложенностью div; вход в контекст на `<div class="badge_title_stats_drops">`; appid из `id` соседнего `<div class="card_drop_info_dialog" id="...gamebadge_{appid}_{level}_{border}">` через regex `gamebadge_(\d+)_` (62); остаток из `<span class="progress_info_bold">` через regex `(\d+)\s+card\s+drop` IGNORECASE (78); добавляет `(appid, drops)` только если ОБА найдены (88-94); считает `badge_row_count` по классу `badge_row` (52-53).
