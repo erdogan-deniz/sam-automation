@@ -85,6 +85,7 @@ def _run(
     farm.mark_card_done = fake_done  # type: ignore[assignment]
     farm.load_game_names = lambda: {}  # type: ignore[assignment]
     farm.toast = lambda title, msg: events.append(("toast", msg))  # type: ignore[assignment]
+    farm.send_telegram = lambda text, cfg: events.append(("telegram", text))  # type: ignore[assignment]
     farm.kill_all_sam_games = lambda: events.append(("sweep", None))  # type: ignore[assignment]
     farm.time = SimpleNamespace(sleep=fake_sleep)  # type: ignore[assignment]
 
@@ -226,6 +227,11 @@ def _last_toast(events: list[tuple[str, object]]) -> str:
     return str(msgs[-1]) if msgs else ""
 
 
+def _last_telegram(events: list[tuple[str, object]]) -> str:
+    msgs = [m for (k, m) in events if k == "telegram"]
+    return str(msgs[-1]) if msgs else ""
+
+
 def test_stall_giveup_does_not_mark_done_and_flags_toast() -> None:
     """Застрявшая игра НЕ помечается done; финальный тост — с оговоркой."""
     farm = _load()
@@ -255,6 +261,13 @@ def test_clean_completion_uses_plain_toast() -> None:
     done = {aid for (k, aid) in events if k == "done"}
     assert done == {111, 222}
     assert _last_toast(events) == "Card farming завершён"
+
+
+def test_clean_completion_also_sends_telegram() -> None:
+    """Чистое завершение шлёт и Telegram-уведомление (рядом с toast)."""
+    events = _run({111: [0], 222: [0]}, [(111, 2), (222, 3)])
+
+    assert "завершён" in _last_telegram(events)
 
 
 def test_finally_sweeps_orphans_on_interrupt() -> None:

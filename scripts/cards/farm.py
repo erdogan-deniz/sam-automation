@@ -34,7 +34,7 @@ from app.cards import (
 )
 from app.config import load_config
 from app.logging_setup import SEPARATOR, setup_logging
-from app.notify import toast
+from app.notify import send_telegram, toast
 from app.run_lock import acquire_run_lock, release_run_lock
 from app.sam import (
     check_steam_running,
@@ -235,6 +235,7 @@ def _farm_loop(
         log.warning("Card farming ПРЕРВАН — обработаны не все игры")
         log.info(SEPARATOR)
         toast("SAM Automation — Cards", "Card farming прерван")
+        send_telegram("⚠️ Card farming прерван — обработаны не все игры", cfg)
     elif failed_launch or stalled or unverified:
         log.warning(
             "Card farming завершён С ОГОВОРКАМИ: не запущено %d, застряло %d, "
@@ -249,10 +250,16 @@ def _farm_loop(
             f"С оговорками: не запущено {len(failed_launch)}, "
             f"застряло {len(stalled)}, не проверено {len(unverified)}",
         )
+        send_telegram(
+            f"⚠️ Card farming с оговорками: не запущено {len(failed_launch)}, "
+            f"застряло {len(stalled)}, не проверено {len(unverified)}",
+            cfg,
+        )
     else:
         log.info("Card farming завершён")
         log.info(SEPARATOR)
         toast("SAM Automation — Cards", "Card farming завершён")
+        send_telegram("✅ Card farming завершён", cfg)
 
 
 def _build_parser() -> argparse.ArgumentParser:
