@@ -18,6 +18,11 @@ _HEADING = re.compile(r"^##\s*\[(\d+\.\d+\.\d+)\]", re.MULTILINE)
 
 
 def main() -> int:
+    # CI-раннер Windows пишет stdout в cp1252 → кириллица в print() падает
+    # UnicodeEncodeError. Тот же приём, что app.logging_setup.ensure_utf8_stdout.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
