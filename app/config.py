@@ -47,6 +47,10 @@ class Config:
         10  # сколько игр идлить параллельно (boost)
     )
 
+    # Telegram уведомления (опционально; пусто → уведомления отключены)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
 
 def load_config(config_path: str = "config.yaml") -> Config:
     """Загружает конфигурацию из YAML-файла.
@@ -104,6 +108,9 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     if "playtime_concurrent_games" in raw:
         cfg.playtime_concurrent_games = int(raw["playtime_concurrent_games"])
+
+    cfg.telegram_bot_token = raw.get("telegram_bot_token", "")
+    cfg.telegram_chat_id = str(raw.get("telegram_chat_id", ""))
 
     # Резолвим относительный путь к exe от директории конфига
     if cfg.sam_game_exe_path and not os.path.isabs(cfg.sam_game_exe_path):
