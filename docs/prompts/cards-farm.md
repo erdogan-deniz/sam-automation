@@ -78,16 +78,18 @@ CLI-флаги (argparse в `_build_parser`, farm.py:165-176) — существ
 
 - Модель работы = Fast-mode коллапс в ноль. `_open_next` запускает игры пока очередь непуста И `len(active) < cfg.max_concurrent_games`. Stagger: `time.sleep(_PAUSE_BETWEEN_GAMES=3s)` перед каждым `launch_game`. Idle: цикл спит `cfg.card_check_interval*60` сек.
 - `_farm_loop` за цикл: (1) идлит пачку `cfg.card_check_interval` мин; (2) убивает ВСЕ активные разом (`batch = list(active.items())` → `_kill_game` → `active.clear()`); (3) спит `_FLUSH_PAUSE_SECONDS=20` (сброс карт); (4) перечитывает остатки по каждой закрытой игре, `time.sleep(1.0)` между запросами; (5) `_open_next` запускает следующую пачку (включая выживших).
-  - `remaining==0` → лог, `check_failures/no_progress/last_remaining.pop`, `mark_card_done(appid)` (НЕ перезапускается).
-  - `remaining>0` → requeue `queue.append((appid, remaining))` + `check_failures[appid]=0`. Stall-guard: если остаток не убывает `_MAX_NO_PROGRESS=10` циклов подряд → `mark_card_done` (пропуск застрявшей игры, гарантия завершения).
-  - `remaining<0` (=-1, «неизвестно») → инкремент `check_failures[appid]`; `>= _MAX_CHECK_FAILURES`(5) → `mark_card_done`; иначе requeue.
-- Резюм-фильтра НЕТ: `cards/done.txt` пишется (`mark_card_done`), но НИКОГДА не читается для пропуска игр. Дедуп при рестарте — Steam просто перестаёт отдавать завершённые игры в badges-скрейпе. Имена игр из кэша через `load_game_names()`.
+  - `remaining==0` → лог, `mark_card_done(appid)` (единственный путь в done; НЕ перезапускается).
+  - `remaining>0` → requeue + `check_failures[appid]=0`. Stall-guard: остаток не убывает `_MAX_NO_PROGRESS=10` циклов → игра БРОСАЕТСЯ в список `stalled` (НЕ `mark_card_done` — честность отчёта).
+  - `remaining<0` (=-1, «неизвестно») → инкремент `check_failures[appid]`; `>= _MAX_CHECK_FAILURES`(5) → игра БРОСАЕТСЯ в список `unverified` (НЕ `mark_card_done`); иначе requeue.
+  - Провал `launch_game` в `_open_next` → игра в список `failed_launch` (не рушит прогон).
+- ВАЖНО: `done.txt` пишется ТОЛЬКО при честном `remaining==0`. stalled/unverified/failed_launch — НЕ done (переоткроются следующим скрейпом). Резюм-фильтра НЕТ: `done.txt` НИКОГДА не читается для пропуска. Имена игр из кэша через `load_game_names()`.
 - Источник истины «сколько карт» — живой HTML (badges + gamecards), НЕ inventory/badge API и НЕ локальный кэш. Любое изменение HTML-структуры Steam молча ломает парсинг (только warn).
 - `check_cards_remaining` читает gamecards ЧЕРЕЗ `_fetch_page_with_retry` (3 попытки); возвращает `-1` и на устойчивую сетевую ошибку, И на нераспарсенную страницу — трактовать `-1` как «неизвестно», НЕ «0».
 - Пагинация badges (`fetch_games_with_card_drops`) устойчива: ретрай каждой страницы (`_fetch_page_with_retry`), пропуск стойкого отказа (сброс `prev_html_size=-1`), обрыв после `_MAX_CONSEC_PAGE_FAILURES=3` подряд ИЛИ `_MAX_BADGE_PAGES=40`. Стоп по content: `badge_row==0`/приватный/равная байт-длина соседних.
-- KeyboardInterrupt ловится ТОЛЬКО внутри `_farm_loop` (включая начальный `_open_next` — он ВНУТРИ try); `finally` убивает оставшиеся active через `_kill_game`, каждый в своём try/except (сбой одного не осиротит остальных). Ctrl+C во время setup-фазы опирается на atexit-релиз лока.
-- Run-lock один общий (`data/.sam_run.lock`): farm/boost/cards нельзя запускать параллельно.
-- Константы: `_MAX_CHECK_FAILURES=5`, `_FLUSH_PAUSE_SECONDS=20`, `_PAUSE_BETWEEN_GAMES=3s`, `_MAX_NO_PROGRESS=10`. Тост «Card farming завершён» в конце `_farm_loop`.
+- KeyboardInterrupt ловится ТОЛЬКО внутри `_farm_loop` (включая начальный `_open_next` — он ВНУТРИ try, ставит `interrupted=True`); `finally` убивает оставшиеся active через `_kill_game` (каждый в своём try/except) + `kill_all_sam_games()` как страховка. Ctrl+C во время setup-фазы опирается на atexit-релиз лока.
+- GUI-стоп: `gui/runner.py` кладёт скрипт в Win32 Job Object (KILL_ON_JOB_CLOSE, `gui/win_job.py`) → Stop/Esc/закрытие окна убивают ВСЁ дерево (скрипт + внуки SAM.Game.exe) через `terminate_job`. НЕ через сигналы (CTRL_BREAK не даёт KeyboardInterrupt без обработчика + не прерывает долгий sleep). E2E-тест `test_job_terminate_kills_grandchild`.
+- Run-lock один общий (`data/.sam_run.lock`): farm/boost/cards нельзя запускать параллельно. Числовые границы конфига — `validator._check_numeric_bounds` (max_concurrent_games/playtime_concurrent_games ∈ [1,20], card_check_interval≥1).
+- Константы: `_MAX_CHECK_FAILURES=5`, `_FLUSH_PAUSE_SECONDS=20`, `_PAUSE_BETWEEN_GAMES=3s`, `_MAX_NO_PROGRESS=10`. Финальный тост честный: «прерван» / «с оговорками: не запущено N, застряло M, не проверено K» / «Card farming завершён».
 - Приватный профиль даёт пустой результат с одним warning-логом, НЕ error. Требуется 17-значный steamid64 + валидные web-cookies.
 - НЕ проверено e2e: сам факт, что коллапс в ноль сбрасывает дроп за 20с — гипотеза (документирован Idle Master Fast mode + наблюдение юзера), не подтверждена реальным прогоном. `_FLUSH_PAUSE_SECONDS=20` — неизмеренная константа; если мало — дроп увидится следующим циклом (не потеря).
 

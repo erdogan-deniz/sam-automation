@@ -1,7 +1,14 @@
 # Design: Telegram Notifications
 
 **Date:** 2026-03-23
-**Status:** Approved
+**Status:** Implemented (2026-07-03) — сосуществует с Windows toast (`app/notify.py`).
+
+> **Примечание о реализации.** Toast-уведомления (`toast()`) появились раньше и
+> остаются локальным каналом; `send_telegram(text, cfg)` добавлен рядом как
+> удалённый канал (не заменяет toast). В скриптах вызовы `send_telegram` стоят
+> рядом с существующими `toast` во всех точках завершения/ошибки/прерывания
+> (включая honest-reporting «с оговорками»/«прерван», которых не было в исходной
+> спеке). `send_telegram` устойчив к duck-typed cfg (getattr → no-op).
 
 ## Problem
 
