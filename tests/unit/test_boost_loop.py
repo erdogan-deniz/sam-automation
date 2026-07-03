@@ -72,6 +72,33 @@ def test_boost_loop_marks_done_skip_and_spares_known(monkeypatch):
     assert seen["idle"] == 7
 
 
+def test_boost_loop_notifies_telegram_on_finish(monkeypatch):
+    # Завершение батча шлёт Telegram-уведомление (рядом с toast).
+    tg: list[str] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text), raising=False
+    )
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: ([10], []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())
+
+    assert tg and "обработано" in tg[-1]
+
+
 def test_boost_loop_ctrl_c_kills_active_without_marking_done(monkeypatch):
     # Инвариант: Ctrl+C убивает активные, но НЕ пишет done.
     done: list[int] = []
