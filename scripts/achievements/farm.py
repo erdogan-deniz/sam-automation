@@ -32,7 +32,7 @@ from app.config import load_config
 from app.exceptions import SAMError, SAMTooManyErrors
 from app.game_list import load_game_ids
 from app.logging_setup import SEPARATOR, centered, setup_logging
-from app.notify import toast
+from app.notify import send_telegram, toast
 from app.run_lock import acquire_run_lock, release_run_lock
 from app.safety import ErrorTracker
 from app.sam import (
@@ -296,6 +296,10 @@ def main() -> None:
     toast(
         "SAM Automation — Achievements",
         f"Готово: {ok} разблокировано, {errors} ошибок из {total} игр",
+    )
+    send_telegram(
+        f"✅ Achievements: {ok} разблокировано, {errors} ошибок из {total} игр",
+        cfg,
     )
 
 
