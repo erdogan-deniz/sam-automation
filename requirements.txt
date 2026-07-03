@@ -28,6 +28,6 @@ customtkinter>=5.2.0    # Modern dark-themed UI (tkinter wrapper)
 pytest>=8.0             # Unit test runner
 
 # ── Dev Tooling ───────────────────────────────────────────────
-ruff>=0.15              # Linter + formatter (pinned via .pre-commit-config rev)
+ruff==0.15.16           # Linter + formatter (KEEP in sync with .pre-commit-config rev)
 pre-commit>=4.0         # Git pre-commit hooks (ruff lint + format, mypy, basic checks)
 mypy>=1.11              # Static type checker (scoped to app/, see pyproject.toml)
