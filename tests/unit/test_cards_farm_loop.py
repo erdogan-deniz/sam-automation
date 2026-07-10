@@ -47,6 +47,7 @@ def _run(
     interrupt_on_idle: bool = False,
     kill_raises_for: set[int] | None = None,
     launch_raises_for: set[int] | None = None,
+    refresh_cookies: dict | None = None,
 ) -> list[tuple[str, object]]:
     """Гоняет _farm_loop на фейках, возвращает список событий по порядку."""
     farm = _load()
@@ -87,12 +88,21 @@ def _run(
     farm.toast = lambda title, msg: events.append(("toast", msg))  # type: ignore[assignment]
     farm.send_telegram = lambda text, cfg: events.append(("telegram", text))  # type: ignore[assignment]
     farm.kill_all_sam_games = lambda: events.append(("sweep", None))  # type: ignore[assignment]
+
+    def fake_get_cookies(
+        username: str, interactive: bool = True
+    ) -> dict | None:
+        events.append(("refresh", interactive))
+        return refresh_cookies
+
+    farm.get_web_cookies = fake_get_cookies  # type: ignore[assignment]
     farm.time = SimpleNamespace(sleep=fake_sleep)  # type: ignore[assignment]
 
     cfg = SimpleNamespace(
         max_concurrent_games=max_concurrent,
         card_check_interval=10,
         sam_game_exe_path="SAM.Game.exe",
+        steam_id="76561190000000000",
     )
     farm._farm_loop(games, cfg, {}, "76561190000000000")
     return events
@@ -331,3 +341,27 @@ def test_failed_launch_flagged_in_toast() -> None:
 
     assert "оговорками" in _last_toast(events)
     assert _last_toast(events) != "Card farming завершён"
+
+
+def test_cookie_refresh_on_minus_one() -> None:
+    """-1 (протухли куки) → обновить куки неинтерактивно и перечитать остаток.
+
+    222: первый check даёт -1 → рефреш кук → повторный check даёт 0 → done.
+    Игра НЕ должна уйти в unverified, тост — чистый.
+    """
+    events = _run(
+        {222: [-1, 0]},
+        [(222, 3)],
+        refresh_cookies={"steamLoginSecure": "fresh"},
+    )
+
+    assert ("refresh", False) in events  # обновление именно неинтерактивное
+    assert ("done", 222) in events  # перечитанный 0 → помечен done
+    assert _last_toast(events) == "Card farming завершён"  # без «оговорок»
+
+
+def test_no_cookie_refresh_when_check_ok() -> None:
+    """Без -1 куки не трогаем (нет лишних вызовов get_web_cookies)."""
+    events = _run({222: [0]}, [(222, 2)])
+
+    assert ("refresh", False) not in events
