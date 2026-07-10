@@ -116,6 +116,13 @@ def clear_playtime_progress() -> None:
         log.debug("Удалён файл прогресса: %s", PLAYTIME_DONE_FILE)
 
 
+def clear_playtime_skip() -> None:
+    """Удаляет playtime/skip.txt (ретрай игр, ранее не подключившихся к Steam)."""
+    if PLAYTIME_SKIP_FILE.exists():
+        PLAYTIME_SKIP_FILE.unlink()
+        log.debug("Удалён файл прогресса: %s", PLAYTIME_SKIP_FILE)
+
+
 def clear_error_ids() -> None:
     """Удаляет error.txt (для retry-errors)."""
     if ERROR_IDS_FILE.exists():
