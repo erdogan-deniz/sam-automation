@@ -148,10 +148,41 @@ def _fetch_targets(cfg: Any, steam_id: str) -> list[dict]:
     )
 
 
+def _report_result(
+    status: str, boosted: int, failed: int, total: int, cfg: Any
+) -> None:
+    """Честный финальный отчёт (лог + toast + Telegram).
+
+    success-✅ только когда прогон дошёл до конца без провалов. Ctrl+C
+    (`interrupted`), ошибка (`error`) и наличие провалов дают ⚠️ и честный
+    текст, а не «✅ обработано» — инвариант честного отчёта.
+    """
+    processed = boosted + failed
+    if status == "interrupted":
+        head, ok = "прервано (Ctrl+C)", False
+    elif status == "error":
+        head, ok = "прервано ошибкой", False
+    elif failed:
+        head, ok = "готово с оговорками", False
+    else:
+        head, ok = "готово", True
+    detail = (
+        f"набито {boosted}, не подключились {failed}, "
+        f"обработано {processed} / {total}"
+    )
+    log.info(SEPARATOR)
+    log.info("Boost Playtime — %s. %s", head, detail)
+    log.info(SEPARATOR)
+    toast("SAM Automation — Playtime", f"{head}: {detail}")
+    mark = "✅" if ok else "⚠️"
+    send_telegram(f"{mark} Playtime boost — {head}: {detail}", cfg)
+
+
 def _boost_loop(games: list[dict], cfg: Any) -> None:
     """Batch-цикл: запустить N игр → ждать playtime_idle_duration → убить всех → следующий батч."""
     total = len(games)
-    done_count = 0
+    boosted_count = 0
+    failed_count = 0
     active: dict[int, subprocess.Popen] = {}
     # Известные игры (есть в Steam API) в done.txt не пишем — их «готовность»
     # определяется по реальному playtime через API при следующем скане.
@@ -174,6 +205,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     )
     log.info(SEPARATOR)
 
+    status = "ok"
     try:
         for i in range(0, total, cfg.playtime_concurrent_games):
             batch = games[i : i + cfg.playtime_concurrent_games]
@@ -218,32 +250,30 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
                     mark_playtime_done(appid)
                 log.info("[%d] Закрыт", appid)
 
-            done_count += len(survivors) + len(failed)
-            log.info("Прогресс: %d / %d", done_count, total)
+            boosted_count += len(survivors)
+            failed_count += len(failed)
+            log.info("Прогресс: %d / %d", boosted_count + failed_count, total)
 
             # Пауза перед следующим батчем — даём Steam освободить сессии
             if i + cfg.playtime_concurrent_games < total:
                 time.sleep(_PAUSE_AFTER_KILL)
 
     except KeyboardInterrupt:
-        log.info("Прервано (Ctrl+C). Закрываю активные игры...")
-        for appid, proc in active.items():
+        status = "interrupted"
+        log.info("Прервано (Ctrl+C).")
+    except Exception:
+        status = "error"
+        log.exception("Boost прерван ошибкой.")
+    finally:
+        # Гарантированно добить активные + сироты недозапущенного батча на ЛЮБОМ
+        # выходе (норма/Ctrl+C/ошибка) — иначе SAM.Game.exe осиротеют и займут
+        # global user. Ctrl+C/ошибка НЕ пишут done (survivors помечаются только в
+        # норме, внутри цикла).
+        for proc in active.values():
             kill_process(proc)
-        # Страховка: Ctrl+C во время запуска батча мог оставить уже стартовавшие
-        # SAM.Game.exe вне active — добить все, чтобы не осиротить.
         kill_all_sam_games()
-        # Не помечаем как done — батч мог не набрать достаточно времени
 
-    log.info(SEPARATOR)
-    log.info("Boost Playtime завершён. Обработано: %d / %d", done_count, total)
-    log.info(SEPARATOR)
-    toast(
-        "SAM Automation — Playtime",
-        f"Готово: {done_count} / {total} игр обработано",
-    )
-    send_telegram(
-        f"✅ Playtime boost: {done_count} / {total} игр обработано", cfg
-    )
+    _report_result(status, boosted_count, failed_count, total, cfg)
 
 
 def main() -> None:
