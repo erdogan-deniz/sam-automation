@@ -2,6 +2,35 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.7.0]
+
+### Playtime boost — надёжность и корректность (глубокий аудит, 42 агента)
+
+- **Потеря игры (HIGH):** known-игра при разовом (часто транзиентном) провале
+  подключения больше НЕ хоронится в `skip.txt` навсегда — skip только для
+  unknown; known перепроверяет Steam API на следующем прогоне. Добавлены
+  `clear_playtime_skip` и флаг `--retry-skips` для восстановления ранее
+  отсеянных игр.
+- **Свип процессов (HIGH):** любое исключение в `_boost_loop` (не только
+  Ctrl+C) добивает активные + `kill_all_sam_games` через `finally` —
+  `SAM.Game.exe` больше не сиротеют и не занимают global user.
+- **Честный отчёт:** ✅-тост/Telegram только при полном прогоне без провалов;
+  Ctrl+C, ошибка и наличие провалов → ⚠️ и честный текст (`_report_result`).
+- **Пустой owned-games:** предупреждение при приватных Game details (все игры
+  классифицируются unknown); `main` ловит `RuntimeError` из `_fetch_targets`.
+- **Валидация конфига:** `playtime_idle_duration≥1`, `playtime_target_minutes≥1`,
+  `launch_stagger≥0`; warning на не-список `exclude_ids`/`game_ids`.
+
+### Run-lock и GUI
+
+- **Run-lock:** берётся ДО деструктивного `--reset`/`--retry-skips` (`--list`
+  теперь read-only). Формат `PID:create_time:name` отсекает PID-reuse, захват
+  атомарен (`os.open O_EXCL`), release снимает ТОЛЬКО собственный лок.
+- **Teardown:** второй Ctrl+C во время уборки не обрывает свип (bounded-retry).
+- **GUI:** сохранение настроек мержит `config.yaml` — больше не затирает
+  `playtime_concurrent_games`/`launch_stagger`/`playtime_target_minutes`/
+  `telegram_*`/`game_ids`, которых нет в форме.
+
 ## [1.6.2]
 
 ### Устойчивость сети (hardening)
