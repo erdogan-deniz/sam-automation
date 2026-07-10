@@ -170,3 +170,37 @@ def test_check_cards_remaining_retries_transient(
     result = card_checker.check_cards_remaining({}, "76561190000000000", 774241)
 
     assert result == 2  # не -1: транзиентный отказ пережит ретраем
+
+
+def test_fetch_page_wraps_remote_disconnected() -> None:
+    """RemoteDisconnected (редирект) → RuntimeError, чтобы ретрай его поймал.
+
+    Реальный краш A/B-прогона: при 302 на страницу логина getresponse кидал
+    http.client.RemoteDisconnected — подкласс OSError, но НЕ urllib URLError →
+    проходил мимо except и рушил весь прогон вместо штатного ретрая.
+    """
+    import http.client
+
+    class _BoomOpener:
+        def open(self, url: str, timeout: int = 15) -> object:
+            raise http.client.RemoteDisconnected(
+                "Remote end closed connection without response"
+            )
+
+    with pytest.raises(RuntimeError):
+        card_checker._fetch_page(
+            _BoomOpener(), f"{card_checker._COMMUNITY_BASE}/x"
+        )
+
+
+def test_fetch_page_wraps_os_error() -> None:
+    """Любой OSError (сброс соединения / SSL-таймаут) тоже → RuntimeError."""
+
+    class _BoomOpener:
+        def open(self, url: str, timeout: int = 15) -> object:
+            raise ConnectionResetError("connection reset by peer")
+
+    with pytest.raises(RuntimeError):
+        card_checker._fetch_page(
+            _BoomOpener(), f"{card_checker._COMMUNITY_BASE}/x"
+        )
