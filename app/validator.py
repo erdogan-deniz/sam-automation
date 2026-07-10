@@ -115,6 +115,11 @@ def _check_steam_api(cfg: Config) -> list[str]:
         return [f"Could not reach Steam API: {exc.reason}"]
     except (OSError, http.client.HTTPException) as exc:
         return [f"Could not reach Steam API: {exc}"]
+    except ValueError as exc:
+        # HTTP 200 с не-JSON телом (Cloudflare/captive-portal HTML) →
+        # JSONDecodeError (подкласс ValueError). validate() обещает «никогда
+        # не бросает» — возвращаем ошибку, а не сырой трейсбек.
+        return [f"Steam API вернул не-JSON ответ: {exc}"]
 
 
 # ── Orchestrator ──────────────────────────────────────────────────────────
