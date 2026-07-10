@@ -27,6 +27,7 @@ from typing import Any
 from app.cache import (
     ALL_IDS_FILE,
     clear_playtime_progress,
+    clear_playtime_skip,
     load_game_names,
     load_playtime_done_ids,
     load_playtime_skip_ids,
@@ -72,15 +73,23 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Сбросить прогресс (playtime/done.txt) и набить время заново",
     )
+    parser.add_argument(
+        "--retry-skips",
+        action="store_true",
+        help="Очистить playtime/skip.txt — заново попробовать не подключившиеся",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
 
 def _prepare_progress(args: argparse.Namespace) -> None:
-    """Применяет флаг сброса прогресса до сбора списка игр."""
+    """Применяет флаги сброса прогресса до сбора списка игр."""
     if args.reset:
         clear_playtime_progress()
         log.info("Сброшен прогресс playtime (--reset)")
+    if args.retry_skips:
+        clear_playtime_skip()
+        log.info("Очищен skip playtime (--retry-skips)")
 
 
 def _select_targets(
@@ -148,6 +157,13 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     # определяется по реальному playtime через API при следующем скане.
     known_ids = {g["appid"] for g in games if g.get("known")}
 
+    def _skip_if_unknown(appid: int) -> None:
+        # known-игры гейтятся по Steam API: разовый (часто транзиентный) провал
+        # НЕ хороним в skip навсегда — их перепроверит API на следующем прогоне.
+        # skip только для unknown (по ним playtime не проверить).
+        if appid not in known_ids:
+            mark_playtime_skip(appid)
+
     log.info(SEPARATOR)
     log.info("Boost Playtime — начало работы")
     log.info(
@@ -181,11 +197,20 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
             survivors, failed = idle_and_split_survivors(
                 active,
                 cfg.playtime_idle_duration,
-                on_failed=mark_playtime_skip,
+                on_failed=_skip_if_unknown,
             )
 
-            if failed:
-                log.info("Не подключились к Steam (в skip): %d", len(failed))
+            failed_skip = [a for a in failed if a not in known_ids]
+            failed_retry = [a for a in failed if a in known_ids]
+            if failed_skip:
+                log.info(
+                    "Не подключились к Steam (в skip): %d", len(failed_skip)
+                )
+            if failed_retry:
+                log.info(
+                    "known-игры не подключились — ретрай по API: %d",
+                    len(failed_retry),
+                )
             for appid in survivors:
                 # known гейтятся по реальному playtime_forever через API —
                 # в done.txt их не пишем; unknown проверить нельзя → resume.
