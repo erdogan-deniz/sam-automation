@@ -16,6 +16,23 @@ from app.config import load_config
 _CONFIG_PATH = Path("config.yaml")
 
 
+def _merge_config(existing: dict, updates: dict, exclude: list[int]) -> dict:
+    """Мержит поля формы в существующий config.yaml, сохраняя чужие ключи.
+
+    Форма покрывает не все ключи — при сохранении нельзя терять те, которых в
+    ней нет (playtime_concurrent_games, launch_stagger, playtime_target_minutes,
+    telegram_bot_token/chat_id, game_ids). exclude_ids управляется формой явно:
+    непустой → записать, пустой → убрать.
+    """
+    merged = dict(existing)
+    merged.update(updates)
+    if exclude:
+        merged["exclude_ids"] = exclude
+    else:
+        merged.pop("exclude_ids", None)
+    return merged
+
+
 class SettingsTab(ctk.CTkScrollableFrame):
     """Вкладка настроек: редактирование полей config.yaml через GUI."""
 
@@ -330,14 +347,25 @@ class SettingsTab(ctk.CTkScrollableFrame):
             "playtime_idle_duration": int(self._playtime_idle_duration.get()),
         }
 
-        if exclude:
-            data["exclude_ids"] = exclude
-
-        # Убираем пустые строки
+        # Убираем пустые строки (не затирать существующее пустым значением)
         data = {k: v for k, v in data.items() if v != ""}
 
+        # Мерж в существующий config.yaml: НЕ теряем ключи, которых нет в форме
+        # (playtime_concurrent_games, launch_stagger, playtime_target_minutes,
+        # telegram_*, game_ids) — иначе сохранение из GUI сбрасывало бы их.
+        existing: dict = {}
+        if _CONFIG_PATH.exists():
+            try:
+                existing = (
+                    yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8"))
+                    or {}
+                )
+            except yaml.YAMLError:
+                existing = {}
+        merged = _merge_config(existing, data, exclude)
+
         _CONFIG_PATH.write_text(
-            yaml.dump(data, allow_unicode=True, default_flow_style=False),
+            yaml.dump(merged, allow_unicode=True, default_flow_style=False),
             encoding="utf-8",
         )
         if self.is_configured():
