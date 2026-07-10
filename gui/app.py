@@ -12,7 +12,7 @@ from gui.tabs.settings import SettingsTab
 
 
 class SAMAutomationApp(ctk.CTk):
-    """Главное окно SAM Automation с вкладками Achievements, Cards, Settings."""
+    """Главное окно SAM Automation с вкладками Achievements, Cards, Playtime, Settings."""
 
     def __init__(self) -> None:
         ctk.set_appearance_mode("dark")
@@ -80,6 +80,11 @@ class SAMAutomationApp(ctk.CTk):
         self._playtime.stop()
 
     def _on_close(self) -> None:
-        """Отменяет хоткей и закрывает окно."""
+        """Останавливает запущенные скрипты, отменяет хоткей и закрывает окно.
+
+        Без остановки закрытие окна (X) оставило бы farm.py крутиться в фоне
+        (держа run-lock и оставляя SAM.Game.exe в игре).
+        """
+        self._stop_all()
         self._hotkey.unregister()
         self.destroy()

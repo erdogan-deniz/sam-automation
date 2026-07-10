@@ -10,8 +10,6 @@ from ..id_file import _append_id, load_ids_file
 log = logging.getLogger("sam_automation")
 
 CARD_DONE_FILE = CARDS_DIR / "done.txt"
-CARD_HAS_CARDS_FILE = CARDS_DIR / "has_cards.txt"
-CARD_NO_CARDS_FILE = CARDS_DIR / "no_cards.txt"
 
 
 def load_card_done_ids() -> set[int]:

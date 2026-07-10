@@ -39,6 +39,32 @@ def test_playtime_concurrent_games_default() -> None:
     assert Config().playtime_concurrent_games == 10
 
 
+# ── load_config — Telegram ────────────────────────────────────────────────
+
+
+def test_telegram_defaults_empty() -> None:
+    assert Config().telegram_bot_token == ""
+    assert Config().telegram_chat_id == ""
+
+
+def test_load_config_telegram_fields(
+    write_config: Callable[..., str],
+) -> None:
+    path = write_config(telegram_bot_token="123:ABC", telegram_chat_id="42")
+    cfg = load_config(path)
+    assert cfg.telegram_bot_token == "123:ABC"
+    assert cfg.telegram_chat_id == "42"
+
+
+def test_load_config_telegram_chat_id_numeric_becomes_string(
+    write_config: Callable[..., str],
+) -> None:
+    # YAML может загрузить chat_id как int, если не в кавычках
+    path = write_config(telegram_chat_id=42)
+    cfg = load_config(path)
+    assert cfg.telegram_chat_id == "42"
+
+
 # ── load_config — базовые поля ────────────────────────────────────────────
 
 

@@ -2,7 +2,7 @@
 
 Automatically unlock all Steam achievements, farm trading card drops, and boost playtime across your entire game library.
 
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Python](https://img.shields.io/badge/python-3.12-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -18,7 +18,7 @@ Progress is saved after every game — if interrupted, re-running resumes from w
 ## Requirements
 
 - Windows 10 / 11
-- Python 3.10+
+- Python 3.12
 - Steam (must be running and logged in)
 - `SAM.Game.exe` — downloaded automatically from GitHub on first run
 
@@ -71,7 +71,7 @@ python scripts/stats.py
 ### Achievements catalog (advisory, CLI)
 
 ```bash
-# Classify the library via the Steam Store API into with.txt / store_zero.txt.
+# Classify the library via the Steam Store API into with.txt / store_zero.txt / store_empty.txt.
 # Cached and resumable — re-run to continue. Store API is ~1.2s per game.
 python scripts/categorize.py
 
@@ -127,6 +127,10 @@ python scripts/playtime/boost.py
 | `card_check_interval` | `10` | Minutes between card drop checks (card farming) |
 | `playtime_idle_duration` | `120` | Seconds to idle each game (playtime boost) |
 | `playtime_target_minutes` | `3` | Minimum playtime per game; games below this are boosted |
+| `playtime_concurrent_games` | `10` | How many games to idle in parallel (playtime boost) |
+| `launch_stagger` | `3` | Seconds between staggered game launches within a batch (playtime boost) |
+| `telegram_bot_token` | — | Telegram Bot API token; enables remote completion/error notifications (optional) |
+| `telegram_chat_id` | — | Telegram chat ID to send notifications to (optional) |
 
 ## Getting a Steam API Key and Steam ID
 
@@ -171,7 +175,7 @@ sam-automation/
 ├── gui/                    # GUI (CustomTkinter)
 │   ├── app.py              # Main window
 │   ├── runner.py           # Script subprocess runner
-│   └── tabs/               # Tab components (achievements, cards, settings)
+│   └── tabs/               # Tab components (achievements, cards, playtime, settings)
 ├── scripts/
 │   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
 │   ├── stats.py            # Library stats summary
@@ -188,8 +192,9 @@ sam-automation/
 │       ├── names.json      # AppID → game name cache
 │       └── ids/
 │           ├── all.txt             # Master list of App IDs (from scan.py)
-│           ├── achievements/       # unlocked, error, without + catalog (with, store_zero)
-│           └── cards/              # has_cards.txt, no_cards.txt, done.txt
+│           ├── achievements/       # unlocked, error, without + catalog (with, store_zero, store_empty)
+│           ├── cards/              # done.txt
+│           └── playtime/           # done.txt, skip.txt
 ├── logs/                   # Session logs (gitignored)
 ├── external/
 │   └── SAM/                # SAM binaries (auto-downloaded on first run)
@@ -219,13 +224,12 @@ Delete or edit them manually if needed.
 | `without.txt` | Games **SAM** confirmed have no achievements (skipped permanently) |
 | `with.txt` | Catalog: Store-confirmed to have achievements (advisory priority) |
 | `store_zero.txt` | Catalog: Store reported 0 achievements — advisory, farming does **not** skip these |
+| `store_empty.txt` | Catalog: Store responded but returned no achievements block — advisory |
 
 **Cards** (`data/games/ids/cards/`)
 
 | File | Purpose |
 | --- | --- |
-| `has_cards.txt` | Games confirmed to have trading cards |
-| `no_cards.txt` | Games confirmed to have no trading cards |
 | `done.txt` | Games with no remaining card drops |
 
 **Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
