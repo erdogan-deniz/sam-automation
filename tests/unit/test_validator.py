@@ -12,6 +12,7 @@ import pytest
 from app.config import Config
 from app.validator import (
     _check_file_paths,
+    _check_numeric_bounds,
     _check_required_fields,
     _check_steam_api,
     _check_steam_process,
@@ -103,6 +104,34 @@ def test_file_paths_all_unset() -> None:
     # Nothing set = nothing to check
     cfg = Config()
     assert _check_file_paths(cfg) == []
+
+
+# ── _check_numeric_bounds (playtime/cards) ───────────────────────────────
+
+
+def test_bounds_default_config_ok() -> None:
+    # Дефолтный конфиг обязан проходить (idle=120, target=3, stagger=3.0).
+    assert _check_numeric_bounds(Config()) == []
+
+
+def test_bounds_idle_duration_zero() -> None:
+    errors = _check_numeric_bounds(Config(playtime_idle_duration=0))
+    assert any("playtime_idle_duration" in e for e in errors)
+
+
+def test_bounds_target_minutes_zero() -> None:
+    errors = _check_numeric_bounds(Config(playtime_target_minutes=0))
+    assert any("playtime_target_minutes" in e for e in errors)
+
+
+def test_bounds_launch_stagger_negative() -> None:
+    errors = _check_numeric_bounds(Config(launch_stagger=-1.0))
+    assert any("launch_stagger" in e for e in errors)
+
+
+def test_bounds_playtime_concurrent_zero() -> None:
+    errors = _check_numeric_bounds(Config(playtime_concurrent_games=0))
+    assert any("playtime_concurrent_games" in e for e in errors)
 
 
 # ── _check_steam_process ──────────────────────────────────────────────────

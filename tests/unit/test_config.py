@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Callable
 
@@ -37,6 +38,24 @@ def test_load_config_playtime_concurrent_games(
 
 def test_playtime_concurrent_games_default() -> None:
     assert Config().playtime_concurrent_games == 10
+
+
+def test_load_config_exclude_ids_list(
+    write_config: Callable[..., str],
+) -> None:
+    path = write_config(exclude_ids=[1, 2, 3])
+    assert load_config(path).exclude_ids == [1, 2, 3]
+
+
+def test_load_config_exclude_ids_non_list_ignored_with_warning(
+    write_config: Callable[..., str], caplog
+) -> None:  # type: ignore[no-untyped-def]
+    # f4: скаляр вместо списка тихо игнорился → игры не исключались. Теперь warn.
+    path = write_config(exclude_ids=12345)
+    with caplog.at_level(logging.WARNING, logger="sam_automation"):
+        cfg = load_config(path)
+    assert cfg.exclude_ids == []
+    assert any("exclude_ids" in r.message for r in caplog.records)
 
 
 # ── load_config — Telegram ────────────────────────────────────────────────
