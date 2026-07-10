@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+log = logging.getLogger("sam_automation")
 
 
 @dataclass
@@ -73,13 +76,24 @@ def load_config(config_path: str = "config.yaml") -> Config:
     cfg.steam_id = str(raw.get("steam_id", ""))
     cfg.steam_path = raw.get("steam_path", "")
 
-    if "game_ids" in raw and isinstance(raw["game_ids"], list):
-        cfg.game_ids = [int(gid) for gid in raw["game_ids"]]
+    if "game_ids" in raw:
+        if isinstance(raw["game_ids"], list):
+            cfg.game_ids = [int(gid) for gid in raw["game_ids"]]
+        else:
+            log.warning(
+                "config.yaml: game_ids не список — игнорирую (ожидается [id, ...])"
+            )
 
     cfg.game_ids_file = raw.get("game_ids_file")
 
-    if "exclude_ids" in raw and isinstance(raw["exclude_ids"], list):
-        cfg.exclude_ids = [int(gid) for gid in raw["exclude_ids"]]
+    if "exclude_ids" in raw:
+        if isinstance(raw["exclude_ids"], list):
+            cfg.exclude_ids = [int(gid) for gid in raw["exclude_ids"]]
+        else:
+            log.warning(
+                "config.yaml: exclude_ids не список — игнорирую; эти игры НЕ "
+                "будут исключены (ожидается [id, ...])"
+            )
 
     for float_key in (
         "launch_delay",
