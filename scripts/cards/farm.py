@@ -162,8 +162,25 @@ def _farm_loop(
             time.sleep(_FLUSH_PAUSE_SECONDS)
 
             # Перечитываем остатки по каждой закрытой игре.
+            cookie_refresh_tried = False
             for appid, _proc in batch:
                 remaining = check_cards_remaining(cookies, steam_id, appid)
+                if remaining < 0 and not cookie_refresh_tried:
+                    # Пачка -1 часто = протухли web-куки, а не «нет карт».
+                    # Обновляем НЕинтерактивно раз за батч и перечитываем,
+                    # чтобы не помечать игры unverified из-за истёкшей сессии.
+                    cookie_refresh_tried = True
+                    fresh = get_web_cookies(cfg.steam_id, interactive=False)
+                    if fresh:
+                        cookies = fresh
+                        log.info(
+                            "APP ID: %d — остаток -1; обновил web-куки, "
+                            "перечитываю",
+                            appid,
+                        )
+                        remaining = check_cards_remaining(
+                            cookies, steam_id, appid
+                        )
                 time.sleep(1.0)  # пауза между запросами
 
                 if remaining == 0:
