@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gui.tabs.settings import SettingsTab
+from gui.tabs.settings import SettingsTab, _merge_config
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -185,3 +185,34 @@ def test_is_configured_false_when_key_empty() -> None:
 def test_is_configured_false_when_id_empty() -> None:
     ns = _make_settings(steam_api_key="key", steam_id="")
     assert not SettingsTab.is_configured(ns)  # type: ignore[arg-type]
+
+
+# ── _merge_config (M4: сохранение не теряет ключи не из формы) ───────────────
+
+
+def test_merge_config_preserves_form_absent_keys() -> None:
+    existing = {
+        "playtime_concurrent_games": 15,
+        "launch_stagger": 2.0,
+        "playtime_target_minutes": 5,
+        "telegram_bot_token": "tok",
+        "game_ids": [1, 2],
+        "steam_id": "old",
+    }
+    updates = {"steam_id": "new", "playtime_idle_duration": 200}
+    merged = _merge_config(existing, updates, exclude=[])
+    # ключи не из формы сохранены
+    assert merged["playtime_concurrent_games"] == 15
+    assert merged["launch_stagger"] == 2.0
+    assert merged["playtime_target_minutes"] == 5
+    assert merged["telegram_bot_token"] == "tok"
+    assert merged["game_ids"] == [1, 2]
+    # управляемые формой обновлены
+    assert merged["steam_id"] == "new"
+    assert merged["playtime_idle_duration"] == 200
+
+
+def test_merge_config_exclude_set_and_cleared() -> None:
+    assert _merge_config({}, {}, [1, 2])["exclude_ids"] == [1, 2]
+    # пустой exclude убирает ключ (форма явно очищает)
+    assert "exclude_ids" not in _merge_config({"exclude_ids": [9]}, {}, [])
