@@ -84,3 +84,64 @@ def test_prepare_progress_noop_without_flags(
     monkeypatch.setattr(farm, "clear_error_ids", lambda: called.append("err"))
     farm._prepare_progress(farm._build_parser().parse_args([]))
     assert called == []
+
+
+# ── честный финальный отчёт ─────────────────────────────────────────────────
+# Инвариант: прерванный (Ctrl+C) или аварийный (слишком много ошибок) прогон
+# НЕ должен давать success-«✅ Готово» — только честный ⚠️ с оговоркой.
+
+
+def _capture_report(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    unlocked: int,
+    errors: int,
+    total: int,
+) -> tuple[str, str]:
+    """Гоняет farm._report_result с перехватом toast/Telegram."""
+    toast_msgs: list[str] = []
+    tg_msgs: list[str] = []
+    monkeypatch.setattr(
+        farm, "toast", lambda title, msg: toast_msgs.append(f"{title}: {msg}")
+    )
+    monkeypatch.setattr(
+        farm, "send_telegram", lambda text, cfg: tg_msgs.append(text)
+    )
+    farm._report_result(status, unlocked, errors, total, cfg=object())
+    return toast_msgs[0], tg_msgs[0]
+
+
+def test_report_clean_run_is_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toast_msg, tg_msg = _capture_report(monkeypatch, "ok", 10, 0, 10)
+    assert "✅" in tg_msg
+    assert "⚠️" not in tg_msg
+    assert "готово" in toast_msg.lower()
+
+
+def test_report_errors_downgrade_to_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toast_msg, tg_msg = _capture_report(monkeypatch, "ok", 7, 3, 10)
+    assert "✅" not in tg_msg
+    assert "⚠️" in tg_msg
+    assert "оговорк" in toast_msg.lower()
+
+
+def test_report_interrupted_is_not_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toast_msg, tg_msg = _capture_report(monkeypatch, "interrupted", 5, 0, 10)
+    assert "✅" not in tg_msg
+    assert "⚠️" in tg_msg
+    assert "прерв" in toast_msg.lower()
+
+
+def test_report_aborted_is_not_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toast_msg, tg_msg = _capture_report(monkeypatch, "aborted", 2, 5, 10)
+    assert "✅" not in tg_msg
+    assert "⚠️" in tg_msg
+    assert "прерв" in toast_msg.lower()
