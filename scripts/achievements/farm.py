@@ -181,6 +181,32 @@ def _log_summary(results: list[UnlockResult], errors: int) -> None:
             log.info("  %d: STATUS: ERROR%s", r.game_id, reason)
 
 
+def _report_result(
+    status: str, unlocked: int, errors: int, total: int, cfg
+) -> None:
+    """Честный финальный отчёт (лог + toast + Telegram).
+
+    success-«✅ готово» только когда прогон дошёл до конца без ошибок. Ctrl+C
+    (`interrupted`), аварийный стоп по серии ошибок (`aborted`) и наличие
+    ошибок дают ⚠️ и честный текст — инвариант честного отчёта.
+    """
+    if status == "interrupted":
+        head, ok = "прервано (Ctrl+C)", False
+    elif status == "aborted":
+        head, ok = "прервано (слишком много ошибок)", False
+    elif errors:
+        head, ok = "готово с оговорками", False
+    else:
+        head, ok = "готово", True
+    detail = f"разблокировано {unlocked}, ошибок {errors} из {total} игр"
+    log.info(SEPARATOR)
+    log.info("Achievements — %s. %s", head, detail)
+    log.info(SEPARATOR)
+    toast("SAM Automation — Achievements", f"{head}: {detail}")
+    mark = "✅" if ok else "⚠️"
+    send_telegram(f"{mark} Achievements — {head}: {detail}", cfg)
+
+
 def main() -> None:
     """Точка входа: запускает цикл разблокировки достижений."""
     print()
@@ -266,6 +292,7 @@ def main() -> None:
     tracker = ErrorTracker(max_consecutive=cfg.max_consecutive_errors)
     results: list[UnlockResult] = []
     errors = 0
+    status = "ok"
 
     try:
         for i, game_id in enumerate(game_ids, 1):
@@ -279,8 +306,10 @@ def main() -> None:
                 time.sleep(cfg.between_games_delay)
 
     except SAMTooManyErrors:
+        status = "aborted"
         log.error("Прервано. Перезапусти скрипт — продолжит с места остановки.")
     except KeyboardInterrupt:
+        status = "interrupted"
         log.info(
             "Прервано (Ctrl+C). Перезапусти — продолжит с места остановки."
         )
@@ -292,15 +321,8 @@ def main() -> None:
     log.info("ИТОГИ")
     _log_summary(results, errors)
 
-    ok = sum(1 for r in results if not r.skipped)
-    toast(
-        "SAM Automation — Achievements",
-        f"Готово: {ok} разблокировано, {errors} ошибок из {total} игр",
-    )
-    send_telegram(
-        f"✅ Achievements: {ok} разблокировано, {errors} ошибок из {total} игр",
-        cfg,
-    )
+    unlocked = sum(1 for r in results if not r.skipped)
+    _report_result(status, unlocked, errors, total, cfg)
 
 
 if __name__ == "__main__":
