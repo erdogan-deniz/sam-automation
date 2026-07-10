@@ -104,7 +104,8 @@ python scripts/playtime/boost.py --list
 # Boost every game in all.txt via short SAM sessions (resumable)
 python scripts/playtime/boost.py
 
-#    --reset   re-boost everything (clears playtime/done.txt)
+#    --reset         re-boost everything (clears playtime/done.txt)
+#    --retry-skips   retry games that previously failed to connect (clears skip.txt)
 ```
 
 ## Configuration (`config.yaml`)
@@ -237,8 +238,11 @@ API reports playtime for are gated on the **actual** `playtime_forever`: those a
 or above `playtime_target_minutes` are skipped, and ones still below are re-boosted
 each run until they truly reach the target (they are *not* marked done on a single
 pass). Games the API has no playtime for (free/demo/license apps) can't be verified,
-so they are idled once and recorded in `playtime/done.txt` to resume. Games that
-fail to connect go to `playtime/skip.txt`. Use `--reset` to clear `done.txt`.
+so they are idled once and recorded in `playtime/done.txt` to resume. **Unknown**
+games that fail to connect go to `playtime/skip.txt`; a **known** game that fails
+is *not* buried in skip (a one-off connect glitch shouldn't lose it — the Steam
+API stays its source of truth and re-checks it next run). Use `--reset` to clear
+`done.txt`, or `--retry-skips` to clear `skip.txt` and retry skipped games.
 
 Session logs are written to `logs/` with timestamps (`YYYY-MM-DD_HH-MM-SS.log`).
 
