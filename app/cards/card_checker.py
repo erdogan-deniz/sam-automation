@@ -166,8 +166,11 @@ def fetch_games_with_card_drops(
     while True:
         if page > _MAX_BADGE_PAGES:
             log.warning(
-                "Достигнут предел в %d страниц — обрываю пагинацию.",
+                "Достигнут предел в %d страниц — обрываю пагинацию. Список игр "
+                "может быть НЕПОЛНЫМ: игры на страницах %d+ не будут "
+                "отфармлены. Подними _MAX_BADGE_PAGES, если бейджей больше.",
                 _MAX_BADGE_PAGES,
+                _MAX_BADGE_PAGES + 1,
             )
             break
         url = (
