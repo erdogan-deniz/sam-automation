@@ -96,5 +96,22 @@ def test_prepare_progress_noop(monkeypatch) -> None:  # type: ignore[no-untyped-
     monkeypatch.setattr(
         boost, "clear_playtime_progress", lambda: called.append("x")
     )
+    monkeypatch.setattr(
+        boost, "clear_playtime_skip", lambda: called.append("s")
+    )
     boost._prepare_progress(boost._build_parser().parse_args([]))
     assert called == []
+
+
+def test_parser_retry_skips() -> None:
+    assert boost._build_parser().parse_args(["--retry-skips"]).retry_skips
+
+
+def test_prepare_progress_retry_skips_clears(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    called: list[str] = []
+    monkeypatch.setattr(boost, "clear_playtime_progress", lambda: None)
+    monkeypatch.setattr(
+        boost, "clear_playtime_skip", lambda: called.append("s")
+    )
+    boost._prepare_progress(boost._build_parser().parse_args(["--retry-skips"]))
+    assert called == ["s"]
