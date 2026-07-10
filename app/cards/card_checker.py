@@ -32,6 +32,26 @@ _MAX_BADGE_PAGES = (
 # ---------------------------------------------------------------------------
 
 
+class _RateLimitError(RuntimeError):
+    """HTTP 429 — превышен лимит запросов. Несёт Retry-After (сек), если есть."""
+
+    def __init__(self, msg: str, retry_after: float | None = None) -> None:
+        super().__init__(msg)
+        self.retry_after = retry_after
+
+
+class _AuthError(RuntimeError):
+    """HTTP 401/403 — истекли куки / нет доступа. НЕ транзиент (ретрай не лечит)."""
+
+
+def _parse_retry_after(e: urllib.error.HTTPError) -> float | None:
+    """Секунды из заголовка Retry-After (только числовой формат)."""
+    ra = e.headers.get("Retry-After") if e.headers else None
+    if ra and str(ra).strip().isdigit():
+        return float(str(ra).strip())
+    return None
+
+
 def _make_opener(cookies: dict | None = None) -> urllib.request.OpenerDirector:
     """Создаёт urllib opener с куками Steam Community (куки опциональны)."""
     jar = http.cookiejar.CookieJar()
@@ -59,6 +79,15 @@ def _fetch_page(opener: urllib.request.OpenerDirector, url: str) -> str:
         with opener.open(url, timeout=15) as resp:
             return resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as e:
+        if e.code == 429:
+            raise _RateLimitError(
+                f"HTTP 429 (rate limit) при запросе {url}",
+                _parse_retry_after(e),
+            ) from e
+        if e.code in (401, 403):
+            raise _AuthError(
+                f"HTTP {e.code} (истекли куки / нет доступа): {url}"
+            ) from e
         raise RuntimeError(f"HTTP {e.code} при запросе {url}") from e
     except urllib.error.URLError as e:
         raise RuntimeError(f"Ошибка подключения к {url}: {e.reason}") from e
@@ -78,6 +107,25 @@ def _fetch_page_with_retry(
     for attempt in range(retries):
         try:
             return _fetch_page(opener, url)
+        except _AuthError:
+            # Истёкшие куки / нет доступа — ретрай не поможет, пробрасываем сразу
+            # (иначе 3 бессмысленные попытки маскируют auth-проблему под «связь»).
+            raise
+        except _RateLimitError as e:
+            if attempt == retries - 1:
+                raise
+            wait = (
+                e.retry_after
+                if e.retry_after is not None
+                else _PAGE_RETRY_DELAY
+            )
+            log.warning(
+                "429 rate limit (попытка %d/%d) — жду %.0fс",
+                attempt + 1,
+                retries,
+                wait,
+            )
+            time.sleep(wait)
         except RuntimeError as e:
             if attempt == retries - 1:
                 raise
@@ -118,8 +166,11 @@ def fetch_games_with_card_drops(
     while True:
         if page > _MAX_BADGE_PAGES:
             log.warning(
-                "Достигнут предел в %d страниц — обрываю пагинацию.",
+                "Достигнут предел в %d страниц — обрываю пагинацию. Список игр "
+                "может быть НЕПОЛНЫМ: игры на страницах %d+ не будут "
+                "отфармлены. Подними _MAX_BADGE_PAGES, если бейджей больше.",
                 _MAX_BADGE_PAGES,
+                _MAX_BADGE_PAGES + 1,
             )
             break
         url = (
