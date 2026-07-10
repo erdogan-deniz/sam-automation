@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import logging
@@ -21,8 +22,14 @@ def _fetch_latest_release() -> dict:
     """Запрашивает последний релиз SAM с GitHub API."""
     req = urllib.request.Request(SAM_API_URL)
     req.add_header("User-Agent", "SAM-Automation")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (OSError, http.client.HTTPException) as e:
+        raise RuntimeError(
+            f"Не удалось получить релиз SAM с GitHub: {e}. Проверь сеть "
+            f"или скачай вручную: https://github.com/{SAM_REPO}/releases"
+        ) from e
 
 
 def check_for_update(exe_path: str) -> str | None:
@@ -126,8 +133,14 @@ def download_sam(target_dir: str, release: dict | None = None) -> str:
     log.info("Скачиваю %s ...", zip_url)
     req = urllib.request.Request(zip_url)
     req.add_header("User-Agent", "SAM-Automation")
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        data = resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = resp.read()
+    except (OSError, http.client.HTTPException) as e:
+        raise RuntimeError(
+            f"Не удалось скачать SAM zip: {e}. "
+            f"Скачай вручную: https://github.com/{SAM_REPO}/releases"
+        ) from e
 
     log.info("Распаковываю в %s ...", target)
     exe_path: str | None = None

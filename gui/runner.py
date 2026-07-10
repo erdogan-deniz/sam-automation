@@ -4,7 +4,7 @@
     runner = ScriptRunner()
     runner.on_output = lambda line: print(line)
     runner.on_finish = lambda code: print(f"exit {code}")
-    runner.run("scripts/achievements/scan.py", [])
+    runner.run("scripts/scan.py", [])
     # ...
     runner.stop()
 """
@@ -18,15 +18,24 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from gui import win_job
+
 
 class ScriptRunner:
-    """Запускает Python-скрипт как subprocess, стримит вывод через очередь."""
+    """Запускает Python-скрипт как subprocess, стримит вывод через очередь.
+
+    Дочерний процесс помещается в Win32 Job Object (KILL_ON_JOB_CLOSE), так
+    что stop() убивает ВСЁ дерево — сам скрипт И его внуков SAM.Game.exe.
+    Это надёжнее сигналов: не зависит от обработчиков и прерываемости
+    time.sleep, поэтому Stop/Esc/закрытие окна не оставляют сирот.
+    """
 
     def __init__(self) -> None:
         self.on_output: Callable[[str], None] | None = None
         self.on_finish: Callable[[int], None] | None = None
 
         self._proc: subprocess.Popen | None = None
+        self._job: int | None = None
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._running = False
 
@@ -44,6 +53,10 @@ class ScriptRunner:
         self._running = True
         cmd = [sys.executable, str(script_path), *(args or [])]
 
+        # Создаём job ДО запуска и помещаем в него процесс сразу после старта.
+        # Скрипт делает многосекундный setup до первого SAM.Game.exe, так что
+        # к моменту появления внуков он уже в job → внуки наследуют членство.
+        self._job = win_job.create_kill_on_close_job()
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -52,14 +65,27 @@ class ScriptRunner:
             encoding="utf-8",
             errors="replace",
         )
+        win_job.assign_process(self._job, self._proc.pid)
 
         thread = threading.Thread(target=self._read_output, daemon=True)
         thread.start()
 
     def stop(self) -> None:
-        """Завершает subprocess."""
-        if self._proc and self._running:
-            self._proc.terminate()
+        """Убивает всё дерево процессов (скрипт + внуки SAM.Game.exe).
+
+        Через Job Object — надёжно, без зависимости от сигналов/сна. Фолбэк
+        на terminate() самого процесса, если job недоступен (не-Windows).
+        """
+        if not (self._proc and self._running):
+            return
+        if self._job is not None:
+            win_job.terminate_job(self._job)
+            self._job = None
+        else:
+            try:
+                self._proc.terminate()
+            except OSError:
+                pass
 
     def poll_output(self) -> None:
         """Вызывается из главного потока (через widget.after).
@@ -74,6 +100,10 @@ class ScriptRunner:
                     returncode = self._proc.returncode if self._proc else -1
                     self._running = False
                     self._proc = None
+                    # Закрываем job-хендл завершившегося прогона (процессов
+                    # в нём уже нет — просто освобождаем ресурс).
+                    win_job.terminate_job(self._job)
+                    self._job = None
                     if self.on_finish:
                         self.on_finish(returncode)
                     break

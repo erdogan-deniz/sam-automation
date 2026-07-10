@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import urllib.error
@@ -28,6 +29,10 @@ def _api_get(url: str) -> dict:
         raise RuntimeError(f"Steam API вернул {e.code}: {e.reason}") from e
     except urllib.error.URLError as e:
         raise RuntimeError(f"Ошибка подключения к Steam API: {e.reason}") from e
+    except (OSError, http.client.HTTPException) as e:
+        # RemoteDisconnected/ConnectionReset/IncompleteRead не оборачиваются в
+        # URLError → без этого сырое исключение роняло весь scan/farm-прогон.
+        raise RuntimeError(f"Сетевой сбой Steam API: {e}") from e
 
 
 from .steam_id import resolve_steam_id  # noqa: E402

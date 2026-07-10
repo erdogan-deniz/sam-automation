@@ -36,12 +36,13 @@ from app.cache import (
 from app.config import load_config
 from app.id_file import read_ids_ordered
 from app.logging_setup import SEPARATOR, setup_logging
-from app.notify import toast
+from app.notify import send_telegram, toast
 from app.run_lock import acquire_run_lock, release_run_lock
 from app.sam import (
     check_steam_running,
-    drop_failed_launches,
     ensure_sam,
+    idle_and_split_survivors,
+    kill_all_sam_games,
     kill_process,
     launch_games_staggered,
 )
@@ -169,28 +170,30 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
                 stagger=cfg.launch_stagger,
             )
 
-            # Отсеять игры, не подключившиеся к Steam (playtest/демо и пр.)
-            failed = drop_failed_launches(active)
-            for appid in failed:
-                mark_playtime_skip(appid)
+            log.info(
+                "Батч %d игр запущен, жду до %d сек...",
+                len(active),
+                cfg.playtime_idle_duration,
+            )
+            # Выжившие (процесс жив весь idle, без окна ошибки) реально набили
+            # время; провалившиеся (умерли/окно 'Error') — нет. on_failed пишет
+            # skip сразу при детекции — переживает Ctrl+C во время idle.
+            survivors, failed = idle_and_split_survivors(
+                active,
+                cfg.playtime_idle_duration,
+                on_failed=mark_playtime_skip,
+            )
+
             if failed:
                 log.info("Не подключились к Steam (в skip): %d", len(failed))
+            for appid in survivors:
+                # known гейтятся по реальному playtime_forever через API —
+                # в done.txt их не пишем; unknown проверить нельзя → resume.
+                if appid not in known_ids:
+                    mark_playtime_done(appid)
+                log.info("[%d] Закрыт", appid)
 
-            if active:
-                log.info(
-                    "Батч %d игр запущен, жду %d сек...",
-                    len(active),
-                    cfg.playtime_idle_duration,
-                )
-                time.sleep(cfg.playtime_idle_duration)
-
-                for appid, proc in active.items():
-                    kill_process(proc)
-                    if appid not in known_ids:
-                        mark_playtime_done(appid)
-                    log.info("[%d] Закрыт", appid)
-
-            done_count += len(active) + len(failed)
+            done_count += len(survivors) + len(failed)
             log.info("Прогресс: %d / %d", done_count, total)
 
             # Пауза перед следующим батчем — даём Steam освободить сессии
@@ -201,6 +204,9 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
         log.info("Прервано (Ctrl+C). Закрываю активные игры...")
         for appid, proc in active.items():
             kill_process(proc)
+        # Страховка: Ctrl+C во время запуска батча мог оставить уже стартовавшие
+        # SAM.Game.exe вне active — добить все, чтобы не осиротить.
+        kill_all_sam_games()
         # Не помечаем как done — батч мог не набрать достаточно времени
 
     log.info(SEPARATOR)
@@ -209,6 +215,9 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     toast(
         "SAM Automation — Playtime",
         f"Готово: {done_count} / {total} игр обработано",
+    )
+    send_telegram(
+        f"✅ Playtime boost: {done_count} / {total} игр обработано", cfg
     )
 
 

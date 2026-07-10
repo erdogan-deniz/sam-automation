@@ -1,7 +1,7 @@
 """Чтение и запись текстовых файлов с целочисленными ID.
 
 Примитивы без доменной семантики — используются в cache.py, card_cache.py,
-card_store.py, game_list.py.
+game_list.py.
 """
 
 from __future__ import annotations
