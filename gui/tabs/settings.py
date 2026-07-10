@@ -25,7 +25,14 @@ def _merge_config(existing: dict, updates: dict, exclude: list[int]) -> dict:
     непустой → записать, пустой → убрать.
     """
     merged = dict(existing)
-    merged.update(updates)
+    for key, value in updates.items():
+        if value == "":
+            # Очищенное в форме поле (пустая строка) → убрать ключ, чтобы
+            # config вернулся к дефолту. Иначе сохранялось бы старое значение
+            # (нельзя было бы очистить game_ids_file/steam_path/sam_game_exe_path).
+            merged.pop(key, None)
+        else:
+            merged[key] = value
     if exclude:
         merged["exclude_ids"] = exclude
     else:
@@ -347,8 +354,8 @@ class SettingsTab(ctk.CTkScrollableFrame):
             "playtime_idle_duration": int(self._playtime_idle_duration.get()),
         }
 
-        # Убираем пустые строки (не затирать существующее пустым значением)
-        data = {k: v for k, v in data.items() if v != ""}
+        # Пустые строковые поля НЕ вырезаем — _merge_config трактует "" как
+        # очистку (убрать ключ). Числовые/required пусты быть не могут (_validate).
 
         # Мерж в существующий config.yaml: НЕ теряем ключи, которых нет в форме
         # (playtime_concurrent_games, launch_stagger, playtime_target_minutes,
