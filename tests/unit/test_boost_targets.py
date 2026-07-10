@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 _BOOST_PATH = (
     Path(__file__).resolve().parents[2] / "scripts" / "playtime" / "boost.py"
@@ -96,5 +97,55 @@ def test_prepare_progress_noop(monkeypatch) -> None:  # type: ignore[no-untyped-
     monkeypatch.setattr(
         boost, "clear_playtime_progress", lambda: called.append("x")
     )
+    monkeypatch.setattr(
+        boost, "clear_playtime_skip", lambda: called.append("s")
+    )
     boost._prepare_progress(boost._build_parser().parse_args([]))
     assert called == []
+
+
+def test_parser_retry_skips() -> None:
+    assert boost._build_parser().parse_args(["--retry-skips"]).retry_skips
+
+
+# ── M2: пустой owned-games API ──────────────────────────────────────────────
+
+
+def _patch_fetch_deps(monkeypatch, owned: list[dict]) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(boost, "read_ids_ordered", lambda p: [1, 2, 3])
+    monkeypatch.setattr(boost, "fetch_owned_games", lambda k, s: owned)
+    monkeypatch.setattr(boost, "load_playtime_skip_ids", set)
+    monkeypatch.setattr(boost, "load_playtime_done_ids", set)
+    monkeypatch.setattr(boost, "load_game_names", dict)
+
+
+def test_fetch_targets_warns_when_owned_empty(monkeypatch, caplog) -> None:  # type: ignore[no-untyped-def]
+    _patch_fetch_deps(monkeypatch, owned=[])
+    cfg = SimpleNamespace(
+        steam_api_key="k", exclude_ids=[], playtime_target_minutes=3
+    )
+    with caplog.at_level(logging.WARNING, logger="sam_automation"):
+        out = boost._fetch_targets(cfg, "sid")
+    # предупредил про owned, но НЕ абортил — цели всё равно собраны
+    assert any("owned" in r.message.lower() for r in caplog.records)
+    assert [g["appid"] for g in out] == [1, 2, 3]
+
+
+def test_fetch_targets_no_warn_when_owned_present(monkeypatch, caplog) -> None:  # type: ignore[no-untyped-def]
+    _patch_fetch_deps(monkeypatch, owned=[{"appid": 1, "playtime_forever": 0}])
+    cfg = SimpleNamespace(
+        steam_api_key="k", exclude_ids=[], playtime_target_minutes=3
+    )
+    with caplog.at_level(logging.WARNING, logger="sam_automation"):
+        boost._fetch_targets(cfg, "sid")
+    assert not any("owned" in r.message.lower() for r in caplog.records)
+
+
+def test_prepare_progress_retry_skips_clears(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    called: list[str] = []
+    monkeypatch.setattr(boost, "clear_playtime_progress", lambda: None)
+    monkeypatch.setattr(
+        boost, "clear_playtime_skip", lambda: called.append("s")
+    )
+    boost._prepare_progress(boost._build_parser().parse_args(["--retry-skips"]))
+    assert called == ["s"]
