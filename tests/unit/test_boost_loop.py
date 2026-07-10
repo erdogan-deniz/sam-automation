@@ -72,6 +72,41 @@ def test_boost_loop_marks_done_skip_and_spares_known(monkeypatch):
     assert seen["idle"] == 7
 
 
+def test_boost_loop_known_failure_not_written_to_skip(monkeypatch):
+    # H1: провал KNOWN-игры НЕ пишется в skip (истина по Steam API — ретрай на
+    # следующем прогоне); в skip уходят только unknown-провалы.
+    done: list[int] = []
+    skip: list[int] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", done.append)
+    monkeypatch.setattr(boost, "mark_playtime_skip", skip.append)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "send_telegram", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+
+    def fake_idle(active, idle, on_failed=None):
+        on_failed(99)  # known-игра провалилась (транзиентно)
+        on_failed(30)  # unknown-игра провалилась
+        return ([], [99, 30])
+
+    monkeypatch.setattr(boost, "idle_and_split_survivors", fake_idle)
+
+    games = [
+        {"appid": 99, "name": "K", "playtime_forever": 1, "known": True},
+        {"appid": 30, "name": "U", "playtime_forever": 0, "known": False},
+    ]
+    boost._boost_loop(games, _cfg())
+
+    assert 99 not in skip  # known-провал НЕ похоронен в skip
+    assert skip == [30]  # только unknown-провал
+    assert done == []  # провалы не идут в done
+
+
 def test_boost_loop_notifies_telegram_on_finish(monkeypatch):
     # Завершение батча шлёт Telegram-уведомление (рядом с toast).
     tg: list[str] = []

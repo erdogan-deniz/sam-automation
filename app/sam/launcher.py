@@ -112,7 +112,7 @@ def idle_and_split_survivors(
         checked_once = True
         for appid, proc in list(active.items()):
             if proc.poll() is not None or _has_error_window(proc.pid):
-                log.info("[%d] Не подключился к Steam — пропуск (skip)", appid)
+                log.info("[%d] Не подключился к Steam (провал)", appid)
                 kill_process(proc)
                 del active[appid]
                 failed.append(appid)
