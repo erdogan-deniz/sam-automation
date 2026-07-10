@@ -11,11 +11,13 @@
 from __future__ import annotations
 
 import http.client
+from pathlib import Path
 
 import pytest
 
 from app import validator
 from app.config import Config
+from app.sam import sam_downloader
 from app.steam import steam_api
 
 
@@ -69,3 +71,36 @@ def test_validator_steam_api_survives_incomplete_read(
 
     assert errs  # вернул сообщение об ошибке, а не упал трейсбеком
     assert any("Steam API" in e for e in errs)
+
+
+def test_fetch_latest_release_wraps_network_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RemoteDisconnected при запросе релиза SAM → RuntimeError, не сырой краш."""
+
+    def boom(*_a: object, **_k: object) -> object:
+        raise http.client.RemoteDisconnected("closed")
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    with pytest.raises(RuntimeError):
+        sam_downloader._fetch_latest_release()
+
+
+def test_download_sam_zip_fetch_wraps_network_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Сетевой сбой при скачивании zip → RuntimeError (caller farm/boost ловит),
+    а не сырой трейсбек на первом запуске SAM без сети."""
+    release = {
+        "tag_name": "v1.0",
+        "assets": [
+            {"name": "sam.zip", "browser_download_url": "http://x/sam.zip"}
+        ],
+    }
+
+    def boom(*_a: object, **_k: object) -> object:
+        raise ConnectionResetError("reset")
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    with pytest.raises(RuntimeError):
+        sam_downloader.download_sam(str(tmp_path), release=release)
