@@ -58,6 +58,28 @@ def test_load_config_exclude_ids_non_list_ignored_with_warning(
     assert any("exclude_ids" in r.message for r in caplog.records)
 
 
+def test_load_config_game_ids_non_list_ignored_with_warning(
+    write_config: Callable[..., str], caplog
+) -> None:  # type: ignore[no-untyped-def]
+    path = write_config(game_ids="nope")
+    with caplog.at_level(logging.WARNING, logger="sam_automation"):
+        cfg = load_config(path)
+    assert cfg.game_ids == []
+    assert any("game_ids" in r.message for r in caplog.records)
+
+
+def test_load_config_int_list_skips_non_int_element(
+    write_config: Callable[..., str], caplog
+) -> None:  # type: ignore[no-untyped-def]
+    # F4: нецелой элемент раньше ронял load_config трейсбеком до validate().
+    path = write_config(exclude_ids=[10, "bad", 30], game_ids=[1, "x", 3])
+    with caplog.at_level(logging.WARNING, logger="sam_automation"):
+        cfg = load_config(path)  # не должно бросить
+    assert cfg.exclude_ids == [10, 30]  # "bad" пропущен
+    assert cfg.game_ids == [1, 3]  # "x" пропущен
+    assert any("нечисловой" in r.message for r in caplog.records)
+
+
 # ── load_config — Telegram ────────────────────────────────────────────────
 
 

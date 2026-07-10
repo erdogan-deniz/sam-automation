@@ -47,3 +47,17 @@ def test_clear_playtime_progress_removes_done(tmp_path, monkeypatch):
 def test_clear_playtime_progress_idempotent(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "PLAYTIME_DONE_FILE", tmp_path / "nope.txt")
     cache.clear_playtime_progress()  # не должно падать на отсутствующем файле
+
+
+def test_clear_playtime_skip_removes_skip(tmp_path, monkeypatch):
+    skip = tmp_path / "skip.txt"
+    monkeypatch.setattr(cache, "PLAYTIME_SKIP_FILE", skip)
+    cache.mark_playtime_skip(5)
+    cache.clear_playtime_skip()  # --retry-skips
+    assert not skip.exists()
+    assert cache.load_playtime_skip_ids() == set()
+
+
+def test_clear_playtime_skip_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "PLAYTIME_SKIP_FILE", tmp_path / "nope.txt")
+    cache.clear_playtime_skip()  # не должно падать на отсутствующем файле
