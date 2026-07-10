@@ -20,14 +20,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Ruff lint
-        run: python -m ruff check .
+      - name: Version consistency (VERSION == top CHANGELOG)
+        run: python scripts/ci/check_version.py
 
-      - name: Ruff format check
-        run: python -m ruff format --check .
-
-      - name: Mypy (app)
-        run: python -m mypy app
+      # Один прогон pre-commit покрывает ruff (lint+format), mypy и file-hygiene
+      # теми же ПИННУТЫМИ версиями, что и локально — CI и pre-commit не расходятся.
+      - name: Lint, format, types, hygiene (pre-commit)
+        run: python -m pre_commit run --all-files --show-diff-on-failure
 
       - name: Tests
-        run: python -m pytest tests/unit -q
+        run: python -m pytest

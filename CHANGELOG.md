@@ -2,6 +2,19 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.5.1]
+
+### Устойчивость сети (hardening)
+
+- Сетевые запросы (`card_checker._fetch_page`, `steam_api._api_get`,
+  `validator._check_steam_api`, `sam_downloader`) ловили только urllib
+  `HTTPError`/`URLError`. При обрыве тела ответа `http.client.IncompleteRead`
+  и при 302-редиректе `RemoteDisconnected` (подклассы `OSError`/`HTTPException`,
+  но НЕ `URLError`) проходили мимо `except` и роняли весь прогон сырым
+  исключением. Теперь оборачиваются в `RuntimeError` → штатный ретрай /
+  чистый `sys.exit(1)` / `[CONFIG ERROR]`. Найдено адверсариальным аудитом.
+  (#13, #14, #15)
+
 ## [1.5.0]
 
 ### Каталог достижений (scan)
