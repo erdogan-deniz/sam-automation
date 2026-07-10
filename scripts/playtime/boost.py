@@ -27,6 +27,7 @@ from typing import Any
 from app.cache import (
     ALL_IDS_FILE,
     clear_playtime_progress,
+    clear_playtime_skip,
     load_game_names,
     load_playtime_done_ids,
     load_playtime_skip_ids,
@@ -72,15 +73,23 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Сбросить прогресс (playtime/done.txt) и набить время заново",
     )
+    parser.add_argument(
+        "--retry-skips",
+        action="store_true",
+        help="Очистить playtime/skip.txt — заново попробовать не подключившиеся",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
 
 def _prepare_progress(args: argparse.Namespace) -> None:
-    """Применяет флаг сброса прогресса до сбора списка игр."""
+    """Применяет флаги сброса прогресса до сбора списка игр."""
     if args.reset:
         clear_playtime_progress()
         log.info("Сброшен прогресс playtime (--reset)")
+    if args.retry_skips:
+        clear_playtime_skip()
+        log.info("Очищен skip playtime (--retry-skips)")
 
 
 def _select_targets(
@@ -129,6 +138,17 @@ def _fetch_targets(cfg: Any, steam_id: str) -> list[dict]:
         g["appid"]: g.get("playtime_forever", 0)
         for g in fetch_owned_games(cfg.steam_api_key, steam_id)
     }
+    if all_ids and not played:
+        # Owned-games API пуст при непустой библиотеке — почти наверняка
+        # приватные Game details (validate дёргает GetPlayerSummaries, не
+        # GetOwnedGames, и это пропускает). Тогда ВСЕ игры считаются unknown и
+        # набиваются вслепую (done без проверки playtime). Не абортим (аккаунт
+        # может быть полностью на Family Share), но громко предупреждаем.
+        log.warning(
+            "Steam API не вернул owned-games при непустой all.txt — ВСЕ игры "
+            "считаются unknown и набиваются вслепую. Проверь приватность "
+            "профиля (Game details должны быть публичны)."
+        )
     skip = (
         set(cfg.exclude_ids)
         | load_playtime_skip_ids()
@@ -139,14 +159,52 @@ def _fetch_targets(cfg: Any, steam_id: str) -> list[dict]:
     )
 
 
+def _report_result(
+    status: str, boosted: int, failed: int, total: int, cfg: Any
+) -> None:
+    """Честный финальный отчёт (лог + toast + Telegram).
+
+    success-✅ только когда прогон дошёл до конца без провалов. Ctrl+C
+    (`interrupted`), ошибка (`error`) и наличие провалов дают ⚠️ и честный
+    текст, а не «✅ обработано» — инвариант честного отчёта.
+    """
+    processed = boosted + failed
+    if status == "interrupted":
+        head, ok = "прервано (Ctrl+C)", False
+    elif status == "error":
+        head, ok = "прервано ошибкой", False
+    elif failed:
+        head, ok = "готово с оговорками", False
+    else:
+        head, ok = "готово", True
+    detail = (
+        f"набито {boosted}, не подключились {failed}, "
+        f"обработано {processed} / {total}"
+    )
+    log.info(SEPARATOR)
+    log.info("Boost Playtime — %s. %s", head, detail)
+    log.info(SEPARATOR)
+    toast("SAM Automation — Playtime", f"{head}: {detail}")
+    mark = "✅" if ok else "⚠️"
+    send_telegram(f"{mark} Playtime boost — {head}: {detail}", cfg)
+
+
 def _boost_loop(games: list[dict], cfg: Any) -> None:
     """Batch-цикл: запустить N игр → ждать playtime_idle_duration → убить всех → следующий батч."""
     total = len(games)
-    done_count = 0
+    boosted_count = 0
+    failed_count = 0
     active: dict[int, subprocess.Popen] = {}
     # Известные игры (есть в Steam API) в done.txt не пишем — их «готовность»
     # определяется по реальному playtime через API при следующем скане.
     known_ids = {g["appid"] for g in games if g.get("known")}
+
+    def _skip_if_unknown(appid: int) -> None:
+        # known-игры гейтятся по Steam API: разовый (часто транзиентный) провал
+        # НЕ хороним в skip навсегда — их перепроверит API на следующем прогоне.
+        # skip только для unknown (по ним playtime не проверить).
+        if appid not in known_ids:
+            mark_playtime_skip(appid)
 
     log.info(SEPARATOR)
     log.info("Boost Playtime — начало работы")
@@ -158,6 +216,7 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
     )
     log.info(SEPARATOR)
 
+    status = "ok"
     try:
         for i in range(0, total, cfg.playtime_concurrent_games):
             batch = games[i : i + cfg.playtime_concurrent_games]
@@ -181,11 +240,20 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
             survivors, failed = idle_and_split_survivors(
                 active,
                 cfg.playtime_idle_duration,
-                on_failed=mark_playtime_skip,
+                on_failed=_skip_if_unknown,
             )
 
-            if failed:
-                log.info("Не подключились к Steam (в skip): %d", len(failed))
+            failed_skip = [a for a in failed if a not in known_ids]
+            failed_retry = [a for a in failed if a in known_ids]
+            if failed_skip:
+                log.info(
+                    "Не подключились к Steam (в skip): %d", len(failed_skip)
+                )
+            if failed_retry:
+                log.info(
+                    "known-игры не подключились — ретрай по API: %d",
+                    len(failed_retry),
+                )
             for appid in survivors:
                 # known гейтятся по реальному playtime_forever через API —
                 # в done.txt их не пишем; unknown проверить нельзя → resume.
@@ -193,32 +261,36 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
                     mark_playtime_done(appid)
                 log.info("[%d] Закрыт", appid)
 
-            done_count += len(survivors) + len(failed)
-            log.info("Прогресс: %d / %d", done_count, total)
+            boosted_count += len(survivors)
+            failed_count += len(failed)
+            log.info("Прогресс: %d / %d", boosted_count + failed_count, total)
 
             # Пауза перед следующим батчем — даём Steam освободить сессии
             if i + cfg.playtime_concurrent_games < total:
                 time.sleep(_PAUSE_AFTER_KILL)
 
     except KeyboardInterrupt:
-        log.info("Прервано (Ctrl+C). Закрываю активные игры...")
-        for appid, proc in active.items():
-            kill_process(proc)
-        # Страховка: Ctrl+C во время запуска батча мог оставить уже стартовавшие
-        # SAM.Game.exe вне active — добить все, чтобы не осиротить.
-        kill_all_sam_games()
-        # Не помечаем как done — батч мог не набрать достаточно времени
+        status = "interrupted"
+        log.info("Прервано (Ctrl+C).")
+    except Exception:
+        status = "error"
+        log.exception("Boost прерван ошибкой.")
+    finally:
+        # Гарантированно добить активные + сироты недозапущенного батча на ЛЮБОМ
+        # выходе (норма/Ctrl+C/ошибка) — иначе SAM.Game.exe осиротеют и займут
+        # global user. Ctrl+C/ошибка НЕ пишут done (survivors помечаются только в
+        # норме, внутри цикла). Второй Ctrl+C прямо во время уборки не должен её
+        # оборвать — повторяем свип до 3 раз, глотая повторные прерывания.
+        for _ in range(3):
+            try:
+                for proc in active.values():
+                    kill_process(proc)
+                kill_all_sam_games()
+                break
+            except KeyboardInterrupt:
+                continue
 
-    log.info(SEPARATOR)
-    log.info("Boost Playtime завершён. Обработано: %d / %d", done_count, total)
-    log.info(SEPARATOR)
-    toast(
-        "SAM Automation — Playtime",
-        f"Готово: {done_count} / {total} игр обработано",
-    )
-    send_telegram(
-        f"✅ Playtime boost: {done_count} / {total} игр обработано", cfg
-    )
+    _report_result(status, boosted_count, failed_count, total, cfg)
 
 
 def main() -> None:
@@ -230,7 +302,6 @@ def main() -> None:
     )
     cfg = load_config()
     validate(cfg)
-    _prepare_progress(args)
 
     if not check_steam_running():
         log.error("Steam не запущен! Запусти Steam и попробуй снова.")
@@ -250,8 +321,28 @@ def main() -> None:
         sys.exit(1)
     log.info("Steam ID: %s", steam_id)
 
+    if args.list and (args.reset or args.retry_skips):
+        log.warning(
+            "--list только показывает цели; --reset/--retry-skips игнорируются"
+        )
+    if not args.list:
+        # Run-lock берём ДО деструктивного --reset/--retry-skips: иначе второй
+        # инстанс сотрёт done.txt работающего (его resume) ещё ДО того, как сам
+        # упрётся в лок. --list read-only — без лока и без сброса прогресса.
+        try:
+            acquire_run_lock("playtime/boost")
+        except RuntimeError as e:
+            log.error(str(e))
+            sys.exit(1)
+        atexit.register(release_run_lock)
+        _prepare_progress(args)
+
     log.info("Собираю игры для набивки из all.txt (вся библиотека)...")
-    games = _fetch_targets(cfg, steam_id)
+    try:
+        games = _fetch_targets(cfg, steam_id)
+    except RuntimeError as e:
+        log.error("Не удалось собрать список игр: %s", e)
+        sys.exit(1)
     log.info("Игр к набивке (без уже набитых и наигранных): %d", len(games))
 
     if not games:
@@ -275,12 +366,6 @@ def main() -> None:
             print(f"{g['appid']:>10}  [{pt:>3} мин]  —  {g.get('name', '?')}")
         sys.exit(0)
 
-    try:
-        acquire_run_lock("playtime/boost")
-    except RuntimeError as e:
-        log.error(str(e))
-        sys.exit(1)
-    atexit.register(release_run_lock)
     _boost_loop(games, cfg)
 
 
