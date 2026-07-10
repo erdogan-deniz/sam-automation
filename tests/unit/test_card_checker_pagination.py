@@ -292,3 +292,25 @@ def test_retry_honors_rate_limit_then_succeeds(
     )
     assert "ok" in result
     assert 3.0 in slept
+
+
+def test_cap_warning_signals_incompleteness(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Упор в _MAX_BADGE_PAGES честно предупреждает о НЕПОЛНОТЕ списка игр.
+
+    Иначе (terse «обрываю пагинацию») тихая потеря игр на стр. 41+ выглядит
+    штатным концом — нарушение инварианта «не терять игры».
+    """
+    import logging
+
+    pages = {
+        p: _page_with_game(1000 + p, 1, filler="z" * p) for p in range(1, 100)
+    }
+    _install(monkeypatch, pages, fail_counts={})
+    with caplog.at_level(logging.WARNING, logger="sam_automation"):
+        card_checker.fetch_games_with_card_drops({}, "76561190000000000")
+
+    assert any("неполн" in r.getMessage().lower() for r in caplog.records), (
+        "warning на упоре должен сигналить о неполноте списка"
+    )
