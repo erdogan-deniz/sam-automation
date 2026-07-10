@@ -216,3 +216,49 @@ def test_merge_config_exclude_set_and_cleared() -> None:
     assert _merge_config({}, {}, [1, 2])["exclude_ids"] == [1, 2]
     # пустой exclude убирает ключ (форма явно очищает)
     assert "exclude_ids" not in _merge_config({"exclude_ids": [9]}, {}, [])
+
+
+def test_save_preserves_unmanaged_keys_end_to_end(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    # M4 end-to-end: настоящий _save читает existing config, мержит поля формы
+    # и пишет обратно — ключи не из формы (playtime_concurrent_games,
+    # launch_stagger, target, telegram_*, game_ids) НЕ теряются.
+    import yaml
+
+    import gui.tabs.settings as settings_mod
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "playtime_concurrent_games: 15\n"
+        "launch_stagger: 2.0\n"
+        "playtime_target_minutes: 5\n"
+        "telegram_bot_token: tok\n"
+        "game_ids: [1, 2]\n"
+        "steam_id: old_id\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_mod, "_CONFIG_PATH", cfg_path)
+
+    ns = _make_settings(steam_api_key="newkey", steam_id="new_id")
+    ns._validate = lambda: []  # type: ignore[attr-defined]
+    ns._path_warnings = lambda: []  # type: ignore[attr-defined]
+    ns.is_configured = lambda: False  # type: ignore[attr-defined]
+    ns._lbl_saved = MagicMock()
+    ns.after = MagicMock()
+    ns._exclude_ids = MagicMock()
+    ns._exclude_ids.get.return_value = ""
+
+    SettingsTab._save(ns)  # type: ignore[arg-type]
+
+    saved = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    # ключи не из формы — сохранены
+    assert saved["playtime_concurrent_games"] == 15
+    assert saved["launch_stagger"] == 2.0
+    assert saved["playtime_target_minutes"] == 5
+    assert saved["telegram_bot_token"] == "tok"
+    assert saved["game_ids"] == [1, 2]
+    # поля формы — обновлены
+    assert saved["steam_api_key"] == "newkey"
+    assert saved["steam_id"] == "new_id"
+    assert saved["playtime_idle_duration"] == 120
