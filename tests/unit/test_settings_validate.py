@@ -218,6 +218,49 @@ def test_merge_config_exclude_set_and_cleared() -> None:
     assert "exclude_ids" not in _merge_config({"exclude_ids": [9]}, {}, [])
 
 
+def test_merge_config_clears_emptied_field() -> None:
+    # F1: очищенное в форме поле ("") УБИРАЕТ ключ, а не сохраняет старое значение.
+    merged = _merge_config(
+        {"game_ids_file": "old.txt", "playtime_concurrent_games": 15},
+        {"game_ids_file": ""},
+        exclude=[],
+    )
+    assert "game_ids_file" not in merged  # очищено, а не old.txt
+    assert merged["playtime_concurrent_games"] == 15  # чужой ключ цел
+
+
+def test_save_clears_emptied_path_end_to_end(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    # F1 end-to-end: existing game_ids_file, форма его очистила → в сохранённом
+    # config.yaml ключа НЕТ (иначе farm/scan читают устаревший файл).
+    import yaml
+
+    import gui.tabs.settings as settings_mod
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "game_ids_file: old.txt\nplaytime_concurrent_games: 15\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings_mod, "_CONFIG_PATH", cfg_path)
+
+    ns = _make_settings(steam_api_key="k", steam_id="id", game_ids_file="")
+    ns._validate = lambda: []  # type: ignore[attr-defined]
+    ns._path_warnings = lambda: []  # type: ignore[attr-defined]
+    ns.is_configured = lambda: False  # type: ignore[attr-defined]
+    ns._lbl_saved = MagicMock()
+    ns.after = MagicMock()
+    ns._exclude_ids = MagicMock()
+    ns._exclude_ids.get.return_value = ""
+
+    SettingsTab._save(ns)  # type: ignore[arg-type]
+
+    saved = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    assert "game_ids_file" not in saved  # очищено
+    assert saved["playtime_concurrent_games"] == 15  # чужой ключ цел
+
+
 def test_save_preserves_unmanaged_keys_end_to_end(
     tmp_path: Path, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
