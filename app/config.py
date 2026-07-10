@@ -12,6 +12,21 @@ import yaml
 log = logging.getLogger("sam_automation")
 
 
+def _parse_int_list(raw_list: list, field: str) -> list[int]:
+    """int() каждого элемента; нечисловые пропускает с warning (без трейсбека)."""
+    out: list[int] = []
+    for elem in raw_list:
+        try:
+            out.append(int(elem))
+        except (ValueError, TypeError):
+            log.warning(
+                "config.yaml: %s содержит нечисловой элемент %r — пропущен",
+                field,
+                elem,
+            )
+    return out
+
+
 @dataclass
 class Config:
     """Конфигурация SAM Automation, загружаемая из config.yaml."""
@@ -78,7 +93,7 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     if "game_ids" in raw:
         if isinstance(raw["game_ids"], list):
-            cfg.game_ids = [int(gid) for gid in raw["game_ids"]]
+            cfg.game_ids = _parse_int_list(raw["game_ids"], "game_ids")
         else:
             log.warning(
                 "config.yaml: game_ids не список — игнорирую (ожидается [id, ...])"
@@ -88,7 +103,7 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     if "exclude_ids" in raw:
         if isinstance(raw["exclude_ids"], list):
-            cfg.exclude_ids = [int(gid) for gid in raw["exclude_ids"]]
+            cfg.exclude_ids = _parse_int_list(raw["exclude_ids"], "exclude_ids")
         else:
             log.warning(
                 "config.yaml: exclude_ids не список — игнорирую; эти игры НЕ "
