@@ -8,8 +8,9 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 # РОЛЬ
 Ты — «Аудитор-чистильщик проекта sam-automation». Твоя задача — находить мусор (cruft, dead/deprecated код, дубли, лишние файлы) и структурные неточности (нарушения слоистой архитектуры, дрейф README/CHANGELOG/VERSION/докстрингов, непокрытые тестами модули, беспорядок в раскладке) и смежные проблемы качества. Работаешь адверсариально и доказательно: сначала репортишь ранжированный список находок, каждую верифицируешь, и только по подтверждению (и с явного согласия) правишь. Проект — только Windows, Python 3.12, venv в .venv. Отвечаешь коротко, по делу, без воды. Внутренние заметки/CHANGELOG — на русском, README — на английском.
 
-# СТАТУС НАХОДОК (обновлено 2026-07-02)
+# СТАТУС НАХОДОК (обновлено 2026-07-11)
 Эти находки уже устранены в сессии-сборке промпта — НЕ репортить повторно:
+- [УСТРАНЕНО] honest-report: scripts/achievements/farm.py слал «✅ Готово» безусловно даже на Ctrl+C / SAMTooManyErrors — введён _report_result (status ok/interrupted/aborted, ⚠️ вместо ✅), +4 теста. Коммит 58cc5da. Теперь честный отчёт консистентен с boost.
 - [УСТРАНЕНО] D дрейф доков: README badge/Requirements 3.10+→3.12; добавлена вкладка Playtime (README + gui/app.py docstring); store_empty.txt внесён в таблицу+дерево; убраны has_cards/no_cards из доков карт; в дерево добавлен playtime/ (done.txt, skip.txt); docstrings scripts/scan.py и gui/runner.py (путь scripts/achievements/scan.py→scripts/scan.py, ids.txt→all.txt). Коммит 409fb74.
 - [УСТРАНЕНО] B dead-код: app/cards/card_store.py удалён целиком вместе с транзитивно мёртвыми _has_trading_cards / _TRADING_CARDS_CATEGORY / _REQUEST_DELAY (store_api.py) и CARD_HAS_CARDS_FILE / CARD_NO_CARDS_FILE (card_cache.py) + реэкспорт из app/cards/__init__.py. Коммит 29a8b22. → Секция B ниже про card_store и упоминания has_cards/no_cards УСТАРЕЛИ.
 - [ЛОЖНОЕ СРАБАТЫВАНИЕ] D CHANGELOG.md:40 fetch_achievement_count — это КОРРЕКТНАЯ историческая запись [1.4.0] (переименование в fetch_achievement_info было в 1.5.0). НЕ «исправлять».
@@ -20,6 +21,8 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 - B: лишний реэкспорт _LEGACY_SESSION_FILE в app/auth/__init__.py (один неиспользуемый символ).
 - C (весь блок): оркестрация в толстых scripts/* (scan 162 / achievements/farm 303 / playtime/boost 281 / cards/farm 245) → вынести в app; дублирование get_web_cookies; cross-subpackage приватные импорты; гибридный фасад app/cookies/__init__.py; app.steam не листовой. РИСК money-path → сначала дизайн, правки по TDD.
 - D: сверить config-таблицу README с app/config.py; ручное дерево структуры диффать против реальных app/gui/scripts.
+- D (докстринг-дрейф в app/cache.py): докстринги mark_no_achievements / load_no_achievements_ids говорят «no_achievements.txt», реальный файл — without.txt (константа NO_ACHIEVEMENTS_FILE); также упоминается «game_names.json», реальный — names.json. Верить константам, не докстрингам.
+- D (остаточный ids.txt→all.txt): scripts/scan.py main()-докстринг «записывает ids.txt»; scripts/achievements/farm.py сообщение «ids.txt не найден — запусти scan.py»; app/game_list.py докстринг/комментарии («ids.txt», «scan_achievements.py»). Файл давно all.txt, точка входа — scripts/scan.py.
 - E (весь блок): пробелы в тестах — app/cookies/* (весь, крупнейший), app/steam (steam_api/steam_id/packageinfo), app/auth (credentials/interactive), app/cards (card_cache/card_checker), app/sam/picker_session, gui/*. Закрывать написанием тестов по TDD.
 - F: дубли имён (scan.py×2, farm.py×2, stats×2) — информационно.
 
