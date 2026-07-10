@@ -296,7 +296,6 @@ def main() -> None:
     )
     cfg = load_config()
     validate(cfg)
-    _prepare_progress(args)
 
     if not check_steam_running():
         log.error("Steam не запущен! Запусти Steam и попробуй снова.")
@@ -315,6 +314,22 @@ def main() -> None:
         log.error("Не удалось определить Steam ID: %s", e)
         sys.exit(1)
     log.info("Steam ID: %s", steam_id)
+
+    if args.list and (args.reset or args.retry_skips):
+        log.warning(
+            "--list только показывает цели; --reset/--retry-skips игнорируются"
+        )
+    if not args.list:
+        # Run-lock берём ДО деструктивного --reset/--retry-skips: иначе второй
+        # инстанс сотрёт done.txt работающего (его resume) ещё ДО того, как сам
+        # упрётся в лок. --list read-only — без лока и без сброса прогресса.
+        try:
+            acquire_run_lock("playtime/boost")
+        except RuntimeError as e:
+            log.error(str(e))
+            sys.exit(1)
+        atexit.register(release_run_lock)
+        _prepare_progress(args)
 
     log.info("Собираю игры для набивки из all.txt (вся библиотека)...")
     try:
@@ -345,12 +360,6 @@ def main() -> None:
             print(f"{g['appid']:>10}  [{pt:>3} мин]  —  {g.get('name', '?')}")
         sys.exit(0)
 
-    try:
-        acquire_run_lock("playtime/boost")
-    except RuntimeError as e:
-        log.error(str(e))
-        sys.exit(1)
-    atexit.register(release_run_lock)
     _boost_loop(games, cfg)
 
 

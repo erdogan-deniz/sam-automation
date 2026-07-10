@@ -242,6 +242,23 @@ def test_idle_split_zero_idle_still_checks_each_process(monkeypatch):
     assert failed == [20]
 
 
+def test_kill_all_sam_games_kills_each_pid(monkeypatch):
+    # kill_all_sam_games добивает КАЖДЫЙ найденный SAM.Game.exe по PID.
+    killed: list[int] = []
+    monkeypatch.setattr(launcher, "_get_sam_game_pids", lambda: {101, 202, 303})
+    monkeypatch.setattr(launcher, "_kill_pid", killed.append)
+    launcher.kill_all_sam_games()
+    assert sorted(killed) == [101, 202, 303]
+
+
+def test_kill_all_sam_games_noop_when_none(monkeypatch):
+    killed: list[int] = []
+    monkeypatch.setattr(launcher, "_get_sam_game_pids", set)
+    monkeypatch.setattr(launcher, "_kill_pid", killed.append)
+    launcher.kill_all_sam_games()
+    assert killed == []
+
+
 def test_idle_split_zero_poll_interval_terminates(monkeypatch):
     # poll_interval<=0 не должен зацикливаться: кламп до 0.1 двигает часы к deadline.
     clock, _ = _patch_clock_and_kill(monkeypatch)
