@@ -8,6 +8,12 @@ ignore = [
     "E501",   # line too long — handled by formatter
 ]
 
+[tool.pytest.ini_options]
+# testpaths=tests (не только tests/unit): будущий tests/integration/ не будет
+# молча пропущен CI. strict-markers ловит опечатки в @pytest.mark.
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+
 [tool.mypy]
 python_version = "3.12"
 

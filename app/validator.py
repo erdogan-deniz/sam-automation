@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import sys
@@ -44,6 +45,34 @@ def _check_file_paths(cfg: Config) -> list[str]:
         errors.append(f"steam_path not found: {cfg.steam_path}")
     if cfg.sam_game_exe_path and not Path(cfg.sam_game_exe_path).exists():
         errors.append(f"sam_game_exe_path not found: {cfg.sam_game_exe_path}")
+    return errors
+
+
+_MAX_CONCURRENT_LIMIT = 20  # разумный потолок; выше — почти наверняка опечатка
+
+
+def _check_numeric_bounds(cfg: Config) -> list[str]:
+    """Проверяет числовые параметры (руками отредактированный config.yaml).
+
+    Ловит max_concurrent_games:0 (тихий no-op «успех»), отрицательный
+    card_check_interval (busy-loop/крэш) и абсурдно большую конкурентность
+    (шторм запусков SAM.Game.exe).
+    """
+    errors: list[str] = []
+    for field in ("max_concurrent_games", "playtime_concurrent_games"):
+        val = getattr(cfg, field)
+        if val < 1:
+            # 0 → ZeroDivisionError/range-error в boost; <0 → тихий no-op.
+            errors.append(f"{field} must be >= 1 (got {val})")
+        elif val > _MAX_CONCURRENT_LIMIT:
+            errors.append(
+                f"{field} too high: {val} (max {_MAX_CONCURRENT_LIMIT})"
+            )
+    if cfg.card_check_interval < 1:
+        errors.append(
+            f"card_check_interval must be >= 1 minute "
+            f"(got {cfg.card_check_interval})"
+        )
     return errors
 
 
@@ -84,7 +113,7 @@ def _check_steam_api(cfg: Config) -> list[str]:
         return [f"Steam API returned unexpected status: HTTP {exc.code}"]
     except urllib.error.URLError as exc:
         return [f"Could not reach Steam API: {exc.reason}"]
-    except OSError as exc:
+    except (OSError, http.client.HTTPException) as exc:
         return [f"Could not reach Steam API: {exc}"]
 
 
@@ -107,6 +136,7 @@ def validate(cfg: Config) -> None:
     errors: list[str] = []
     errors.extend(_check_required_fields(cfg))
     errors.extend(_check_file_paths(cfg))
+    errors.extend(_check_numeric_bounds(cfg))
     if errors:
         _report_and_exit(errors)
 
