@@ -33,6 +33,10 @@ def _api_get(url: str) -> dict:
         # RemoteDisconnected/ConnectionReset/IncompleteRead не оборачиваются в
         # URLError → без этого сырое исключение роняло весь scan/farm-прогон.
         raise RuntimeError(f"Сетевой сбой Steam API: {e}") from e
+    except ValueError as e:
+        # HTTP 200 с не-JSON телом (Cloudflare/капча) → JSONDecodeError/
+        # UnicodeDecodeError (подклассы ValueError), не сетевой сбой.
+        raise RuntimeError(f"Steam API вернул не-JSON ответ: {e}") from e
 
 
 from .steam_id import resolve_steam_id  # noqa: E402

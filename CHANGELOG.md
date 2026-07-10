@@ -2,6 +2,16 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.6.2]
+
+### Устойчивость сети (hardening)
+
+- `steam_api._api_get` и `validator._check_steam_api` ловят `ValueError`
+  (`JSONDecodeError`/`UnicodeDecodeError`) при HTTP-200 с **не-JSON** телом
+  (Cloudflare/captive-portal HTML) → `RuntimeError` / список ошибок вместо
+  сырого трейсбека. `validate()` снова держит контракт «никогда не бросает».
+  Завершает network-hardening класс. (#22)
+
 ## [1.6.1]
 
 ### Устойчивость сети и фарма карт (hardening)
