@@ -233,6 +233,37 @@ def test_boost_loop_ctrl_c_during_launch_kills_all_sam(monkeypatch):
     assert swept == [True]  # страховка добила процессы
 
 
+def test_boost_loop_second_ctrl_c_during_teardown_retries_sweep(monkeypatch):
+    # C5: второй Ctrl+C во время finally-свипа не обрывает уборку — повторяем.
+    calls = {"sweep": 0}
+
+    def flaky_sweep():
+        calls["sweep"] += 1
+        if calls["sweep"] == 1:
+            raise KeyboardInterrupt  # второй Ctrl+C прямо во время свипа
+
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", flaky_sweep)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+
+    def boom(active, idle, on_failed=None):
+        raise KeyboardInterrupt  # первый Ctrl+C
+
+    monkeypatch.setattr(boost, "idle_and_split_survivors", boom)
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # НЕ должно пробросить KeyboardInterrupt
+
+    assert calls["sweep"] >= 2  # свип повторён после прерывания
+
+
 def test_boost_loop_multi_batch_pauses_between_not_after(monkeypatch):
     monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
     monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
