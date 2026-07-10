@@ -204,3 +204,91 @@ def test_fetch_page_wraps_os_error() -> None:
         card_checker._fetch_page(
             _BoomOpener(), f"{card_checker._COMMUNITY_BASE}/x"
         )
+
+
+def _http_error_opener(code: int, retry_after: str | None = None) -> object:
+    """Opener, чей .open() кидает urllib HTTPError с заданным кодом."""
+    import email.message
+    import urllib.error
+
+    hdrs = email.message.Message()
+    if retry_after is not None:
+        hdrs["Retry-After"] = retry_after
+
+    class _Boom:
+        def open(self, url: str, timeout: int = 15) -> object:
+            raise urllib.error.HTTPError(url, code, "boom", hdrs, None)
+
+    return _Boom()
+
+
+def test_fetch_page_429_is_rate_limit_with_retry_after() -> None:
+    """429 → _RateLimitError с распарсенным Retry-After (умный бэкофф)."""
+    with pytest.raises(card_checker._RateLimitError) as exc:
+        card_checker._fetch_page(
+            _http_error_opener(429, "7"), f"{card_checker._COMMUNITY_BASE}/x"
+        )
+    assert exc.value.retry_after == 7.0
+
+
+def test_fetch_page_403_is_auth_error() -> None:
+    """403 (истёкшие куки / нет доступа) → _AuthError, а не транзиент."""
+    with pytest.raises(card_checker._AuthError):
+        card_checker._fetch_page(
+            _http_error_opener(403), f"{card_checker._COMMUNITY_BASE}/x"
+        )
+
+
+def test_retry_does_not_retry_auth_error() -> None:
+    """_AuthError НЕ ретраится (куки ретраем не чинятся) — ровно 1 попытка."""
+    import urllib.error
+
+    calls = {"n": 0}
+
+    class _Boom:
+        def open(self, url: str, timeout: int = 15) -> object:
+            calls["n"] += 1
+            raise urllib.error.HTTPError(url, 403, "Forbidden", None, None)
+
+    with pytest.raises(card_checker._AuthError):
+        card_checker._fetch_page_with_retry(
+            _Boom(), f"{card_checker._COMMUNITY_BASE}/x"
+        )
+    assert calls["n"] == 1
+
+
+def test_retry_honors_rate_limit_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """429 ретраится с бэкоффом по Retry-After, затем страница читается."""
+    import email.message
+    import urllib.error
+
+    slept: list[float] = []
+    monkeypatch.setattr(card_checker.time, "sleep", lambda s: slept.append(s))
+    hdrs = email.message.Message()
+    hdrs["Retry-After"] = "3"
+    calls = {"n": 0}
+
+    class _Resp:
+        def __enter__(self) -> _Resp:
+            return self
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return b"<html>ok</html>"
+
+    class _Flaky:
+        def open(self, url: str, timeout: int = 15) -> object:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise urllib.error.HTTPError(url, 429, "rate", hdrs, None)
+            return _Resp()
+
+    result = card_checker._fetch_page_with_retry(
+        _Flaky(), f"{card_checker._COMMUNITY_BASE}/x"
+    )
+    assert "ok" in result
+    assert 3.0 in slept
