@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import sys
@@ -112,7 +113,7 @@ def _check_steam_api(cfg: Config) -> list[str]:
         return [f"Steam API returned unexpected status: HTTP {exc.code}"]
     except urllib.error.URLError as exc:
         return [f"Could not reach Steam API: {exc.reason}"]
-    except OSError as exc:
+    except (OSError, http.client.HTTPException) as exc:
         return [f"Could not reach Steam API: {exc}"]
 
 
