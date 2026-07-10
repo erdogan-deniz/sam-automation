@@ -108,12 +108,15 @@ def test_fetch_latest_release_returns_dict() -> None:
 
 
 def test_fetch_latest_release_raises_on_network_error() -> None:
+    """Сетевая ошибка → RuntimeError (caller ensure_sam/farm ловит его),
+    исходная причина сохранена в __cause__ — не теряется и не крашит сырьём."""
     with patch(
         "app.sam.sam_downloader.urllib.request.urlopen",
         side_effect=urllib.error.URLError("timeout"),
     ):
-        with pytest.raises(urllib.error.URLError):
+        with pytest.raises(RuntimeError) as exc:
             _fetch_latest_release()
+    assert isinstance(exc.value.__cause__, urllib.error.URLError)
 
 
 # ── download_sam ──────────────────────────────────────────────────────────────
