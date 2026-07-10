@@ -2,6 +2,58 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.6.0]
+
+### Фарм карточек (cards)
+
+- **Fast-mode цикл фарма**: пачка идлится → все окна убиваются РАЗОМ (коллапс
+  in-game в ноль) → пауза-flush → перечитка остатка → выжившие в очередь и
+  релонч. Устойчивая пагинация badges с ретраями на страницу (дёрганый SSL не
+  теряет игры), stall-guard. Честный финальный отчёт: сдача по cookie-ошибке и
+  застревания НЕ пишут `done` и не дают success-тост (тост «прерван» / «с
+  оговорками» / чисто).
+
+### Уведомления (notify)
+
+- **Telegram-уведомления** рядом с локальным Windows-toast (opt-in по
+  `telegram_*` в конфиге, best-effort).
+
+### GUI
+
+- **Остановка скрипта убивает всё дерево процессов** через Win32 Job Object
+  (`KILL_ON_JOB_CLOSE`) — Stop/Esc/закрытие окна больше не оставляют сирот
+  `SAM.Game.exe` (аккаунт не застревает in-game). Закрытие окна GUI сперва
+  останавливает запущенные скрипты.
+
+### Набивка playtime (boost)
+
+- Отсев провалившихся запусков по **выживанию процесса** за весь idle, а не по
+  транзиентному окну ошибки `SAM.Game.exe` (гонка). Страховка от сирот при
+  Ctrl+C во время старта батча.
+
+### Устойчивость сети (hardening)
+
+- Сетевые запросы (`card_checker._fetch_page`, `steam_api._api_get`,
+  `validator._check_steam_api`, `sam_downloader`) ловили только urllib
+  `HTTPError`/`URLError`. При обрыве тела ответа `http.client.IncompleteRead`
+  и при 302-редиректе `RemoteDisconnected` (подклассы `OSError`/`HTTPException`,
+  но НЕ `URLError`) проходили мимо `except` и роняли весь прогон сырым
+  исключением. Теперь оборачиваются в `RuntimeError` → штатный ретрай /
+  чистый `sys.exit(1)` / `[CONFIG ERROR]`. (#13, #14, #15)
+
+### Конфиг и валидация
+
+- Числовые границы в pre-flight валидации (`max_concurrent_games`,
+  `playtime_concurrent_games` ∈ [1, 20]; `card_check_interval` ≥ 1) — руками
+  правленный `0`/отрицательный конфиг больше не даёт тихий no-op/busy-loop.
+
+### Инфраструктура и документация
+
+- `CLAUDE.md` (durable-правила проекта), `SECURITY.md`, `docs/prompts/`
+  (playbook'и farm/boost/scan + аудитор). CI/pre-commit hardening: пин `ruff`,
+  release-gate (VERSION==CHANGELOG==тег), UTF-8 stdout в `check_version`.
+  Удалён мёртвый модуль `card_store`.
+
 ## [1.5.0]
 
 ### Каталог достижений (scan)
