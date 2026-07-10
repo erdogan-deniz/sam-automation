@@ -6,6 +6,8 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 _BOOST_PATH = (
     Path(__file__).resolve().parents[2] / "scripts" / "playtime" / "boost.py"
 )
@@ -33,6 +35,19 @@ def _cfg(**over: object) -> SimpleNamespace:
     }
     base.update(over)
     return SimpleNamespace(**base)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_side_effects(monkeypatch):  # type: ignore[no-untyped-def]
+    # _boost_loop на выходе зовёт win32 kill_all_sam_games и уведомления
+    # (toast/send_telegram) — по умолчанию no-op, чтобы тесты не убивали живой
+    # SAM и не слали сеть. Тесты, проверяющие их, переопределяют своим mock.
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: None)
+    monkeypatch.setattr(boost, "send_telegram", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    # finally-свип зовёт kill_process на фейковых процессах — no-op по умолчанию;
+    # тесты, считающие убийства, переопределяют своим mock.
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
 
 
 def test_boost_loop_marks_done_skip_and_spares_known(monkeypatch):
@@ -70,6 +85,41 @@ def test_boost_loop_marks_done_skip_and_spares_known(monkeypatch):
     assert skip == [30]
     # idle_duration проброшен в функцию
     assert seen["idle"] == 7
+
+
+def test_boost_loop_known_failure_not_written_to_skip(monkeypatch):
+    # H1: провал KNOWN-игры НЕ пишется в skip (истина по Steam API — ретрай на
+    # следующем прогоне); в skip уходят только unknown-провалы.
+    done: list[int] = []
+    skip: list[int] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", done.append)
+    monkeypatch.setattr(boost, "mark_playtime_skip", skip.append)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "send_telegram", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+
+    def fake_idle(active, idle, on_failed=None):
+        on_failed(99)  # known-игра провалилась (транзиентно)
+        on_failed(30)  # unknown-игра провалилась
+        return ([], [99, 30])
+
+    monkeypatch.setattr(boost, "idle_and_split_survivors", fake_idle)
+
+    games = [
+        {"appid": 99, "name": "K", "playtime_forever": 1, "known": True},
+        {"appid": 30, "name": "U", "playtime_forever": 0, "known": False},
+    ]
+    boost._boost_loop(games, _cfg())
+
+    assert 99 not in skip  # known-провал НЕ похоронен в skip
+    assert skip == [30]  # только unknown-провал
+    assert done == []  # провалы не идут в done
 
 
 def test_boost_loop_notifies_telegram_on_finish(monkeypatch):
@@ -183,6 +233,37 @@ def test_boost_loop_ctrl_c_during_launch_kills_all_sam(monkeypatch):
     assert swept == [True]  # страховка добила процессы
 
 
+def test_boost_loop_second_ctrl_c_during_teardown_retries_sweep(monkeypatch):
+    # C5: второй Ctrl+C во время finally-свипа не обрывает уборку — повторяем.
+    calls = {"sweep": 0}
+
+    def flaky_sweep():
+        calls["sweep"] += 1
+        if calls["sweep"] == 1:
+            raise KeyboardInterrupt  # второй Ctrl+C прямо во время свипа
+
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", flaky_sweep)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+
+    def boom(active, idle, on_failed=None):
+        raise KeyboardInterrupt  # первый Ctrl+C
+
+    monkeypatch.setattr(boost, "idle_and_split_survivors", boom)
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # НЕ должно пробросить KeyboardInterrupt
+
+    assert calls["sweep"] >= 2  # свип повторён после прерывания
+
+
 def test_boost_loop_multi_batch_pauses_between_not_after(monkeypatch):
     monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
     monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
@@ -212,3 +293,89 @@ def test_boost_loop_multi_batch_pauses_between_not_after(monkeypatch):
     assert launched == [[10, 20], [30]]
     # _PAUSE_AFTER_KILL ровно один раз — между батчами, не после последнего
     assert sleeps == [boost._PAUSE_AFTER_KILL]
+
+
+def test_boost_loop_non_ki_exception_sweeps_and_no_done(monkeypatch):
+    # H2: любое НЕ-KeyboardInterrupt исключение в батче → finally добивает
+    # процессы (kill_all_sam_games), done не пишется, наружу не пробрасывается.
+    done: list[int] = []
+    swept: list[bool] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", done.append)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: swept.append(True))
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+
+    def boom(active, idle, on_failed=None):
+        raise ValueError("сбой в середине батча")
+
+    monkeypatch.setattr(boost, "idle_and_split_survivors", boom)
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # НЕ должно пробросить ValueError
+
+    assert swept == [True]  # свип сработал
+    assert done == []  # ошибка не пишет done
+
+
+def test_boost_loop_ctrl_c_report_no_success_mark(monkeypatch):
+    # M1: Ctrl+C НЕ даёт success-✅ в Telegram-отчёте.
+    tg: list[str] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text)
+    )
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+
+    def boom(active, idle, on_failed=None):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(boost, "idle_and_split_survivors", boom)
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())
+
+    assert tg and "✅" not in tg[-1]  # не success на прерывании
+
+
+def test_boost_loop_all_failed_report_no_success_mark(monkeypatch):
+    # M1: когда все игры провалились — не success-✅, набито 0, а не "N/N".
+    tg: list[str] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text)
+    )
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    # все 2 игры провалились: survivors=[], failed=[10,20]
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: ([], list(active.keys())),
+    )
+
+    games = [
+        {"appid": 10, "name": "A", "playtime_forever": 0, "known": False},
+        {"appid": 20, "name": "B", "playtime_forever": 0, "known": False},
+    ]
+    boost._boost_loop(games, _cfg())
+
+    assert tg and "✅" not in tg[-1]  # провал всех — не success
