@@ -73,6 +73,21 @@ def _check_numeric_bounds(cfg: Config) -> list[str]:
             f"card_check_interval must be >= 1 minute "
             f"(got {cfg.card_check_interval})"
         )
+    # Playtime boost: idle<=0 не идлит (unknown-выжившие ложно done);
+    # target<=0 пропускает ВСЕ игры (тихий no-op); stagger<0 → time.sleep()
+    # ValueError крашит батч и осиротляет уже запущенные SAM.Game.exe.
+    if cfg.playtime_idle_duration < 1:
+        errors.append(
+            f"playtime_idle_duration must be >= 1 second "
+            f"(got {cfg.playtime_idle_duration})"
+        )
+    if cfg.playtime_target_minutes < 1:
+        errors.append(
+            f"playtime_target_minutes must be >= 1 "
+            f"(got {cfg.playtime_target_minutes})"
+        )
+    if cfg.launch_stagger < 0:
+        errors.append(f"launch_stagger must be >= 0 (got {cfg.launch_stagger})")
     return errors
 
 
