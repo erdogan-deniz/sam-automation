@@ -279,10 +279,16 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
         # Гарантированно добить активные + сироты недозапущенного батча на ЛЮБОМ
         # выходе (норма/Ctrl+C/ошибка) — иначе SAM.Game.exe осиротеют и займут
         # global user. Ctrl+C/ошибка НЕ пишут done (survivors помечаются только в
-        # норме, внутри цикла).
-        for proc in active.values():
-            kill_process(proc)
-        kill_all_sam_games()
+        # норме, внутри цикла). Второй Ctrl+C прямо во время уборки не должен её
+        # оборвать — повторяем свип до 3 раз, глотая повторные прерывания.
+        for _ in range(3):
+            try:
+                for proc in active.values():
+                    kill_process(proc)
+                kill_all_sam_games()
+                break
+            except KeyboardInterrupt:
+                continue
 
     _report_result(status, boosted_count, failed_count, total, cfg)
 
