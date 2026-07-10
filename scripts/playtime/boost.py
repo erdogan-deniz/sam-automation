@@ -138,6 +138,17 @@ def _fetch_targets(cfg: Any, steam_id: str) -> list[dict]:
         g["appid"]: g.get("playtime_forever", 0)
         for g in fetch_owned_games(cfg.steam_api_key, steam_id)
     }
+    if all_ids and not played:
+        # Owned-games API пуст при непустой библиотеке — почти наверняка
+        # приватные Game details (validate дёргает GetPlayerSummaries, не
+        # GetOwnedGames, и это пропускает). Тогда ВСЕ игры считаются unknown и
+        # набиваются вслепую (done без проверки playtime). Не абортим (аккаунт
+        # может быть полностью на Family Share), но громко предупреждаем.
+        log.warning(
+            "Steam API не вернул owned-games при непустой all.txt — ВСЕ игры "
+            "считаются unknown и набиваются вслепую. Проверь приватность "
+            "профиля (Game details должны быть публичны)."
+        )
     skip = (
         set(cfg.exclude_ids)
         | load_playtime_skip_ids()
@@ -306,7 +317,11 @@ def main() -> None:
     log.info("Steam ID: %s", steam_id)
 
     log.info("Собираю игры для набивки из all.txt (вся библиотека)...")
-    games = _fetch_targets(cfg, steam_id)
+    try:
+        games = _fetch_targets(cfg, steam_id)
+    except RuntimeError as e:
+        log.error("Не удалось собрать список игр: %s", e)
+        sys.exit(1)
     log.info("Игр к набивке (без уже набитых и наигранных): %d", len(games))
 
     if not games:
