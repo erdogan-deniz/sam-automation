@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import http.client
 import http.cookiejar
 import logging
 import time
@@ -61,6 +62,11 @@ def _fetch_page(opener: urllib.request.OpenerDirector, url: str) -> str:
         raise RuntimeError(f"HTTP {e.code} при запросе {url}") from e
     except urllib.error.URLError as e:
         raise RuntimeError(f"Ошибка подключения к {url}: {e.reason}") from e
+    except (OSError, http.client.HTTPException) as e:
+        # RemoteDisconnected/ConnectionReset/IncompleteRead при редиректе —
+        # подклассы OSError/HTTPException, НЕ urllib URLError, поэтому шли мимо
+        # верхних except и роняли весь прогон вместо штатного ретрая.
+        raise RuntimeError(f"Сетевой сбой при запросе {url}: {e}") from e
 
 
 def _fetch_page_with_retry(
