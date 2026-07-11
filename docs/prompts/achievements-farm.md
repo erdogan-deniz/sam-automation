@@ -33,25 +33,32 @@ logs/achievements/farm/, и состояние achievements/{unlocked,error,with
 main(): parse args → setup_logging(category="achievements/farm") →
 acquire_run_lock("achievements/farm") [ДО сброса прогресса!] → atexit release →
 load_config/validate → _prepare_progress(args) → check_steam_running →
-ensure_sam → load_game_ids → (если не --no-resume) _apply_resume_filter →
-prioritize_by_with (advisory-порядок) → launch_picker → цикл
-_process_one_game по каждой игре → kill_process(proc) в finally →
-_report_result (честный тост+telegram по статусу ok/interrupted/aborted).
+ensure_sam → load_game_ids → выбор среза (--retry-without → _select_without_set,
+иначе _apply_resume_filter) → prioritize_by_with (advisory-порядок) →
+launch_picker → цикл _process_one_game по каждой игре → kill_process(proc) в
+finally → _report_result (честный тост+telegram по статусу ok/interrupted/aborted).
 
 - _process_one_game(session, gid, cfg, tracker, results, name):
   session.add_and_open_game(gid, timeout=load_timeout) → process_game(...) →
-  маршрут состояния: НЕ skipped → mark_done; skipped & "no achievements" →
-  mark_no_achievements; skipped & иное → mark_error_id. На SAMError/Exception
-  (кроме SAMTooManyErrors) → tracker.record_error + mark_error_id, return True.
-  SAMTooManyErrors проброс наверх. finally: close_game(game_app).
+  маршрут состояния: НЕ skipped → mark_done + unmark_no_achievements +
+  unmark_store_advisory (сняли устаревшие «нет достижений»); skipped &
+  "no achievements" → mark_no_achievements + unmark_store_advisory (SAM
+  авторитетнее Store-совета); skipped & иное → mark_error_id. На
+  SAMError/Exception (кроме SAMTooManyErrors) → tracker.record_error +
+  mark_error_id, return True. SAMTooManyErrors проброс наверх. finally:
+  close_game(game_app).
 - _prepare_progress: --reset → clear_progress (все 3 файла); --retry-errors →
   clear_error_ids (ТОЛЬКО error.txt). (elif: при обоих флагах побеждает --reset.)
 - _apply_resume_filter: skip = load_done_ids | load_error_ids |
-  load_no_achievements_ids; исключает их из очереди (--no-resume отключает это).
+  load_no_achievements_ids; исключает их из очереди.
+- _select_without_set (только при --retry-without): оставляет ТОЛЬКО игры из
+  without ∪ store_zero ∪ store_empty (перепроверка «без достижений»). При
+  одновременном --reset игнорируется (reset и так гонит всю библиотеку).
 
 # CLI-ФЛАГИ (scoped — не путать с другими скриптами)
 --retry-errors (чистит error.txt) · --reset (сброс done+error+without) ·
---no-resume (обработать всё этим прогоном, файлы не удаляя) · -v/--verbose.
+--retry-without (перепроверить ТОЛЬКО without+store_zero+store_empty) ·
+-v/--verbose.
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - scripts/achievements/farm.py — оркестрация + флаги + итоговый отчёт.
