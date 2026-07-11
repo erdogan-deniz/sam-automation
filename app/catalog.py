@@ -16,7 +16,7 @@ import logging
 from collections.abc import Iterable
 
 from .cache import DONE_IDS_FILE
-from .id_file import _append_id, load_ids_file
+from .id_file import _append_id, _remove_id, load_ids_file
 from .steam.store_api import AchievementInfo
 
 log = logging.getLogger("sam_automation")
@@ -71,6 +71,18 @@ def mark_store_zero(appid: int) -> None:
 def mark_store_empty(appid: int) -> None:
     """Дозаписывает appid в store_empty.txt."""
     _append_id(STORE_EMPTY_FILE, appid)
+
+
+def unmark_store_advisory(appid: int) -> None:
+    """Убирает appid из store_zero.txt и store_empty.txt (advisory-вердикт снят).
+
+    No-op, если appid ни там, ни там. Зовётся, когда SAM выдал авторитетный
+    вердикт по игре (разблокировал достижения ИЛИ подтвердил «без достижений»):
+    ненадёжный Store-совет «0/пусто» больше не нужен — авторитет у without.txt.
+    with.txt НЕ трогаем: это положительный сигнал, он не конфликтует.
+    """
+    _remove_id(STORE_ZERO_FILE, appid)
+    _remove_id(STORE_EMPTY_FILE, appid)
 
 
 def clear_catalog() -> None:
