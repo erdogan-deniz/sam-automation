@@ -73,3 +73,22 @@ def _append_id(path: Path, game_id: int) -> None:
     ids = set(_iter_ids(path))
     ids.add(game_id)
     _atomic_write_text(path, "\n".join(str(i) for i in sorted(ids)) + "\n")
+
+
+def _remove_id(path: Path, game_id: int) -> None:
+    """Удаляет ID из файла, сохраняя числовую сортировку (атомарно).
+
+    No-op, если файла нет или ID в нём отсутствует (файл не переписывается).
+    Если после удаления не осталось ID — файл удаляется целиком, чтобы не
+    плодить пустые id-файлы.
+    """
+    if not path.exists():
+        return
+    ids = set(_iter_ids(path))
+    if game_id not in ids:
+        return
+    ids.discard(game_id)
+    if ids:
+        _atomic_write_text(path, "\n".join(str(i) for i in sorted(ids)) + "\n")
+    else:
+        path.unlink()
