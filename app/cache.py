@@ -6,7 +6,7 @@ import json
 import logging
 from pathlib import Path
 
-from .id_file import _append_id, load_ids_file
+from .id_file import _append_id, _atomic_write_text, load_ids_file
 
 log = logging.getLogger("sam_automation")
 
@@ -48,14 +48,13 @@ def save_game_names(names: dict[int, str]) -> None:
     """Сохраняет {appid: name} в game_names.json (merge с существующими)."""
     existing = load_game_names()
     existing.update(names)
-    GAME_NAMES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    GAME_NAMES_FILE.write_text(
+    _atomic_write_text(
+        GAME_NAMES_FILE,
         json.dumps(
             {str(k): v for k, v in sorted(existing.items())},
             ensure_ascii=False,
             indent=2,
         ),
-        encoding="utf-8",
     )
 
 
