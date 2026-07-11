@@ -99,6 +99,7 @@ def _playwright_steam_cookies(*, visible_fallback: bool = True) -> dict | None:
 
         for channel, exe, _ in unique_browsers:
             kwargs = _launch_kwargs(channel, exe)
+            browser = None
             try:
                 browser = pw.chromium.launch(
                     headless=False, args=["--start-maximized"], **kwargs
@@ -119,8 +120,6 @@ def _playwright_steam_cookies(*, visible_fallback: bool = True) -> dict | None:
                 raw = ctx.cookies("https://steamcommunity.com")
                 cookies = {c["name"]: c["value"] for c in raw}
                 val = cookies.get("steamLoginSecure", "")
-                ctx.close()
-                browser.close()
                 if val and "||" in val:
                     _save_manual_cookie(val)
                     log.info(
@@ -133,6 +132,15 @@ def _playwright_steam_cookies(*, visible_fallback: bool = True) -> dict | None:
                 )
             except Exception as e:
                 log.debug("Playwright launch %s: %s", channel or exe, e)
+            finally:
+                # Гарантированно закрываем видимое окно на любом пути (успех/
+                # исключение/нет куки), иначе частично-провальный launch
+                # оставляет окна висеть и они стекаются по итерациям.
+                if browser is not None:
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
 
     return None
 
