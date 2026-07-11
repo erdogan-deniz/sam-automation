@@ -16,6 +16,7 @@ from steam.enums import EResult  # noqa: E402
 from app.steam.steam_cm import (  # noqa: E402
     _cm_login_outcome,
     _password_failure_action,
+    _should_clear_session_after_rsa,
 )
 
 
@@ -66,6 +67,25 @@ def test_password_failure_transient_skips_cm():
 def test_password_failure_account_error_skips_cm():
     # Ошибка аккаунта (не пароль) → пропуск CM, креды сохранить.
     assert _password_failure_action(EResult.Banned) == "skip_cm"
+
+
+# ── _should_clear_session_after_rsa: транзиент не стирает валидные креды ─────
+
+
+def test_rsa_failure_never_clears_session():
+    # Ни один исход _rsa_jwt_login не является надёжным «неверный пароль»:
+    # None неразличимо (сеть ИЛИ отказ поллинга), а конкретный EResult приходит
+    # из _cm_login_with_jwt, который выполняется УЖЕ имея валидный токен (пароль
+    # принят). Стирать необратимые креды на этом основании нельзя — инвариант
+    # «transient не удаляет креды».
+    for r in (
+        None,
+        EResult.InvalidPassword,
+        EResult.TryAnotherCM,
+        EResult.ServiceUnavailable,
+        EResult.Timeout,
+    ):
+        assert _should_clear_session_after_rsa(r) is False, r
 
 
 # ── _steam_api_reachable: пре-чек доступности перед интерактивом ───────────
