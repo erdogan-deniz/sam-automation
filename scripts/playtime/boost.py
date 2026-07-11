@@ -78,7 +78,6 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Очистить playtime/skip.txt — заново попробовать не подключившиеся",
     )
-    parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
 
@@ -297,9 +296,7 @@ def main() -> None:
     """Точка входа: парсит аргументы CLI и запускает цикл набивки playtime."""
     args = _build_parser().parse_args()
 
-    setup_logging(
-        verbose=args.verbose, name="boost_playtime", category="playtime/boost"
-    )
+    setup_logging(name="boost_playtime", category="playtime/boost")
     cfg = load_config()
     validate(cfg)
 
