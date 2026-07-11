@@ -1,8 +1,8 @@
-"""Тесты CLI-флагов scripts/achievements/farm.py.
+"""Тесты scripts/achievements/farm.py.
 
 Скрипт импортируется напрямую по пути (он не пакет). Проверяем разбор
-аргументов и применение сброса прогресса — то, что чинит мёртвые кнопки
-GUI «Retry errors» / «Reset».
+аргументов, применение сброса/повтора прогресса (флаги --reset/--retry-errors),
+маршрутизацию исходов одной игры и честный финальный отчёт.
 """
 
 from __future__ import annotations
@@ -12,6 +12,10 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+from app.exceptions import SAMTooManyErrors
+from app.safety import ErrorTracker
+from app.unlock_result import UnlockResult
 
 _FARM_PATH = (
     Path(__file__).resolve().parents[2] / "scripts" / "achievements" / "farm.py"
@@ -145,3 +149,86 @@ def test_report_aborted_is_not_success(
     assert "✅" not in tg_msg
     assert "⚠️" in tg_msg
     assert "прерв" in toast_msg.lower()
+
+
+# ── маршрутизация исхода одной игры (_process_one_game) ─────────────────────
+# Мягкая ошибка (skip_reason="error", НЕ исключение) должна считаться ошибкой:
+# иначе прогон, где все игры не загрузились, ложно рапортует ✅ (см. аудит).
+
+
+class _FakeSession:
+    def add_and_open_game(self, game_id: int, timeout: float) -> object:
+        return object()
+
+
+class _Cfg:
+    load_timeout = 5
+    post_commit_delay = 0.0
+
+
+def _run_one(
+    monkeypatch: pytest.MonkeyPatch,
+    result: UnlockResult,
+    tracker: ErrorTracker,
+) -> tuple[bool, dict[str, list[int]]]:
+    calls: dict[str, list[int]] = {"done": [], "error": [], "no_ach": []}
+    monkeypatch.setattr(farm, "process_game", lambda *a, **k: result)
+    monkeypatch.setattr(farm, "mark_done", lambda g: calls["done"].append(g))
+    monkeypatch.setattr(
+        farm, "mark_error_id", lambda g: calls["error"].append(g)
+    )
+    monkeypatch.setattr(
+        farm, "mark_no_achievements", lambda g: calls["no_ach"].append(g)
+    )
+    monkeypatch.setattr(farm, "close_game", lambda app: None)
+    ret = farm._process_one_game(
+        _FakeSession(), result.game_id, _Cfg(), tracker, []
+    )
+    return ret, calls
+
+
+def test_process_one_game_soft_error_counts_as_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker = ErrorTracker(max_consecutive=100)
+    result = UnlockResult(game_id=730, skipped=True, skip_reason="error")
+    ret, calls = _run_one(monkeypatch, result, tracker)
+    assert ret is True  # трактуется как ошибка (→ errors += 1 в main)
+    assert calls["error"] == [730]
+    assert calls["done"] == []
+    assert tracker.total_errors == 1  # record_error, НЕ record_success
+
+
+def test_process_one_game_soft_errors_trigger_abort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker = ErrorTracker(max_consecutive=1)
+    result = UnlockResult(game_id=730, skipped=True, skip_reason="error")
+    with pytest.raises(SAMTooManyErrors):
+        _run_one(monkeypatch, result, tracker)
+
+
+def test_process_one_game_unlock_marks_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker = ErrorTracker(max_consecutive=100)
+    result = UnlockResult(game_id=570, skipped=False, total=5, newly_unlocked=5)
+    ret, calls = _run_one(monkeypatch, result, tracker)
+    assert ret is False
+    assert calls["done"] == [570]
+    assert calls["error"] == []
+    assert tracker.total_errors == 0
+
+
+def test_process_one_game_no_achievements_not_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker = ErrorTracker(max_consecutive=100)
+    result = UnlockResult(
+        game_id=999, skipped=True, skip_reason="no achievements"
+    )
+    ret, calls = _run_one(monkeypatch, result, tracker)
+    assert ret is False
+    assert calls["no_ach"] == [999]
+    assert calls["error"] == []
+    assert tracker.total_errors == 0
