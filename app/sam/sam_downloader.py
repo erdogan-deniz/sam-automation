@@ -39,18 +39,24 @@ def check_for_update(exe_path: str) -> str | None:
         Новый путь к SAM.Game.exe если обновление установлено, иначе None.
     """
     exe_dir = Path(exe_path).parent
-    installed = _read_installed_version(exe_dir)
     release = _fetch_latest_release()
     latest = release["tag_name"]
 
-    if installed == latest:
+    # Сравнение — тег-с-тегом: latest это GitHub tag ('rNN'), поэтому и
+    # установленную версию берём как сохранённый тег (.sam_version). PE-метаданные
+    # бинарника имеют формат 'x.y.z' и с тегом никогда не совпадут — сравнение с
+    # ними давало «обновление доступно» КАЖДЫЙ запуск (вечный промпт 'Обновить?').
+    installed_tag = _read_installed_tag(exe_dir)
+    if installed_tag == latest:
         log.debug("SAM %s — последняя версия", latest)
         return None
 
-    if installed is None:
+    # PE-версия — только для человекочитаемого лога (не для сравнения).
+    installed_display = _read_installed_version(exe_dir)
+    if installed_display is None:
         log.info("Версия SAM неизвестна. Последняя: %s", latest)
     else:
-        log.info("Текущая версия приложения SAM: %s", installed)
+        log.info("Текущая версия приложения SAM: %s", installed_display)
         log.info("Доступна новая версия приложения SAM: %s", latest)
 
     try:
@@ -74,6 +80,20 @@ def check_for_update(exe_path: str) -> str | None:
 def _save_version(sam_dir: Path, tag_name: str) -> None:
     """Сохраняет tag_name установленной версии SAM в <sam_dir>/.sam_version."""
     (sam_dir / ".sam_version").write_text(tag_name, encoding="utf-8")
+
+
+def _read_installed_tag(sam_dir: Path) -> str | None:
+    """Возвращает сохранённый тег установленного SAM (<sam_dir>/.sam_version).
+
+    Это ЕДИНСТВЕННЫЙ источник, сопоставимый с GitHub tag_name ('rNN') для
+    определения «нужно ли обновление». PE-метаданные бинарника ('x.y.z') с
+    тегом несравнимы — их формат другой. None, если тег не сохранён (SAM
+    поставлен вручную или до появления .sam_version).
+    """
+    try:
+        return (sam_dir / ".sam_version").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
 
 
 def _read_installed_version(sam_dir: Path) -> str | None:
