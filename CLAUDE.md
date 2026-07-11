@@ -2,7 +2,7 @@
 
 Автоматизация Steam через SAM (Steam Achievement Manager): разблокировка
 достижений, фарм карточек, набивка playtime. Python 3.12, Windows-only
-(pywinauto/win32), GUI на customtkinter.
+(pywinauto/win32), только CLI (`scripts/`; GUI удалён).
 
 > Этот файл — единственный источник durable-правил, едущий с репозиторием.
 > Глубина по каждому воркфлоу — в `docs/prompts/` (playbook'и farm/boost/scan
@@ -16,7 +16,7 @@
 ```
 ruff check .
 ruff format --check .      # НЕ E501: длину 80 держит форматтер, не линтер
-mypy app                   # scoped ТОЛЬКО на app/; scripts/ и gui/ НЕ типизируются
+mypy app                   # scoped ТОЛЬКО на app/; scripts/ НЕ типизируется
 pytest tests/unit -q       # только tests/unit; интеграционных путей в CI нет
 ```
 
@@ -72,10 +72,6 @@ pytest tests/unit -q       # только tests/unit; интеграционны
 - **Legacy CM login**: `client.login()` возвращает `InvalidPassword` на ВЕРНЫХ
   кредах для аккаунтов на современном Steam auth (не опечатка, не 2FA). Детали и
   различение реально-неверного пароля — `docs/`/память.
-- **Остановка процессов на Windows**: только Win32 Job Object
-  (`gui/win_job.py`, KILL_ON_JOB_CLOSE) убивает дерево с внуками `SAM.Game.exe`.
-  CTRL_BREAK/graceful-стоп НЕ работает надёжно. Для таких фиксов нужен
-  РЕАЛЬНЫЙ-subprocess интеграционный тест, а не мок.
 
 ## Конвенции
 
