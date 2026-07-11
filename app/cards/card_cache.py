@@ -5,16 +5,11 @@ from __future__ import annotations
 import logging
 
 from ..cache import CARDS_DIR
-from ..id_file import _append_id, load_ids_file
+from ..id_file import _append_id
 
 log = logging.getLogger("sam_automation")
 
 CARD_DONE_FILE = CARDS_DIR / "done.txt"
-
-
-def load_card_done_ids() -> set[int]:
-    """Читает cards/done.txt → set[int] (игры без оставшихся card drops)."""
-    return load_ids_file(CARD_DONE_FILE)
 
 
 def mark_card_done(game_id: int) -> None:
