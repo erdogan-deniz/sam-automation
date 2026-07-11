@@ -4,12 +4,34 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 log = logging.getLogger("sam_automation")
+
+
+def _num(raw: dict, key: str, cast: Callable[..., Any], current: Any) -> Any:
+    """cast(raw[key]) с фолбэком: отсутствует → current; не-число → warning + current.
+
+    Ручной config.yaml с опечаткой (напр. load_timeout: xyz) больше не роняет
+    load_config сырым ValueError до валидации — берётся значение по умолчанию.
+    """
+    if key not in raw:
+        return current
+    try:
+        return cast(raw[key])
+    except (ValueError, TypeError):
+        log.warning(
+            "config.yaml: %s=%r не число — использую значение по умолчанию %r",
+            key,
+            raw[key],
+            current,
+        )
+        return current
 
 
 def _parse_int_list(raw_list: list, field: str) -> list[int]:
@@ -117,26 +139,19 @@ def load_config(config_path: str = "config.yaml") -> Config:
         "between_games_delay",
         "launch_stagger",
     ):
-        if float_key in raw:
-            setattr(cfg, float_key, float(raw[float_key]))
+        setattr(
+            cfg, float_key, _num(raw, float_key, float, getattr(cfg, float_key))
+        )
 
-    if "max_consecutive_errors" in raw:
-        cfg.max_consecutive_errors = int(raw["max_consecutive_errors"])
-
-    if "max_concurrent_games" in raw:
-        cfg.max_concurrent_games = int(raw["max_concurrent_games"])
-
-    if "card_check_interval" in raw:
-        cfg.card_check_interval = int(raw["card_check_interval"])
-
-    if "playtime_idle_duration" in raw:
-        cfg.playtime_idle_duration = int(raw["playtime_idle_duration"])
-
-    if "playtime_target_minutes" in raw:
-        cfg.playtime_target_minutes = int(raw["playtime_target_minutes"])
-
-    if "playtime_concurrent_games" in raw:
-        cfg.playtime_concurrent_games = int(raw["playtime_concurrent_games"])
+    for int_key in (
+        "max_consecutive_errors",
+        "max_concurrent_games",
+        "card_check_interval",
+        "playtime_idle_duration",
+        "playtime_target_minutes",
+        "playtime_concurrent_games",
+    ):
+        setattr(cfg, int_key, _num(raw, int_key, int, getattr(cfg, int_key)))
 
     cfg.telegram_bot_token = raw.get("telegram_bot_token", "")
     cfg.telegram_chat_id = str(raw.get("telegram_chat_id", ""))
