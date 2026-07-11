@@ -60,7 +60,7 @@ D) ДРЕЙФ ДОКОВ / ВЕРСИЙ
 - [УСТРАНЕНО, см. СТАТУС выше] Дрейф scripts/scan.py/gui/runner.py (путь «scripts/achievements/scan.py», «пишет ids.txt») закрыт коммитами 409fb74 + 0f1a8b7; остаточный ids.txt/scan_achievements.py в game_list/farm/playwright тоже устранён.
 - README «playtime/skip.txt» упомянут в прозе (README.md:237), но отсутствует в дереве структуры — сверь все playtime-файлы (done.txt, skip.txt) со scripts/playtime/boost.py.
 - README config-таблица (launch_delay, load_timeout, max_concurrent_games, card_check_interval, playtime_idle_duration, playtime_target_minutes и т.д.) — сверить с дефолтами app/config.py.
-- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py (--retry-errors/--reset/--retry-without/--retry-done), scripts/cards/farm.py:171 (--reset), scripts/playtime/boost.py:65,70 (--list/--reset), scripts/categorize.py:54,57 (--reset/--limit).
+- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py (--retry-errors/--reset/--retry-without/--retry-done), scripts/cards/farm.py (флагов НЕТ — --reset удалён в v1.9.x), scripts/playtime/boost.py:65,70 (--list/--reset), scripts/categorize.py:54,57 (--reset/--limit).
 - ИНВАРИАНТ версии: VERSION-файл == верхняя секция CHANGELOG == последний тег `vX.Y.Z`. Сверяй ПЕРЕД каждым релизом (это инвариант, а не снапшот: пин коммита/PR ре-ротится каждым коммитом). Прецедент: на v1.3.0 забытый бамп дал тег с VERSION=1.2.0 — фикс-форвардом, тег НЕ перемещали.
 
 E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)
@@ -100,7 +100,7 @@ F) РАСКЛАДКА / ДУБЛИ
 - State-файлы прогресса data/ = реальный прогресс, НИКОГДА не удалять/не терять:
   - data/games/ids/all.txt (мастер-список AppID).
   - achievements/without.txt (терминально «нет достижений», пишет ТОЛЬКО SAM/farm через mark_no_achievements), achievements/unlocked.txt (mark_done), achievements/error.txt (ретраибл, сбрасывается только --retry-errors). error.txt/without.txt терминальны — вправе писать ТОЛЬКО SAM/farm.
-  - cards/done.txt (собранные карты; читает cards/farm).
+  - cards/done.txt (собранные карты; пишет cards/farm через mark_card_done, write-only — для пропуска НЕ читается, очередь строится из живого скрейпа badges).
   - playtime/done.txt и skip.txt (прогресс буста).
   - data/games/names.json (кэш AppID→имя; регенерируется, но дорого — Steam API).
   - with.txt/store_zero.txt/store_empty.txt — advisory-каталог categorize (прогресс, хоть farm их не читает).
