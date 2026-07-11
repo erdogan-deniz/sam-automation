@@ -164,9 +164,12 @@ sam-automation/
 │   ├── game_list.py        # App ID source merging
 │   ├── id_file.py          # Text file ID list helpers
 │   ├── logging_setup.py    # File + console logging
+│   ├── notify.py           # Local toast + Telegram notifications
+│   ├── run_lock.py         # Single-instance run lock (data/.sam_run.lock)
 │   ├── safety.py           # Consecutive-error tracker
 │   ├── stats.py            # Library stats summary
-│   └── unlock_result.py    # Achievement unlock result type
+│   ├── unlock_result.py    # Achievement unlock result type
+│   └── validator.py        # Pre-run config/param validation
 ├── scripts/
 │   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
 │   ├── stats.py            # Library stats summary
@@ -176,8 +179,12 @@ sam-automation/
 │   ├── cards/
 │   │   ├── scan.py         # Detect games with remaining card drops
 │   │   └── farm.py         # Idle games to collect card drops
-│   └── playtime/
-│       └── boost.py        # Boost low-playtime games via short SAM sessions
+│   ├── playtime/
+│   │   └── boost.py        # Boost low-playtime games via short SAM sessions
+│   ├── ci/
+│   │   └── check_version.py  # Release version-invariant gate (run by CI)
+│   └── diag/
+│       └── dump_sam_window.py  # UIA window dump for SAM debugging
 ├── data/                   # Runtime state (gitignored)
 │   └── games/
 │       ├── names.json      # AppID → game name cache
