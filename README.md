@@ -40,12 +40,6 @@ steam_id:      "YOUR_STEAM_ID"
 
 ## Usage
 
-### GUI
-
-```bash
-python run.py
-```
-
 ### Achievements (CLI)
 
 ```bash
@@ -173,10 +167,6 @@ sam-automation/
 │   ├── safety.py           # Consecutive-error tracker
 │   ├── stats.py            # Library stats summary
 │   └── unlock_result.py    # Achievement unlock result type
-├── gui/                    # GUI (CustomTkinter)
-│   ├── app.py              # Main window
-│   ├── runner.py           # Script subprocess runner
-│   └── tabs/               # Tab components (achievements, cards, playtime, settings)
 ├── scripts/
 │   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
 │   ├── stats.py            # Library stats summary
@@ -200,7 +190,6 @@ sam-automation/
 ├── external/
 │   └── SAM/                # SAM binaries (auto-downloaded on first run)
 ├── config.example.yaml
-├── run.py                  # GUI entry point
 └── requirements.txt
 ```
 
