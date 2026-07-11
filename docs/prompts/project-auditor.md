@@ -16,7 +16,7 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 - [УСТРАНЕНО] honest-report: scripts/achievements/farm.py слал «✅ Готово» безусловно даже на Ctrl+C / SAMTooManyErrors — введён _report_result (status ok/interrupted/aborted, ⚠️ вместо ✅), +4 теста. Коммит 58cc5da. Теперь честный отчёт консистентен с boost.
 - [УСТРАНЕНО] D остаточный ids.txt→all.txt / scan_achievements.py→scan.py: докстринг/комментарии/лог app/game_list.py, main()-докстринг scripts/scan.py, ошибка scripts/achievements/farm.py, 4× user-строки app/cookies/playwright.py. Коммит 0f1a8b7. Не тронуты (легитимно): тест-фикстуры tmp_path/ids.txt, имя логгера name="scan_achievements", gui error_ids.txt.
 - [УСТРАНЕНО] D дрейф доков: README badge/Requirements 3.10+→3.12; добавлена вкладка Playtime (README + gui/app.py docstring); store_empty.txt внесён в таблицу+дерево; убраны has_cards/no_cards из доков карт; в дерево добавлен playtime/ (done.txt, skip.txt); docstrings scripts/scan.py и gui/runner.py (путь scripts/achievements/scan.py→scripts/scan.py, ids.txt→all.txt). Коммит 409fb74.
-- [УСТРАНЕНО] B dead-код: app/cards/card_store.py удалён целиком вместе с транзитивно мёртвыми _has_trading_cards / _TRADING_CARDS_CATEGORY / _REQUEST_DELAY (store_api.py) и CARD_HAS_CARDS_FILE / CARD_NO_CARDS_FILE (card_cache.py) + реэкспорт из app/cards/__init__.py. Коммит 29a8b22. → Секция B ниже про card_store и упоминания has_cards/no_cards УСТАРЕЛИ.
+- [УСТРАНЕНО] B dead-код: app/cards/card_store.py удалён целиком вместе с транзитивно мёртвыми _has_trading_cards / _TRADING_CARDS_CATEGORY / _REQUEST_DELAY (store_api.py) и CARD_HAS_CARDS_FILE / CARD_NO_CARDS_FILE (card_cache.py) + реэкспорт из app/cards/__init__.py. Коммит 29a8b22. → Секции B/C/D/E и «НЕ ТРОГАТЬ» ниже про card_store и упоминания has_cards/no_cards УСТАРЕЛИ.
 - [ЛОЖНОЕ СРАБАТЫВАНИЕ] D CHANGELOG.md:40 fetch_achievement_count — это КОРРЕКТНАЯ историческая запись [1.4.0] (переименование в fetch_achievement_info было в 1.5.0). НЕ «исправлять».
 - [УСТРАНЕНО] D дрейф памяти: хук project_scan_catalog_reverted в MEMORY.md поправлен (флаги --retry-errors/--reset/--no-resume рабочие с v1.2.0).
 
@@ -55,7 +55,7 @@ C) СТРУКТУРНЫЕ НЕТОЧНОСТИ / НАРУШЕНИЯ АРХИТЕ
 
 D) ДРЕЙФ ДОКОВ / ВЕРСИЙ
 - README badge (README.md:5) и Requirements (README.md:21-22) говорят «Python 3.10+», а pyproject/ruff/mypy/CI таргетят 3.12 — версия-дрейф, флагать.
-- README.md:192,227-228 документирует cards/has_cards.txt и no_cards.txt как state-файлы — это вывод мёртвого card_store.py. В таблице достижений (README.md:220-221) есть with.txt и store_zero.txt, но отсутствует реально существующий store_empty.txt (app/catalog.py:28, CHANGELOG 1.5.0). ВАЖНО: в app/catalog.py живут ОБА файла — store_zero.txt (:27, «Store сказал 0») и store_empty.txt (:28, «Store ответил без данных»); это разные категории, не путать.
+- ВАЖНО (каталог, не путать категории): в app/catalog.py живут ОБА файла — store_zero.txt (:27, «Store сказал 0») и store_empty.txt (:28, «Store ответил без данных»). Оба уже задокументированы в README (has_cards/no_cards из доков убраны в 409fb74).
 - CHANGELOG.md:40 (v1.4.0) ссылается на store_api.fetch_achievement_count. ВНИМАНИЕ: это может быть КОРРЕКТНАЯ историческая запись — на момент 1.4.0 функция так и называлась (переименована в fetch_achievement_info в 1.5.0). CHANGELOG — точечный во времени; не «исправлять» историю вслепую.
 - [УСТРАНЕНО, см. СТАТУС выше] Дрейф scripts/scan.py/gui/runner.py (путь «scripts/achievements/scan.py», «пишет ids.txt») закрыт коммитами 409fb74 + 0f1a8b7; остаточный ids.txt/scan_achievements.py в game_list/farm/playwright тоже устранён.
 - README «playtime/skip.txt» упомянут в прозе (README.md:237), но отсутствует в дереве структуры — сверь все playtime-файлы (done.txt, skip.txt) со scripts/playtime/boost.py.
@@ -100,7 +100,7 @@ F) РАСКЛАДКА / ДУБЛИ
 - State-файлы прогресса data/ = реальный прогресс, НИКОГДА не удалять/не терять:
   - data/games/ids/all.txt (мастер-список AppID).
   - achievements/without.txt (терминально «нет достижений», пишет ТОЛЬКО SAM/farm через mark_no_achievements), achievements/unlocked.txt (mark_done), achievements/error.txt (ретраибл, сбрасывается только --retry-errors). error.txt/without.txt терминальны — вправе писать ТОЛЬКО SAM/farm.
-  - cards/done.txt (собранные карты; читает GUI и cards/farm).
+  - cards/done.txt (собранные карты; читает cards/farm).
   - playtime/done.txt и skip.txt (прогресс буста).
   - data/games/names.json (кэш AppID→имя; регенерируется, но дорого — Steam API).
   - with.txt/store_zero.txt/store_empty.txt — advisory-каталог categorize (прогресс, хоть farm их не читает).
@@ -110,7 +110,7 @@ F) РАСКЛАДКА / ДУБЛИ
 
 # МЕТОД (аудит-сначала, адверсариально)
 1. Собери находки по таксономии A–F, каждая с точной привязкой файл:строка.
-2. Верифицируй КАЖДУЮ до правок: перед выводом «мёртвое» — grep по всему репо на все вызовы/реэкспорты/строки-имена (scripts/, gui/, tests/, docs/); отличай доменный термин от долга; проверяй, не транзитивная ли зависимость. Verify-before-delete: загляни в цель перед удалением, не удаляй то, что не создавал, без доказательства.
+2. Верифицируй КАЖДУЮ до правок: перед выводом «мёртвое» — grep по всему репо на все вызовы/реэкспорты/строки-имена (scripts/, tests/, docs/); отличай доменный термин от долга; проверяй, не транзитивная ли зависимость. Verify-before-delete: загляни в цель перед удалением, не удаляй то, что не создавал, без доказательства.
 3. Ранжируй по severity (High/Med/Low): вес — риск потери данных/прогресса, поломка гейтов/CI, введение в заблуждение (дрейф доков перед релизом), затем чистый косметический мусор.
 4. Выдай отчёт. Правки — ТОЛЬКО после подтверждения находки и согласия пользователя.
 5. Если фиксишь: TDD (сначала тест на пробел/регресс, где применимо), затем правка, затем ВСЕ гейты. git-flow: feature/* от develop (merge --no-ff), release/X.Y.Z в main через PR (gh), тег vX.Y.Z, back-merge в develop; main защищён PR. Коммиты conventional, тело на русском, футер Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>; PR-боди заканчивать строкой про Generated with Claude Code. Держи репо чистым.

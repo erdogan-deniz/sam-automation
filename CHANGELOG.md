@@ -27,8 +27,10 @@
 - **win32: `restype=HANDLE`** для snapshot/OpenProcess на 64-битной Windows (critic).
 - **cookies: гарантированное закрытие браузера** в `_playwright_login` даже при
   ошибке (critic).
-- **config: `load_config` не падает на нечисловом скалярном значении**
-  `game_ids`/`exclude_ids` — мусор пропускается с warning (F-1).
+- **config: `load_config` не падает на нечисловом скалярном числовом поле**
+  (`load_timeout`, `playtime_concurrent_games`, `max_concurrent_games` и др.) —
+  мусор пропускается с warning (F-1). (Списки `game_ids`/`exclude_ids` закрыты
+  ранее в 1.7.1.)
 
 ### Внутреннее
 
