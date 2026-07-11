@@ -138,7 +138,7 @@ def _playwright_steam_cookies(*, visible_fallback: bool = True) -> dict | None:
 
 
 def _try_save_cm_refresh_token() -> None:
-    """После браузерного входа сохраняет CM JWT refresh_token для автоматизации scan_achievements.py."""
+    """После браузерного входа сохраняет CM JWT refresh_token для автоматизации scan.py."""
     if _JWT_REFRESH_FILE.exists():
         return
 
@@ -149,21 +149,17 @@ def _try_save_cm_refresh_token() -> None:
     username, password = saved
 
     print(
-        "\n[Steam] scan_achievements.py тоже может работать без 2FA — нужно ввести код один раз."
+        "\n[Steam] scan.py тоже может работать без 2FA — нужно ввести код один раз."
     )
     answer = (
-        input(
-            "[Steam] Настроить автоматический вход для scan_achievements.py? [y/N]: "
-        )
+        input("[Steam] Настроить автоматический вход для scan.py? [y/N]: ")
         .strip()
         .lower()
     )
     if answer not in ("y", "yes", "д", "да"):
         return
 
-    log.info(
-        "Получаю CM JWT refresh_token для автоматизации scan_achievements.py..."
-    )
+    log.info("Получаю CM JWT refresh_token для автоматизации scan.py...")
     _jwt_web_cookies(username, password)
 
 
