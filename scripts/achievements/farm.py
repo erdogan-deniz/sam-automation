@@ -73,16 +73,22 @@ def _process_one_game(
             post_commit_delay=cfg.post_commit_delay,
         )
         results.append(result)
-        tracker.record_success()
 
-        if result.skipped:
-            if result.skip_reason == "no achievements":
-                mark_no_achievements(game_id)
-            else:
-                mark_error_id(game_id)
+        # Мягкая ошибка загрузки (skip_reason="error"/"retry") — НЕ исключение,
+        # но реальный провал: считаем ошибкой, иначе прогон, где все игры не
+        # загрузились (Steam offline / global user / протухшие куки), ложно
+        # рапортует ✅. record_success — только на честном исходе (UNLOCK / нет
+        # достижений), чтобы серия таких ошибок взводила аварийный стоп.
+        if result.skipped and result.skip_reason not in ("", "no achievements"):
+            tracker.record_error(game_id, SAMError(result.skip_reason))
+            mark_error_id(game_id)
+            return True
+
+        tracker.record_success()
+        if result.skipped:  # skip_reason == "no achievements"
+            mark_no_achievements(game_id)
         else:
             mark_done(game_id)
-
         return False
 
     except SAMTooManyErrors:
