@@ -59,6 +59,34 @@ def test_mark_and_load_store_empty(monkeypatch, tmp_path) -> None:
     assert catalog.load_store_empty_ids() == {9}
 
 
+def test_unmark_store_advisory_clears_both_advisory_files(
+    monkeypatch, tmp_path
+) -> None:
+    # SAM вынес вердикт → снимаем Store-советы store_zero И store_empty.
+    _patch(monkeypatch, tmp_path)
+    catalog.mark_store_zero(7)
+    catalog.mark_store_empty(9)
+    catalog.unmark_store_advisory(7)
+    catalog.unmark_store_advisory(9)
+    assert catalog.load_store_zero_ids() == set()
+    assert catalog.load_store_empty_ids() == set()
+
+
+def test_unmark_store_advisory_leaves_with_untouched(
+    monkeypatch, tmp_path
+) -> None:
+    # with.txt — положительный сигнал, unmark_store_advisory его не трогает.
+    _patch(monkeypatch, tmp_path)
+    catalog.mark_with(5)
+    catalog.unmark_store_advisory(5)
+    assert catalog.load_with_ids() == {5}
+
+
+def test_unmark_store_advisory_absent_is_noop(monkeypatch, tmp_path) -> None:
+    _patch(monkeypatch, tmp_path)
+    catalog.unmark_store_advisory(123)  # файлов нет — не должно падать
+
+
 def test_clear_catalog_removes_all_three_files(monkeypatch, tmp_path) -> None:
     _patch(monkeypatch, tmp_path)
     catalog.mark_with(1)
