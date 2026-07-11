@@ -34,16 +34,15 @@ main(): parse args → setup_logging(category="achievements/farm") →
 acquire_run_lock("achievements/farm") [ДО сброса прогресса!] → atexit release →
 load_config/validate → _prepare_progress(args) → check_steam_running →
 ensure_sam → load_game_ids → выбор среза (--retry-without/--retry-done →
-_select_retry_subset, иначе _apply_resume_filter) → prioritize_by_with →
+_select_retry_subset, иначе _apply_resume_filter) →
 launch_picker → цикл _process_one_game по каждой игре → kill_process(proc) в
 finally → _report_result (честный тост+telegram по статусу ok/interrupted/aborted).
 
 - _process_one_game(session, gid, cfg, tracker, results, name):
   session.add_and_open_game(gid, timeout=load_timeout) → process_game(...) →
-  маршрут состояния: НЕ skipped → mark_done + unmark_no_achievements +
-  unmark_store_advisory (сняли устаревшие «нет достижений»); skipped &
-  "no achievements" → mark_no_achievements + unmark_store_advisory (SAM
-  авторитетнее Store-совета); skipped & иное → mark_error_id. На
+  маршрут состояния: НЕ skipped → mark_done + unmark_no_achievements (снял
+  устаревшую пометку «нет достижений» из without.txt); skipped &
+  "no achievements" → mark_no_achievements; skipped & иное → mark_error_id. На
   SAMError/Exception (кроме SAMTooManyErrors) → tracker.record_error +
   mark_error_id, return True. SAMTooManyErrors проброс наверх. finally:
   close_game(game_app).
@@ -52,13 +51,13 @@ finally → _report_result (честный тост+telegram по статусу
 - _apply_resume_filter: skip = load_done_ids | load_error_ids |
   load_no_achievements_ids; исключает их из очереди.
 - _select_retry_subset (при --retry-without и/или --retry-done): оставляет
-  ТОЛЬКО заранее обработанные игры — --retry-without → without ∪ store_zero ∪
-  store_empty; --retry-done → unlocked; оба вместе → объединение. При
-  одновременном --reset игнорируются (reset и так гонит всю библиотеку).
+  ТОЛЬКО заранее обработанные игры — --retry-without → without (SAM-терминал);
+  --retry-done → unlocked; оба вместе → объединение. При одновременном --reset
+  игнорируются (reset и так гонит всю библиотеку).
 
 # CLI-ФЛАГИ (scoped — не путать с другими скриптами)
 --retry-errors (чистит error.txt) · --reset (сброс done+error+without) ·
---retry-without (перепроверить ТОЛЬКО without+store_zero+store_empty) ·
+--retry-without (перепроверить ТОЛЬКО without) ·
 --retry-done (перепрогнать ТОЛЬКО unlocked).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
@@ -82,12 +81,11 @@ finally → _report_result (честный тост+telegram по статусу
   Manager, кэш версии .sam_version через PE-метаданные), check_steam_running.
 - app/cache.py — state: mark_done→unlocked.txt, mark_error_id→error.txt,
   mark_no_achievements→without.txt; load_*_ids; clear_progress/clear_error_ids.
-- app/catalog.py — load_with_ids, prioritize_by_with (переставляет, НЕ фильтрует).
 - app/safety.py — ErrorTracker (аварийный стоп по ПОДРЯД-ошибкам).
 - app/unlock_result.py — UnlockResult(game_id, total, already_unlocked,
   newly_unlocked, skipped, skip_reason). app/notify.py — toast/send_telegram.
-- Тесты: test_farm (ТОЛЬКО _build_parser + _prepare_progress), test_sam_status,
-  test_manager_window (plain-фейки БЕЗ child_window), test_safety, test_catalog.
+- Тесты: test_farm (парсер/селектор/маршрут исхода/отчёт), test_sam_status,
+  test_manager_window (plain-фейки БЕЗ child_window), test_safety.
 
 # STATE-ФАЙЛЫ (data/games/ids/achievements/)
 - unlocked.txt — успешно обработанные (mark_done). ⚠️ имя unlocked.txt, НЕ done.txt
@@ -95,8 +93,7 @@ finally → _report_result (честный тост+telegram по статусу
 - error.txt — ошибка/таймаут/transient, RETRYABLE (--retry-errors чистит).
 - without.txt — ТЕРМИНАЛЬНО «нет достижений»; пишет ТОЛЬКО farm
   (mark_no_achievements при статус-баре "Retrieved 0"); скипается на резюме
-  навсегда; чистит только --reset. Store-каталог (with/store_zero/store_empty)
-  сюда НЕ пишет — это advisory, отдельные файлы.
+  навсегда; чистит только --reset.
 
 # КОНФИГ (config.yaml)
 - load_timeout=20 — ждать загрузки статов игры (окно Manager ждётся отдельно:
