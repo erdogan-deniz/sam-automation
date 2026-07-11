@@ -34,7 +34,7 @@ NO_ACHIEVEMENTS_FILE = _ACHIEVEMENTS_IDS_DIR / "without.txt"
 
 
 def load_game_names() -> dict[int, str]:
-    """Читает game_names.json → {appid: name}. Возвращает пустой dict если файл отсутствует."""
+    """Читает names.json → {appid: name}. Возвращает пустой dict если файл отсутствует."""
     try:
         raw: dict[str, str] = json.loads(
             GAME_NAMES_FILE.read_text(encoding="utf-8")
@@ -45,7 +45,7 @@ def load_game_names() -> dict[int, str]:
 
 
 def save_game_names(names: dict[int, str]) -> None:
-    """Сохраняет {appid: name} в game_names.json (merge с существующими)."""
+    """Сохраняет {appid: name} в names.json (merge с существующими)."""
     existing = load_game_names()
     existing.update(names)
     _atomic_write_text(
@@ -79,12 +79,12 @@ def mark_error_id(game_id: int) -> None:
 
 
 def load_no_achievements_ids() -> set[int]:
-    """Читает no_achievements.txt → set[int]."""
+    """Читает without.txt → set[int]."""
     return load_ids_file(NO_ACHIEVEMENTS_FILE)
 
 
 def mark_no_achievements(game_id: int) -> None:
-    """Дозаписывает game_id в no_achievements.txt."""
+    """Дозаписывает game_id в without.txt."""
     _append_id(NO_ACHIEVEMENTS_FILE, game_id)
 
 
@@ -130,7 +130,7 @@ def clear_error_ids() -> None:
 
 
 def clear_progress() -> None:
-    """Удаляет unlocked.txt, error.txt и no_achievements.txt."""
+    """Удаляет unlocked.txt, error.txt и without.txt."""
     for path in (DONE_IDS_FILE, ERROR_IDS_FILE, NO_ACHIEVEMENTS_FILE):
         if path.exists():
             path.unlink()
