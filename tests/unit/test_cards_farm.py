@@ -1,4 +1,4 @@
-"""Тесты CLI-флагов scripts/cards/farm.py (кнопка GUI «Reset»)."""
+"""Тесты CLI-флага --reset скрипта scripts/cards/farm.py."""
 
 from __future__ import annotations
 
