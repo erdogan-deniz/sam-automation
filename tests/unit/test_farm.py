@@ -72,26 +72,22 @@ def _args(*flags: str) -> object:
 def test_select_retry_subset_without_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # --retry-without: without ∪ store_zero ∪ store_empty; done НЕ включается,
-    # порядок game_ids сохранён, игры вне множества отброшены.
-    monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {10})
-    monkeypatch.setattr(farm, "load_store_zero_ids", lambda: {30})
-    monkeypatch.setattr(farm, "load_store_empty_ids", lambda: {50})
+    # --retry-without: только without.txt; done НЕ включается, порядок game_ids
+    # сохранён, игры вне множества отброшены.
+    monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {10, 30})
     monkeypatch.setattr(farm, "load_done_ids", lambda: {70})
     got = farm._select_retry_subset(
         [50, 20, 30, 40, 10, 70], _args("--retry-without")
     )
-    assert got == [50, 30, 10]
+    assert got == [30, 10]
 
 
 def test_select_retry_subset_done_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # --retry-done: только unlocked.txt; without-источники НЕ включаются.
+    # --retry-done: только unlocked.txt; without НЕ включается.
     monkeypatch.setattr(farm, "load_done_ids", lambda: {10, 30})
     monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {50})
-    monkeypatch.setattr(farm, "load_store_zero_ids", lambda: set())
-    monkeypatch.setattr(farm, "load_store_empty_ids", lambda: set())
     got = farm._select_retry_subset([10, 20, 30, 50], _args("--retry-done"))
     assert got == [10, 30]
 
@@ -99,10 +95,8 @@ def test_select_retry_subset_done_only(
 def test_select_retry_subset_both_is_union(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Оба флага → объединение without-среза и done.
+    # Оба флага → объединение without и done.
     monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {10})
-    monkeypatch.setattr(farm, "load_store_zero_ids", lambda: set())
-    monkeypatch.setattr(farm, "load_store_empty_ids", lambda: set())
     monkeypatch.setattr(farm, "load_done_ids", lambda: {30})
     got = farm._select_retry_subset(
         [10, 20, 30], _args("--retry-without", "--retry-done")
@@ -113,12 +107,7 @@ def test_select_retry_subset_both_is_union(
 def test_select_retry_subset_empty_sets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for name in (
-        "load_no_achievements_ids",
-        "load_store_zero_ids",
-        "load_store_empty_ids",
-        "load_done_ids",
-    ):
+    for name in ("load_no_achievements_ids", "load_done_ids"):
         monkeypatch.setattr(farm, name, lambda: set())
     got = farm._select_retry_subset(
         [1, 2, 3], _args("--retry-without", "--retry-done")
@@ -245,7 +234,6 @@ def _run_one(
         "error": [],
         "no_ach": [],
         "unmark_no_ach": [],
-        "unmark_store": [],
     }
     monkeypatch.setattr(farm, "process_game", lambda *a, **k: result)
     monkeypatch.setattr(farm, "mark_done", lambda g: calls["done"].append(g))
@@ -259,11 +247,6 @@ def _run_one(
         farm,
         "unmark_no_achievements",
         lambda g: calls["unmark_no_ach"].append(g),
-    )
-    monkeypatch.setattr(
-        farm,
-        "unmark_store_advisory",
-        lambda g: calls["unmark_store"].append(g),
     )
     monkeypatch.setattr(farm, "close_game", lambda app: None)
     ret = farm._process_one_game(
@@ -308,13 +291,12 @@ def test_process_one_game_unlock_marks_done(
 def test_process_one_game_unlock_clears_stale_no_ach_marks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Игра оказалась с достижениями → устаревшие «нет достижений» должны уйти
-    # из without И из Store-советов (иначе --retry-without гоняет её впустую).
+    # Игра оказалась с достижениями → устаревшая пометка «нет достижений» должна
+    # уйти из without.txt (иначе --retry-without гоняет её впустую).
     tracker = ErrorTracker(max_consecutive=100)
     result = UnlockResult(game_id=570, skipped=False, total=5, newly_unlocked=5)
     _ret, calls = _run_one(monkeypatch, result, tracker)
     assert calls["unmark_no_ach"] == [570]
-    assert calls["unmark_store"] == [570]
 
 
 def test_process_one_game_no_achievements_not_error(
@@ -329,17 +311,5 @@ def test_process_one_game_no_achievements_not_error(
     assert calls["no_ach"] == [999]
     assert calls["error"] == []
     assert tracker.total_errors == 0
-
-
-def test_process_one_game_no_achievements_clears_store_advisory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # SAM подтвердил «без достижений» → авторитет у without.txt, ненадёжный
-    # Store-совет снимается; but without-пометку (unmark_no_ach) НЕ трогаем.
-    tracker = ErrorTracker(max_consecutive=100)
-    result = UnlockResult(
-        game_id=999, skipped=True, skip_reason="no achievements"
-    )
-    _ret, calls = _run_one(monkeypatch, result, tracker)
-    assert calls["unmark_store"] == [999]
+    # SAM «нет достижений» не трогает without-пометку (она как раз и ставится).
     assert calls["unmark_no_ach"] == []

@@ -28,13 +28,6 @@ from app.cache import (
     mark_no_achievements,
     unmark_no_achievements,
 )
-from app.catalog import (
-    load_store_empty_ids,
-    load_store_zero_ids,
-    load_with_ids,
-    prioritize_by_with,
-    unmark_store_advisory,
-)
 from app.config import load_config
 from app.exceptions import SAMError, SAMTooManyErrors
 from app.game_list import load_game_ids
@@ -94,17 +87,12 @@ def _process_one_game(
         tracker.record_success()
         if result.skipped:  # skip_reason == "no achievements"
             mark_no_achievements(game_id)
-            # SAM авторитетно подтвердил «без достижений» — снимаем ненадёжный
-            # Store-совет (store_zero/store_empty), если он был. No-op иначе.
-            unmark_store_advisory(game_id)
         else:
             mark_done(game_id)
-            # Игра оказалась с достижениями — вычищаем устаревшие «нет
-            # достижений» из всех источников (without + Store-advisory), чтобы
-            # --retry-without не гонял её впустую и stats не задвоил. No-op,
-            # если пометок не было (обычный прогон новой игры).
+            # Игра оказалась с достижениями — снимаем устаревшую пометку «нет
+            # достижений» из without.txt, чтобы --retry-without не гонял её
+            # впустую. No-op, если пометки не было (обычный прогон новой игры).
             unmark_no_achievements(game_id)
-            unmark_store_advisory(game_id)
         return False
 
     except SAMTooManyErrors:
@@ -195,20 +183,16 @@ def _select_retry_subset(
 ) -> list[int]:
     """Оставляет ТОЛЬКО заранее обработанные игры, запрошенные retry-флагами.
 
-    --retry-without → without.txt (SAM-терминал) ∪ Store-советы store_zero.txt /
-    store_empty.txt; --retry-done → unlocked.txt. Оба флага вместе → объединение
-    подмножеств. Порядок game_ids сохранён; игры вне выбранного множества
-    отбрасываются (обычный resume-фильтр как раз их бы и исключил).
+    --retry-without → without.txt (SAM-терминал «нет достижений»); --retry-done →
+    unlocked.txt. Оба флага вместе → объединение подмножеств. Порядок game_ids
+    сохранён; игры вне выбранного множества отбрасываются (обычный resume-фильтр
+    как раз их бы и исключил).
     """
     target: set[int] = set()
     parts: list[str] = []
     if args.retry_without:
-        target |= (
-            load_no_achievements_ids()
-            | load_store_zero_ids()
-            | load_store_empty_ids()
-        )
-        parts.append("without/store_zero/store_empty")
+        target |= load_no_achievements_ids()
+        parts.append("without")
     if args.retry_done:
         target |= load_done_ids()
         parts.append("unlocked")
@@ -326,16 +310,6 @@ def main() -> None:
                 "гонит всю библиотеку заново"
             )
         game_ids = _apply_resume_filter(game_ids)
-
-    # Advisory-приоритет: игры с подтверждёнными достижениями (with.txt) —
-    # вперёд. Состав списка не меняется, только порядок.
-    catalog_with = load_with_ids()
-    game_ids = prioritize_by_with(game_ids, catalog_with)
-    n_priority = len(set(game_ids) & catalog_with)
-    if n_priority:
-        log.info(
-            "Каталог: %d игр с достижениями обрабатываются первыми", n_priority
-        )
 
     if not game_ids:
         done = len(load_done_ids())
