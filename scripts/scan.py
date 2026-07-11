@@ -83,7 +83,7 @@ def _read_cm_ids(steam_path: str | None) -> list[int]:
 
 
 def main() -> None:
-    """Сканирует библиотеку Steam из трёх источников и записывает ids.txt."""
+    """Сканирует библиотеку Steam из трёх источников и записывает all.txt."""
     print()
 
     setup_logging(
