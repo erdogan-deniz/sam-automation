@@ -22,16 +22,32 @@ _PS_TEMPLATE = """\
 $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(
     [Windows.UI.Notifications.ToastTemplateType]::ToastText02)
 $nodes = $xml.GetElementsByTagName('text')
-$nodes[0].InnerText = {title!r}
-$nodes[1].InnerText = {message!r}
+$nodes[0].InnerText = {title}
+$nodes[1].InnerText = {message}
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier({app_id!r}).Show($toast)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier({app_id}).Show($toast)
 """
+
+
+def _ps_single_quote(s: str) -> str:
+    """Оборачивает s в одинарные кавычки PowerShell (литерал, без интерполяции).
+
+    Раньше подстановка шла через Python repr ({title!r}): на апострофе repr даёт
+    ДВОЙНЫЕ кавычки, а в PowerShell двойные кавычки интерполируют $/backtick/" —
+    имя игры вроде "$(...)" или с $ ломало скрипт/давало инъекцию. Имена приходят
+    из Steam и не контролируются. В одинарных кавычках PS всё литерально;
+    единственная спецформа — сам апостроф, экранируется удвоением ('').
+    """
+    return "'" + s.replace("'", "''") + "'"
 
 
 def toast(title: str, message: str) -> None:
     """Показывает Windows toast-уведомление. Молчаливо игнорирует ошибки."""
-    script = _PS_TEMPLATE.format(title=title, message=message, app_id=_APP_ID)
+    script = _PS_TEMPLATE.format(
+        title=_ps_single_quote(title),
+        message=_ps_single_quote(message),
+        app_id=_ps_single_quote(_APP_ID),
+    )
     try:
         subprocess.Popen(
             [

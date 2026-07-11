@@ -5,7 +5,33 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from app.config import Config
-from app.notify import send_telegram, toast
+from app.notify import _ps_single_quote, send_telegram, toast
+
+
+def test_ps_single_quote_wraps_literal() -> None:
+    assert _ps_single_quote("abc") == "'abc'"
+
+
+def test_ps_single_quote_doubles_apostrophe() -> None:
+    # PS-литерал: единственная спецформа в одинарных кавычках — сам апостроф ('')
+    assert _ps_single_quote("Baldur's Gate") == "'Baldur''s Gate'"
+
+
+def test_toast_escapes_apostrophe_as_ps_literal() -> None:
+    # Имя игры с апострофом (Steam-имя, неконтролируемо) не должно ломать PS:
+    # Python repr на апострофе даёт ДВОЙНЫЕ кавычки → в PS интерполяция.
+    with patch("app.notify.subprocess.Popen") as mock_popen:
+        toast("Baldur's Gate", "готово")
+        script = " ".join(mock_popen.call_args[0][0])
+        assert "'Baldur''s Gate'" in script
+
+
+def test_toast_does_not_interpolate_dollar() -> None:
+    # '$'/backtick внутри одинарных кавычек PS — литералы, не исполнение.
+    with patch("app.notify.subprocess.Popen") as mock_popen:
+        toast("$(danger)", "M")
+        script = " ".join(mock_popen.call_args[0][0])
+        assert "'$(danger)'" in script
 
 
 def test_toast_calls_popen() -> None:
