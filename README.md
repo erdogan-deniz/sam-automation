@@ -57,14 +57,6 @@ python scripts/achievements/farm.py
 #                      e.g. after new achievements were added to them
 ```
 
-### Library stats (CLI)
-
-```bash
-# Summary of the achievements library:
-# total / with achievements / without / unlocked / errors / remaining + progress %
-python scripts/stats.py
-```
-
 ### Achievements catalog (advisory, CLI)
 
 ```bash
@@ -167,12 +159,10 @@ sam-automation/
 │   ├── notify.py           # Local toast + Telegram notifications
 │   ├── run_lock.py         # Single-instance run lock (data/.sam_run.lock)
 │   ├── safety.py           # Consecutive-error tracker
-│   ├── stats.py            # Library stats summary
 │   ├── unlock_result.py    # Achievement unlock result type
 │   └── validator.py        # Pre-run config/param validation
 ├── scripts/
 │   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
-│   ├── stats.py            # Library stats summary
 │   ├── categorize.py       # Advisory achievements catalog (Store API)
 │   ├── achievements/
 │   │   └── farm.py         # Main achievement unlock loop
