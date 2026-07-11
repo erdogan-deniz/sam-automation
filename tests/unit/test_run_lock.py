@@ -63,6 +63,65 @@ def test_acquire_overwrites_corrupt_lock(tmp_path, monkeypatch):
     assert "farm" in lock.read_text(encoding="utf-8")
 
 
+def test_remove_stale_lock_deletes_matching(tmp_path, monkeypatch):
+    # Содержимое на диске == прочитанный мёртвый токен → безопасно снести.
+    lock = tmp_path / "run.lock"
+    monkeypatch.setattr(rl, "LOCK_FILE", lock)
+    lock.write_text("999:bbb:boost", encoding="utf-8")
+    rl._remove_stale_lock("999:bbb:boost")
+    assert not lock.exists()
+
+
+def test_remove_stale_lock_keeps_lock_when_content_changed(
+    tmp_path, monkeypatch
+):
+    # TOCTOU: между read мёртвого токена и unlink другой инстанс успел взять
+    # СВОЙ живой лок. Безусловный unlink снёс бы чужой живой лок → оба решили бы,
+    # что владеют → параллельный farm+boost. Изменившееся содержимое НЕ трогаем.
+    lock = tmp_path / "run.lock"
+    monkeypatch.setattr(rl, "LOCK_FILE", lock)
+    lock.write_text(
+        "111:aaa:farm", encoding="utf-8"
+    )  # уже живой лок инстанса A
+    rl._remove_stale_lock("999:bbb:boost")  # B сносит СТАРЫЙ мёртвый токен
+    assert lock.exists()
+    assert lock.read_text(encoding="utf-8") == "111:aaa:farm"
+
+
+def test_acquire_does_not_clobber_live_lock_taken_during_removal(
+    tmp_path, monkeypatch
+):
+    # Сквозной сценарий гонки: на диске мёртвый лок; в момент снятия появляется
+    # живой чужой лок. acquire не должен его снести и захватить второй раз —
+    # обязан упасть RuntimeError (владелец жив).
+    lock = tmp_path / "run.lock"
+    monkeypatch.setattr(rl, "LOCK_FILE", lock)
+    lock.write_text("99999:dead:boost", encoding="utf-8")  # мёртвый владелец
+
+    live_ctime = {"99999": None}  # изначально владелец мёртв
+
+    def fake_ctime(pid):
+        if pid == 99999:
+            return live_ctime["99999"]
+        return "me"
+
+    monkeypatch.setattr(rl, "_proc_create_time", fake_ctime)
+
+    real_remove = rl._remove_stale_lock
+
+    def racing_remove(expected):
+        # Инстанс A перехватил лок живым токеном ровно перед нашим unlink.
+        lock.write_text("99999:aaa:farm", encoding="utf-8")
+        live_ctime["99999"] = "aaa"  # теперь владелец жив
+        real_remove(expected)
+
+    monkeypatch.setattr(rl, "_remove_stale_lock", racing_remove)
+
+    with pytest.raises(RuntimeError, match="farm"):
+        rl.acquire_run_lock("boost")
+    assert lock.read_text(encoding="utf-8") == "99999:aaa:farm"  # чужой лок цел
+
+
 def test_release_removes_own_lock(tmp_path, monkeypatch):
     lock = tmp_path / "run.lock"
     monkeypatch.setattr(rl, "LOCK_FILE", lock)
