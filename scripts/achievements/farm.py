@@ -151,6 +151,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Перепроверить ТОЛЬКО игры без достижений "
         "(without.txt + Store-советы store_zero/store_empty)",
     )
+    parser.add_argument(
+        "--retry-done",
+        action="store_true",
+        help="Перепрогнать ТОЛЬКО уже разблокированные игры "
+        "(unlocked.txt) — напр. если в них добавили новые достижения",
+    )
     return parser
 
 
@@ -177,27 +183,39 @@ def _apply_resume_filter(game_ids: list[int]) -> list[int]:
     skipped = before - len(filtered)
     if skipped:
         log.info(
-            "Пропущено %d игр из done/error (--no-resume чтобы начать заново)",
+            "Пропущено %d игр из done/error/without (--reset чтобы начать "
+            "заново, --retry-without/--retry-done для их среза)",
             skipped,
         )
     return filtered
 
 
-def _select_without_set(game_ids: list[int]) -> list[int]:
-    """Оставляет ТОЛЬКО игры, помеченные «без достижений» (для --retry-without).
+def _select_retry_subset(
+    game_ids: list[int], args: argparse.Namespace
+) -> list[int]:
+    """Оставляет ТОЛЬКО заранее обработанные игры, запрошенные retry-флагами.
 
-    Источник — объединение without.txt (SAM-терминал) и Store-советов
-    store_zero.txt / store_empty.txt. Порядок game_ids сохранён; игры вне
-    этого множества отбрасываются.
+    --retry-without → without.txt (SAM-терминал) ∪ Store-советы store_zero.txt /
+    store_empty.txt; --retry-done → unlocked.txt. Оба флага вместе → объединение
+    подмножеств. Порядок game_ids сохранён; игры вне выбранного множества
+    отбрасываются (обычный resume-фильтр как раз их бы и исключил).
     """
-    target = (
-        load_no_achievements_ids()
-        | load_store_zero_ids()
-        | load_store_empty_ids()
-    )
+    target: set[int] = set()
+    parts: list[str] = []
+    if args.retry_without:
+        target |= (
+            load_no_achievements_ids()
+            | load_store_zero_ids()
+            | load_store_empty_ids()
+        )
+        parts.append("without/store_zero/store_empty")
+    if args.retry_done:
+        target |= load_done_ids()
+        parts.append("unlocked")
     filtered = [gid for gid in game_ids if gid in target]
     log.info(
-        "--retry-without: перепроверяю %d игр из without/store_zero/store_empty",
+        "retry-режим (%s): перепроверяю %d игр",
+        " + ".join(parts),
         len(filtered),
     )
     return filtered
@@ -296,15 +314,16 @@ def main() -> None:
         log.info("Список игр пуст (все исключены конфигом?)")
         sys.exit(0)
 
-    if args.retry_without and not args.reset:
-        # Перепроверка «без достижений»: берём только этот срез, обычный
-        # resume-фильтр (он бы их как раз исключил) не применяем.
-        game_ids = _select_without_set(game_ids)
+    retry_subset = args.retry_without or args.retry_done
+    if retry_subset and not args.reset:
+        # Перепроверка заранее обработанного среза (without/done): берём только
+        # его, обычный resume-фильтр (он бы их как раз исключил) не применяем.
+        game_ids = _select_retry_subset(game_ids, args)
     else:
-        if args.retry_without:  # значит и --reset — избыточно
+        if retry_subset:  # значит и --reset — избыточно
             log.warning(
-                "--retry-without игнорируется: --reset и так гонит всю "
-                "библиотеку заново"
+                "--retry-without/--retry-done игнорируются: --reset и так "
+                "гонит всю библиотеку заново"
             )
         game_ids = _apply_resume_filter(game_ids)
 
