@@ -103,6 +103,28 @@ def _password_failure_action(result) -> str:
     return "skip_cm"
 
 
+def _should_clear_session_after_rsa(rsa_result) -> bool:
+    """Стирать ли сохранённые креды после неуспешного RSA/JWT-входа.
+
+    ВСЕГДА False: результат _rsa_jwt_login не даёт надёжного сигнала «неверный
+    пароль», а стирание кред необратимо (нарушает инвариант «transient не
+    удаляет креды» и виснет в ре-промпте на сетевом сбое).
+
+    Почему ни один исход не оправдывает удаление:
+      * None — RSA-этап не выдал токен: это и сетевой сбой (RSA-ключ по HTTP
+        или CM недоступны), и отказ поллинга — на месте вызова неразличимо.
+      * конкретный EResult приходит из _cm_login_with_jwt, который выполняется
+        УЖЕ имея валидный refresh_token (значит пароль был принят) — его неуспех
+        транзиентный, CM-сторонний.
+
+    Надёжно отличить настоящий неверный пароль можно лишь tri-state (OK /
+    rejected / transient) через весь auth-стек (_jwt_web_cookies →
+    _rsa_jwt_login) — оставлено follow-up. До тех пор безопасный дефолт —
+    сохранить креды и пропустить CM (скан идёт по localconfig + Steam API).
+    """
+    return False
+
+
 # Публичный API модуля
 # Внутренние зависимости read_steam_cm_app_ids
 # E402 ниже подавлен намеренно: импорты идут после os.environ выше
@@ -284,10 +306,23 @@ def read_steam_cm_app_ids(
                     log.info(
                         "Steam CM: вход через RSA/JWT (%s)", saved_username
                     )
-                else:
+                elif _should_clear_session_after_rsa(result):
+                    # Зарезервировано под будущий tri-state: удалять сессию ТОЛЬКО
+                    # на достоверно-неверном пароле (сейчас недостижимо → no-op).
                     log.warning("Steam CM: неверный пароль, удаляю сессию")
                     _clear_session()
                     saved = None  # → интерактивный ре-ввод ниже
+                else:
+                    # RSA-провал неотличим от сетевого (см.
+                    # _should_clear_session_after_rsa): НЕ стираем валидные
+                    # креды — пропускаем CM, скан идёт по localconfig + API.
+                    log.warning(
+                        "Steam CM: RSA-вход не удался (%s) — пропускаю CM, "
+                        "учётные данные сохранены",
+                        getattr(result, "name", result),
+                    )
+                    client.disconnect()
+                    return []
             else:
                 # Сетевая (transient) или ошибка аккаунта (не пароль): креды
                 # сохраняем, в интерактив НЕ падаем, CM пропускаем — скан идёт
