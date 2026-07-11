@@ -57,8 +57,7 @@ finally → _report_result (честный тост+telegram по статусу
 
 # CLI-ФЛАГИ (scoped — не путать с другими скриптами)
 --retry-errors (чистит error.txt) · --reset (сброс done+error+without) ·
---retry-without (перепроверить ТОЛЬКО without+store_zero+store_empty) ·
--v/--verbose.
+--retry-without (перепроверить ТОЛЬКО without+store_zero+store_empty).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - scripts/achievements/farm.py — оркестрация + флаги + итоговый отчёт.
