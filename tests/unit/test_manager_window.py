@@ -66,6 +66,10 @@ class _Window:
     def rectangle(self):
         return _Rect()
 
+    def set_focus(self):
+        # Реальный метод UIAWrapper; фейк по умолчанию — no-op.
+        return None
+
 
 class _BrokenWindow:
     """Окно, у которого ВСЕ UIA-вызовы бросают (как зависшее)."""
@@ -265,3 +269,64 @@ def test_error_status_recovers_after_refresh(monkeypatch):
     )
     assert not result.skipped
     assert result.newly_unlocked == 54
+
+
+# ── process_game: set_focus перед координатными кликами (M1) ──────────────────
+
+
+def _run_unlock_path(monkeypatch, *, focus_window):
+    """Прогоняет happy-path process_game до координатных кликов на focus_window."""
+    cache = mw._ButtonCache()
+    cache.unlock_all_dx = cache.unlock_all_dy = 10
+    cache.commit_dx = cache.commit_dy = 20
+    cache._calibrated = True
+    monkeypatch.setattr(mw, "_cache", cache)
+    monkeypatch.setattr(mw, "_find_manager_window", lambda _a: focus_window)
+    monkeypatch.setattr(mw, "_check_game_status", lambda *a, **k: (None, 7))
+    monkeypatch.setattr(mw.keyboard, "send_keys", lambda _k: None)
+    monkeypatch.setattr(mw.time, "sleep", lambda _s: None)
+    return process_game(_App(focus_window), 123, load_timeout=1)
+
+
+def test_process_game_sets_focus_before_coordinate_clicks(monkeypatch):
+    # Координатные клики уходят в никуда, если окно не в фокусе. set_focus ДОЛЖЕН
+    # вызваться ПЕРЕД первым кликом, иначе игра ложно уйдёт в done с 0 разблокировок
+    # (нарушение инварианта unverified ≠ done).
+    events: list[str] = []
+
+    class _FocusWindow(_Window):
+        def set_focus(self):
+            events.append("focus")
+
+    win = _FocusWindow(aid="Manager")
+    monkeypatch.setattr(
+        mw.mouse, "click", lambda coords: events.append("click")
+    )
+
+    result = _run_unlock_path(monkeypatch, focus_window=win)
+
+    assert "focus" in events, "set_focus не вызван перед координатными кликами"
+    assert events.index("focus") < events.index("click")
+    assert result.newly_unlocked == 7
+
+
+def test_process_game_survives_set_focus_failure(monkeypatch):
+    # set_focus best-effort: сбой фокуса (окно занято/свёрнуто) НЕ должен ронять
+    # прогон — клики выполняются как раньше (без регресса работающих игр).
+    clicked = {"n": 0}
+
+    class _UnfocusableWindow(_Window):
+        def set_focus(self):
+            raise RuntimeError("окно нельзя сфокусировать")
+
+    win = _UnfocusableWindow(aid="Manager")
+    monkeypatch.setattr(
+        mw.mouse,
+        "click",
+        lambda coords: clicked.__setitem__("n", clicked["n"] + 1),
+    )
+
+    result = _run_unlock_path(monkeypatch, focus_window=win)
+
+    assert clicked["n"] == 2  # Unlock All + Commit всё равно кликнуты
+    assert result.newly_unlocked == 7
