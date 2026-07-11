@@ -138,7 +138,7 @@ def _playwright_steam_cookies(*, visible_fallback: bool = True) -> dict | None:
 
 
 def _try_save_cm_refresh_token() -> None:
-    """После браузерного входа сохраняет CM JWT refresh_token для автоматизации scan_achievements.py."""
+    """После браузерного входа сохраняет CM JWT refresh_token для автоматизации scan.py."""
     if _JWT_REFRESH_FILE.exists():
         return
 
@@ -149,21 +149,17 @@ def _try_save_cm_refresh_token() -> None:
     username, password = saved
 
     print(
-        "\n[Steam] scan_achievements.py тоже может работать без 2FA — нужно ввести код один раз."
+        "\n[Steam] scan.py тоже может работать без 2FA — нужно ввести код один раз."
     )
     answer = (
-        input(
-            "[Steam] Настроить автоматический вход для scan_achievements.py? [y/N]: "
-        )
+        input("[Steam] Настроить автоматический вход для scan.py? [y/N]: ")
         .strip()
         .lower()
     )
     if answer not in ("y", "yes", "д", "да"):
         return
 
-    log.info(
-        "Получаю CM JWT refresh_token для автоматизации scan_achievements.py..."
-    )
+    log.info("Получаю CM JWT refresh_token для автоматизации scan.py...")
     _jwt_web_cookies(username, password)
 
 
@@ -189,50 +185,58 @@ def _playwright_login() -> dict | None:
             browser = pw.chromium.launch(
                 headless=False, args=["--start-maximized"]
             )
-            ctx = browser.new_context(no_viewport=True)
-            page = ctx.new_page()
-            page.goto(
-                "https://steamcommunity.com/login/home/",
-                timeout=60_000,
-                wait_until="domcontentloaded",
-            )
-
-            deadline = time.time() + 300
-            while time.time() < deadline:
-                try:
-                    raw = ctx.cookies("https://steamcommunity.com")
-                except Exception:
-                    break
-                val = next(
-                    (
-                        c["value"]
-                        for c in raw
-                        if c["name"] == "steamLoginSecure"
-                    ),
-                    "",
+            # try/finally: гарантируем закрытие браузера, даже если goto/чтение
+            # кук/сохранение бросят между launch и явным close — иначе видимое
+            # окно Chromium утекает вплоть до выхода из sync_playwright.
+            try:
+                ctx = browser.new_context(no_viewport=True)
+                page = ctx.new_page()
+                page.goto(
+                    "https://steamcommunity.com/login/home/",
+                    timeout=60_000,
+                    wait_until="domcontentloaded",
                 )
-                if val:
-                    ctx.close()
-                    browser.close()
-                    _save_manual_cookie(val)
-                    remember = next(
+
+                deadline = time.time() + 300
+                while time.time() < deadline:
+                    try:
+                        raw = ctx.cookies("https://steamcommunity.com")
+                    except Exception:
+                        break
+                    val = next(
                         (
                             c["value"]
                             for c in raw
-                            if c["name"] == "steamRememberLogin"
+                            if c["name"] == "steamLoginSecure"
                         ),
                         "",
                     )
-                    if remember:
-                        _save_remember_login(remember)
-                    log.info("Вход выполнен, cookie сохранён")
-                    _try_save_cm_refresh_token()
-                    return {c["name"]: c["value"] for c in raw}
-                time.sleep(2)
+                    if val:
+                        # Закрываем ДО интерактивного CM-промпта, чтобы окно
+                        # не висело; finally повторно закроет (идемпотентно).
+                        browser.close()
+                        _save_manual_cookie(val)
+                        remember = next(
+                            (
+                                c["value"]
+                                for c in raw
+                                if c["name"] == "steamRememberLogin"
+                            ),
+                            "",
+                        )
+                        if remember:
+                            _save_remember_login(remember)
+                        log.info("Вход выполнен, cookie сохранён")
+                        _try_save_cm_refresh_token()
+                        return {c["name"]: c["value"] for c in raw}
+                    time.sleep(2)
 
-            log.warning("Время ожидания входа истекло (5 мин)")
-            ctx.close()
-            browser.close()
+                log.warning("Время ожидания входа истекло (5 мин)")
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
     except Exception as e:
         log.error("Ошибка браузера: %s", e)
 
