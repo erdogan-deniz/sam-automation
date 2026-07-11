@@ -21,6 +21,17 @@ log = logging.getLogger("sam_automation")
 _kernel32 = ctypes.windll.kernel32
 _user32 = ctypes.windll.user32
 
+# HANDLE на 64-битной Windows шире 32 бит. Без явного restype ctypes трактует
+# возврат как c_int и ОБРЕЗАЕТ дескриптор — тогда snap/handle указывают не туда,
+# а Process32First/CloseHandle/TerminateProcess работают по битому значению
+# (dpapi.py:47 документирует и лечит ту же ловушку).
+_kernel32.CreateToolhelp32Snapshot.restype = ctypes.wintypes.HANDLE
+_kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+
+# INVALID_HANDLE_VALUE = (HANDLE)(-1); с restype=HANDLE возврат — беззнаковое
+# pointer-sized значение, поэтому сравнивать надо с ним, а не с сырым -1.
+_INVALID_HANDLE = ctypes.wintypes.HANDLE(-1).value
+
 _TH32CS_SNAPPROCESS = 0x00000002
 _GW_ENABLEDPOPUP = 6
 _WNDENUMPROC = ctypes.WINFUNCTYPE(
@@ -51,7 +62,7 @@ class _PROCESSENTRY32(ctypes.Structure):
 def _get_sam_game_pids() -> set[int]:
     """PID всех SAM.Game.exe — через Win32 API (<1мс вместо ~100мс tasklist)."""
     snap = _kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
-    if snap == -1:
+    if not snap or snap == _INVALID_HANDLE:
         return set()
     pe = _PROCESSENTRY32()
     pe.dwSize = ctypes.sizeof(pe)
