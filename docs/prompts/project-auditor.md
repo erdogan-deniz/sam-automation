@@ -34,7 +34,7 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 # ЧТО ИСКАТЬ (таксономия; примеры — реальные зацепки, проверь актуальность на месте)
 
 A) МУСОР / CRUFT
-- Диаг-скрипты: dump_boost_batch_detect.py и dump_sam_game_launch.py удалены (69e2621). Остался scripts/diag/dump_sam_window.py — помечен «временный», НО на него ССЫЛАЮТСЯ app/sam/sam_status.py:65 (комментарий) и docs/prompts/achievements-farm.md (UIA-инструмент отладки) → НЕ мусор, оставить.
+- Диаг-скрипты: dump_boost_batch_detect.py и dump_sam_game_launch.py удалены (69e2621). scripts/diag/dump_sam_window.py тоже удалён в v1.10.x — его техника UIA-дампа перенесена в docs/debug-sam-uia.md (ссылки из app/sam/sam_status.py и farm-промпта ведут туда). Каталога scripts/diag/ больше нет.
 - Их дампы: data/diag/sam_game_launch_2021390.txt, sam_game_launch_466160.txt, boost_batch_detect.txt. ВНИМАНИЕ: вся data/ gitignored (.gitignore: data/*, кроме data/.gitkeep) — эти дампы НЕ закоммичены, это локальные файлы рабочей копии. Удаление безопасно, но severity низкий (репозиторий они не засоряют).
 - Осиротевший advisory-кэш откатанной фичи: data/games/ids/cards/has_cards.txt и no_cards.txt (их пишет только мёртвый card_store.py — это НЕ farming-прогресс, в отличие от cards/done.txt). Тоже gitignored/локальные.
 - Стрелой проверь стрэй-файлы, не покрытые .gitignore: build/dist/*.egg-info, .pytest_cache/, .ruff_cache/ (в .gitignore из кэш-дир перечислены только .mypy_cache/ и .cache/), .coverage/htmlcov, .idea/, *.orig (есть), .html-дампы (есть, *.html). Проверь, что в data/*/logs/* не просочились реальные state-файлы вопреки .gitignore.
