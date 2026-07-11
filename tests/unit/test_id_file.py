@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 import app.id_file as idf
-from app.id_file import _append_id, load_ids_file, read_ids_ordered
+from app.id_file import (
+    _append_id,
+    _remove_id,
+    load_ids_file,
+    read_ids_ordered,
+)
 
 # ── load_ids_file ──────────────────────────────────────────────────────────
 
@@ -111,3 +116,32 @@ def test_append_id_write_failure_preserves_existing(
 
     assert f.read_text(encoding="utf-8") == "1\n2\n3\n"  # прогресс не потерян
     assert list(tmp_path.glob("*.tmp")) == []  # tmp-мусор убран
+
+
+# ── _remove_id ─────────────────────────────────────────────────────────────
+
+
+def test_remove_id_missing_file_noop(tmp_path: Path) -> None:
+    _remove_id(tmp_path / "nope.txt", 730)  # не должно падать
+
+
+def test_remove_id_removes_and_keeps_sorted(tmp_path: Path) -> None:
+    f = tmp_path / "ids.txt"
+    f.write_text("10\n440\n730\n", encoding="utf-8")
+    _remove_id(f, 440)
+    assert f.read_text(encoding="utf-8") == "10\n730\n"
+
+
+def test_remove_id_absent_id_leaves_file_untouched(tmp_path: Path) -> None:
+    f = tmp_path / "ids.txt"
+    f.write_text("10\n440\n", encoding="utf-8")
+    _remove_id(f, 999)
+    assert f.read_text(encoding="utf-8") == "10\n440\n"
+
+
+def test_remove_id_last_id_deletes_file(tmp_path: Path) -> None:
+    # Пустой id-файл не оставляем — удаляем целиком.
+    f = tmp_path / "ids.txt"
+    f.write_text("730\n", encoding="utf-8")
+    _remove_id(f, 730)
+    assert not f.exists()
