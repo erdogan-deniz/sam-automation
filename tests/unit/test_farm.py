@@ -43,6 +43,7 @@ def test_parser_defaults_all_false() -> None:
     assert not args.retry_errors
     assert not args.reset
     assert not args.retry_without
+    assert not args.retry_done
 
 
 def test_parser_retry_errors() -> None:
@@ -57,27 +58,72 @@ def test_parser_retry_without() -> None:
     assert farm._build_parser().parse_args(["--retry-without"]).retry_without
 
 
-# ── _select_without_set: срез «без достижений» для --retry-without ───────────
+def test_parser_retry_done() -> None:
+    assert farm._build_parser().parse_args(["--retry-done"]).retry_done
 
 
-def test_select_without_set_intersects_all_three_sources(
+# ── _select_retry_subset: срез заранее обработанных игр для retry-флагов ──────
+
+
+def _args(*flags: str) -> object:
+    return farm._build_parser().parse_args(list(flags))
+
+
+def test_select_retry_subset_without_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Объединяет without ∪ store_zero ∪ store_empty, пересекает со списком и
-    # сохраняет его порядок; игры вне множества отбрасываются.
+    # --retry-without: without ∪ store_zero ∪ store_empty; done НЕ включается,
+    # порядок game_ids сохранён, игры вне множества отброшены.
     monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {10})
     monkeypatch.setattr(farm, "load_store_zero_ids", lambda: {30})
     monkeypatch.setattr(farm, "load_store_empty_ids", lambda: {50})
-    assert farm._select_without_set([50, 20, 30, 40, 10]) == [50, 30, 10]
+    monkeypatch.setattr(farm, "load_done_ids", lambda: {70})
+    got = farm._select_retry_subset(
+        [50, 20, 30, 40, 10, 70], _args("--retry-without")
+    )
+    assert got == [50, 30, 10]
 
 
-def test_select_without_set_empty_when_nothing_marked(
+def test_select_retry_subset_done_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: set())
+    # --retry-done: только unlocked.txt; without-источники НЕ включаются.
+    monkeypatch.setattr(farm, "load_done_ids", lambda: {10, 30})
+    monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {50})
     monkeypatch.setattr(farm, "load_store_zero_ids", lambda: set())
     monkeypatch.setattr(farm, "load_store_empty_ids", lambda: set())
-    assert farm._select_without_set([1, 2, 3]) == []
+    got = farm._select_retry_subset([10, 20, 30, 50], _args("--retry-done"))
+    assert got == [10, 30]
+
+
+def test_select_retry_subset_both_is_union(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Оба флага → объединение without-среза и done.
+    monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {10})
+    monkeypatch.setattr(farm, "load_store_zero_ids", lambda: set())
+    monkeypatch.setattr(farm, "load_store_empty_ids", lambda: set())
+    monkeypatch.setattr(farm, "load_done_ids", lambda: {30})
+    got = farm._select_retry_subset(
+        [10, 20, 30], _args("--retry-without", "--retry-done")
+    )
+    assert got == [10, 30]
+
+
+def test_select_retry_subset_empty_sets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "load_no_achievements_ids",
+        "load_store_zero_ids",
+        "load_store_empty_ids",
+        "load_done_ids",
+    ):
+        monkeypatch.setattr(farm, name, lambda: set())
+    got = farm._select_retry_subset(
+        [1, 2, 3], _args("--retry-without", "--retry-done")
+    )
+    assert got == []
 
 
 # ── применение сброса ───────────────────────────────────────────────────────
