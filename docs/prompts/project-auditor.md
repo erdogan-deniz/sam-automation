@@ -60,7 +60,7 @@ D) ДРЕЙФ ДОКОВ / ВЕРСИЙ
 - [УСТРАНЕНО, см. СТАТУС выше] Дрейф scripts/scan.py/gui/runner.py (путь «scripts/achievements/scan.py», «пишет ids.txt») закрыт коммитами 409fb74 + 0f1a8b7; остаточный ids.txt/scan_achievements.py в game_list/farm/playwright тоже устранён.
 - README «playtime/skip.txt» упомянут в прозе (README.md:237), но отсутствует в дереве структуры — сверь все playtime-файлы (done.txt, skip.txt) со scripts/playtime/boost.py.
 - README config-таблица (launch_delay, load_timeout, max_concurrent_games, card_check_interval, playtime_idle_duration, playtime_target_minutes и т.д.) — сверить с дефолтами app/config.py.
-- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py:138,143,148 (--retry-errors/--reset/--retry-without), scripts/cards/farm.py:171 (--reset), scripts/playtime/boost.py:65,70 (--list/--reset), scripts/categorize.py:54,57 (--reset/--limit).
+- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py (--retry-errors/--reset/--retry-without/--retry-done), scripts/cards/farm.py:171 (--reset), scripts/playtime/boost.py:65,70 (--list/--reset), scripts/categorize.py:54,57 (--reset/--limit).
 - ИНВАРИАНТ версии: VERSION-файл == верхняя секция CHANGELOG == последний тег `vX.Y.Z`. Сверяй ПЕРЕД каждым релизом (это инвариант, а не снапшот: пин коммита/PR ре-ротится каждым коммитом). Прецедент: на v1.3.0 забытый бамп дал тег с VERSION=1.2.0 — фикс-форвардом, тег НЕ перемещали.
 
 E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)
