@@ -10,6 +10,7 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 
 # СТАТУС НАХОДОК (обновлено 2026-07-11)
 Эти находки уже устранены в сессии-сборке промпта — НЕ репортить повторно:
+- [УДАЛЕНО] GUI-подсистема: gui/ (10 файлов) + run.py + тесты test_gui_runner/test_settings_validate удалены; customtkinter убран из requirements.txt/pyproject.toml; README/CLAUDE.md почищены. → Все упоминания gui/ НИЖЕ (архитектура-карта, E-пробелы gui/*, README GUI-вкладки, C-фасады gui) УСТАРЕЛИ — проект теперь CLI-only (scripts/ + app/).
 - [УСТРАНЕНО] honest-report: scripts/achievements/farm.py слал «✅ Готово» безусловно даже на Ctrl+C / SAMTooManyErrors — введён _report_result (status ok/interrupted/aborted, ⚠️ вместо ✅), +4 теста. Коммит 58cc5da. Теперь честный отчёт консистентен с boost.
 - [УСТРАНЕНО] D остаточный ids.txt→all.txt / scan_achievements.py→scan.py: докстринг/комментарии/лог app/game_list.py, main()-докстринг scripts/scan.py, ошибка scripts/achievements/farm.py, 4× user-строки app/cookies/playwright.py. Коммит 0f1a8b7. Не тронуты (легитимно): тест-фикстуры tmp_path/ids.txt, имя логгера name="scan_achievements", gui error_ids.txt.
 - [УСТРАНЕНО] D дрейф доков: README badge/Requirements 3.10+→3.12; добавлена вкладка Playtime (README + gui/app.py docstring); store_empty.txt внесён в таблицу+дерево; убраны has_cards/no_cards из доков карт; в дерево добавлен playtime/ (done.txt, skip.txt); docstrings scripts/scan.py и gui/runner.py (путь scripts/achievements/scan.py→scripts/scan.py, ids.txt→all.txt). Коммит 409fb74.
@@ -21,9 +22,9 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 - A: git-tracked scripts/diag/* (одноразовые дампы) → архив/удаление; проверка стрэй-файлов (.pytest_cache/.ruff_cache вне .gitignore, *.orig, *.html).
 - B: лишний реэкспорт _LEGACY_SESSION_FILE в app/auth/__init__.py (один неиспользуемый символ).
 - C (весь блок): оркестрация в толстых scripts/* (scan 162 / achievements/farm 303 / playtime/boost 281 / cards/farm 245) → вынести в app; дублирование get_web_cookies; cross-subpackage приватные импорты; гибридный фасад app/cookies/__init__.py; app.steam не листовой. РИСК money-path → сначала дизайн, правки по TDD.
-- D: сверить config-таблицу README с app/config.py; ручное дерево структуры диффать против реальных app/gui/scripts.
+- D: сверить config-таблицу README с app/config.py; ручное дерево структуры диффать против реальных app/scripts.
 - D (докстринг-дрейф в app/cache.py): докстринги mark_no_achievements / load_no_achievements_ids говорят «no_achievements.txt», реальный файл — without.txt (константа NO_ACHIEVEMENTS_FILE); также упоминается «game_names.json», реальный — names.json. Верить константам, не докстрингам.
-- E (весь блок): пробелы в тестах — app/cookies/* (весь, крупнейший), app/steam (steam_api/steam_id/packageinfo), app/auth (credentials/interactive), app/cards (card_cache/card_checker), app/sam/picker_session, gui/*. Закрывать написанием тестов по TDD.
+- E (весь блок): пробелы в тестах — app/cookies/* (весь, крупнейший), app/steam (steam_api/steam_id/packageinfo), app/auth (credentials/interactive), app/cards (card_cache/card_checker), app/sam/picker_session. Закрывать написанием тестов по TDD.
 - F: дубли имён (scan.py×2, farm.py×2, stats×2) — информационно.
 
 # ЗАДАЧА
