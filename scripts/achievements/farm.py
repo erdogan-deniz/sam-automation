@@ -249,7 +249,7 @@ def main() -> None:
             and not cfg.game_ids
         ):
             log.error(
-                "ids.txt не найден — запусти scan.py для формирования списка игр"
+                "all.txt не найден — запусти scan.py для формирования списка игр"
             )
             sys.exit(1)
         log.info("Список игр пуст (все исключены конфигом?)")
