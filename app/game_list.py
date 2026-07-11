@@ -15,15 +15,15 @@ log = logging.getLogger("sam_automation")
 def load_game_ids(cfg: Config) -> list[int]:
     """Собирает итоговый список ID игр из доступных источников.
 
-    Приоритет: config.game_ids → ids.txt → cfg.game_ids_file.
-    Для сбора ID из Steam-источников используй scan_achievements.py.
+    Приоритет: config.game_ids → all.txt → cfg.game_ids_file.
+    Для сбора ID из Steam-источников используй scripts/scan.py.
     """
     ids: list[int] = list(cfg.game_ids)
 
-    # Если ids.txt существует и нет явных переопределений — читаем из него
+    # Если all.txt существует и нет явных переопределений — читаем из него
     if not ids and not cfg.game_ids_file and ALL_IDS_FILE.exists():
         ids = read_ids_ordered(ALL_IDS_FILE)
-        log.info("Загружено %d игр из ids.txt", len(ids))
+        log.info("Загружено %d игр из all.txt", len(ids))
 
     # Загружаем из файла, если указан
     if cfg.game_ids_file:
