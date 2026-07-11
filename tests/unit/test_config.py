@@ -80,6 +80,19 @@ def test_load_config_int_list_skips_non_int_element(
     assert any("нечисловой" in r.message for r in caplog.records)
 
 
+def test_load_config_non_numeric_scalar_falls_back_with_warning(
+    write_config: Callable[..., str], caplog
+) -> None:  # type: ignore[no-untyped-def]
+    # F-1: не-числовое скалярное значение раньше роняло load_config сырым
+    # ValueError-трейсбеком ДО validate(). Теперь warning + дефолт.
+    path = write_config(load_timeout="xyz", playtime_concurrent_games="abc")
+    with caplog.at_level(logging.WARNING, logger="sam_automation"):
+        cfg = load_config(path)  # не должно бросить
+    assert cfg.load_timeout == 20.0  # дефолт (float)
+    assert cfg.playtime_concurrent_games == 10  # дефолт (int)
+    assert any("load_timeout" in r.message for r in caplog.records)
+
+
 # ── load_config — Telegram ────────────────────────────────────────────────
 
 
