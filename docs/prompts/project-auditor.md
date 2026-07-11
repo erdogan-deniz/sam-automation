@@ -47,7 +47,7 @@ B) DEAD / DEPRECATED КОД
 - ВНИМАНИЕ (ложные срабатывания): маркеров TODO/FIXME/HACK/deprecated в коде фактически НЕТ. «XXXX» в app/cookies/cdp.py:15,19 — плейсхолдер порта (--remote-debugging-port=XXXX), не маркер XXX. Все «legacy» (app/auth/interactive.py, iauth_service.py, jwt.py, steam_cm.py, _constants.py, credentials.py; тест test_logging_setup.py) — доменная терминология live-кода Steam-auth, НЕ долг. gevent-eventemitter и protobuf<4 — транзитивные зависимости steam[client], НЕ unused.
 
 C) СТРУКТУРНЫЕ НЕТОЧНОСТИ / НАРУШЕНИЯ АРХИТЕКТУРЫ
-- Оркестрация «утекла» в scripts (нарушение «scripts тонкие»): scripts/scan.py (162 стр.: _read_vdf_ids/_read_api_ids/_read_cm_ids + слияние 3 источников), scripts/achievements/farm.py (303), scripts/playtime/boost.py (281), scripts/cards/farm.py (245). Эталон тонкости для контраста: scripts/stats.py (40) — только main() + делегирование.
+- Оркестрация «утекла» в scripts (нарушение «scripts тонкие»): scripts/scan.py (162 стр.: _read_vdf_ids/_read_api_ids/_read_cm_ids + слияние 3 источников), scripts/achievements/farm.py (303), scripts/playtime/boost.py (281), scripts/cards/farm.py (245).
 - Дублирование публичной поверхности API: get_web_cookies определён в app/cookies/__init__.py:57, ре-экспортирован в app/steam/steam_cm.py:125 (noqa: F401, E402) и app/steam/__init__.py:8,16 — две публичные точки (app.cookies.get_web_cookies и app.steam.get_web_cookies; scripts/cards/* берут через app.steam).
 - Cross-subpackage импорт приватных символов: app/cards/card_store.py:13 тянет из app.steam.store_api приватные _REQUEST_DELAY и _has_trading_cards; app/catalog.py:20 импортирует app.steam.store_api.AchievementInfo.
 - Гибридный фасад: app/cookies/__init__.py — НЕ чистый re-export, содержит бизнес-логику get_web_cookies (:57-93) + _browser_cookies_silent (:31) / _browser_cookies (:52). Остальные фасады (auth, cards, sam, steam) — чистые.
@@ -73,7 +73,7 @@ E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)
 - app/exceptions.py, app/unlock_result.py — без тестов, но тривиальны (низкий риск).
 
 F) РАСКЛАДКА / ДУБЛИ
-- Дублирующиеся имена файлов повышают риск запуска не того скрипта: две farm.py (scripts/achievements/farm.py; scripts/cards/farm.py), stats дважды (scripts/stats.py CLI; app/stats.py логика). (scripts/cards/scan.py удалён в v1.9.x — второй scan.py больше нет.)
+- Дублирующиеся имена файлов повышают риск запуска не того скрипта: две farm.py (scripts/achievements/farm.py; scripts/cards/farm.py). (scripts/cards/scan.py удалён в v1.9.x — второй scan.py больше нет; scripts/stats.py + app/stats.py удалены в v1.9.x.)
 - README-дерево структуры — ручное; диффать против реальных app/, scripts/ на добавленные/удалённые модули.
 
 # ЭТАЛОННАЯ СТРУКТУРА (от неё ищешь отклонения)
