@@ -18,7 +18,7 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 - [УСТРАНЕНО] D дрейф доков: README badge/Requirements 3.10+→3.12; добавлена вкладка Playtime (README + gui/app.py docstring); store_empty.txt внесён в таблицу+дерево; убраны has_cards/no_cards из доков карт; в дерево добавлен playtime/ (done.txt, skip.txt); docstrings scripts/scan.py и gui/runner.py (путь scripts/achievements/scan.py→scripts/scan.py, ids.txt→all.txt). Коммит 409fb74.
 - [УСТРАНЕНО] B dead-код: app/cards/card_store.py удалён целиком вместе с транзитивно мёртвыми _has_trading_cards / _TRADING_CARDS_CATEGORY / _REQUEST_DELAY (store_api.py) и CARD_HAS_CARDS_FILE / CARD_NO_CARDS_FILE (card_cache.py) + реэкспорт из app/cards/__init__.py. Коммит 29a8b22. → Секции B/C/D/E и «НЕ ТРОГАТЬ» ниже про card_store и упоминания has_cards/no_cards УСТАРЕЛИ.
 - [ЛОЖНОЕ СРАБАТЫВАНИЕ] D CHANGELOG.md:40 fetch_achievement_count — это КОРРЕКТНАЯ историческая запись [1.4.0] (переименование в fetch_achievement_info было в 1.5.0). НЕ «исправлять».
-- [УСТРАНЕНО] D дрейф памяти: хук project_scan_catalog_reverted в MEMORY.md поправлен (флаги --retry-errors/--reset/--no-resume рабочие с v1.2.0).
+- [УСТРАНЕНО] D дрейф памяти: хук project_scan_catalog_reverted в MEMORY.md поправлен (флаги --retry-errors/--reset рабочие с v1.2.0; --no-resume заменён на --retry-without).
 
 Открыто и передаётся чистильщику (полные детали — в таксономии A–F ниже):
 - A: git-tracked scripts/diag/* (одноразовые дампы) → архив/удаление; проверка стрэй-файлов (.pytest_cache/.ruff_cache вне .gitignore, *.orig, *.html).
@@ -60,7 +60,7 @@ D) ДРЕЙФ ДОКОВ / ВЕРСИЙ
 - [УСТРАНЕНО, см. СТАТУС выше] Дрейф scripts/scan.py/gui/runner.py (путь «scripts/achievements/scan.py», «пишет ids.txt») закрыт коммитами 409fb74 + 0f1a8b7; остаточный ids.txt/scan_achievements.py в game_list/farm/playwright тоже устранён.
 - README «playtime/skip.txt» упомянут в прозе (README.md:237), но отсутствует в дереве структуры — сверь все playtime-файлы (done.txt, skip.txt) со scripts/playtime/boost.py.
 - README config-таблица (launch_delay, load_timeout, max_concurrent_games, card_check_interval, playtime_idle_duration, playtime_target_minutes и т.д.) — сверить с дефолтами app/config.py.
-- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py:117,122,127 (--retry-errors/--reset/--no-resume), scripts/cards/farm.py:171 (--reset), scripts/playtime/boost.py:65,70 (--list/--reset), scripts/categorize.py:54,57 (--reset/--limit).
+- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py:138,143,148 (--retry-errors/--reset/--retry-without), scripts/cards/farm.py:171 (--reset), scripts/playtime/boost.py:65,70 (--list/--reset), scripts/categorize.py:54,57 (--reset/--limit).
 - ИНВАРИАНТ версии: VERSION-файл == верхняя секция CHANGELOG == последний тег `vX.Y.Z`. Сверяй ПЕРЕД каждым релизом (это инвариант, а не снапшот: пин коммита/PR ре-ротится каждым коммитом). Прецедент: на v1.3.0 забытый бамп дал тег с VERSION=1.2.0 — фикс-форвардом, тег НЕ перемещали.
 
 E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)

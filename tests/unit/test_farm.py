@@ -42,7 +42,7 @@ def test_parser_defaults_all_false() -> None:
     args = farm._build_parser().parse_args([])
     assert not args.retry_errors
     assert not args.reset
-    assert not args.no_resume
+    assert not args.retry_without
 
 
 def test_parser_retry_errors() -> None:
@@ -53,8 +53,31 @@ def test_parser_reset() -> None:
     assert farm._build_parser().parse_args(["--reset"]).reset
 
 
-def test_parser_no_resume() -> None:
-    assert farm._build_parser().parse_args(["--no-resume"]).no_resume
+def test_parser_retry_without() -> None:
+    assert farm._build_parser().parse_args(["--retry-without"]).retry_without
+
+
+# ── _select_without_set: срез «без достижений» для --retry-without ───────────
+
+
+def test_select_without_set_intersects_all_three_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Объединяет without ∪ store_zero ∪ store_empty, пересекает со списком и
+    # сохраняет его порядок; игры вне множества отбрасываются.
+    monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {10})
+    monkeypatch.setattr(farm, "load_store_zero_ids", lambda: {30})
+    monkeypatch.setattr(farm, "load_store_empty_ids", lambda: {50})
+    assert farm._select_without_set([50, 20, 30, 40, 10]) == [50, 30, 10]
+
+
+def test_select_without_set_empty_when_nothing_marked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: set())
+    monkeypatch.setattr(farm, "load_store_zero_ids", lambda: set())
+    monkeypatch.setattr(farm, "load_store_empty_ids", lambda: set())
+    assert farm._select_without_set([1, 2, 3]) == []
 
 
 # ── применение сброса ───────────────────────────────────────────────────────
@@ -171,7 +194,13 @@ def _run_one(
     result: UnlockResult,
     tracker: ErrorTracker,
 ) -> tuple[bool, dict[str, list[int]]]:
-    calls: dict[str, list[int]] = {"done": [], "error": [], "no_ach": []}
+    calls: dict[str, list[int]] = {
+        "done": [],
+        "error": [],
+        "no_ach": [],
+        "unmark_no_ach": [],
+        "unmark_store": [],
+    }
     monkeypatch.setattr(farm, "process_game", lambda *a, **k: result)
     monkeypatch.setattr(farm, "mark_done", lambda g: calls["done"].append(g))
     monkeypatch.setattr(
@@ -179,6 +208,16 @@ def _run_one(
     )
     monkeypatch.setattr(
         farm, "mark_no_achievements", lambda g: calls["no_ach"].append(g)
+    )
+    monkeypatch.setattr(
+        farm,
+        "unmark_no_achievements",
+        lambda g: calls["unmark_no_ach"].append(g),
+    )
+    monkeypatch.setattr(
+        farm,
+        "unmark_store_advisory",
+        lambda g: calls["unmark_store"].append(g),
     )
     monkeypatch.setattr(farm, "close_game", lambda app: None)
     ret = farm._process_one_game(
@@ -220,6 +259,18 @@ def test_process_one_game_unlock_marks_done(
     assert tracker.total_errors == 0
 
 
+def test_process_one_game_unlock_clears_stale_no_ach_marks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Игра оказалась с достижениями → устаревшие «нет достижений» должны уйти
+    # из without И из Store-советов (иначе --retry-without гоняет её впустую).
+    tracker = ErrorTracker(max_consecutive=100)
+    result = UnlockResult(game_id=570, skipped=False, total=5, newly_unlocked=5)
+    _ret, calls = _run_one(monkeypatch, result, tracker)
+    assert calls["unmark_no_ach"] == [570]
+    assert calls["unmark_store"] == [570]
+
+
 def test_process_one_game_no_achievements_not_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -232,3 +283,17 @@ def test_process_one_game_no_achievements_not_error(
     assert calls["no_ach"] == [999]
     assert calls["error"] == []
     assert tracker.total_errors == 0
+
+
+def test_process_one_game_no_achievements_clears_store_advisory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SAM подтвердил «без достижений» → авторитет у without.txt, ненадёжный
+    # Store-совет снимается; but without-пометку (unmark_no_ach) НЕ трогаем.
+    tracker = ErrorTracker(max_consecutive=100)
+    result = UnlockResult(
+        game_id=999, skipped=True, skip_reason="no achievements"
+    )
+    _ret, calls = _run_one(monkeypatch, result, tracker)
+    assert calls["unmark_store"] == [999]
+    assert calls["unmark_no_ach"] == []
