@@ -49,9 +49,10 @@ python scripts/scan.py
 # 2. Unlock (resumes automatically if previously interrupted)
 python scripts/achievements/farm.py
 
-#    --retry-errors  retry games that errored out (clears error.txt)
-#    --reset         wipe all progress and start over
-#    --no-resume     process every game this run, ignoring saved progress
+#    --retry-errors    retry games that errored out (clears error.txt)
+#    --reset           wipe all progress and start over
+#    --retry-without   re-check ONLY games marked "no achievements"
+#                      (without.txt + Store advisory store_zero/store_empty)
 ```
 
 ### Library stats (CLI)

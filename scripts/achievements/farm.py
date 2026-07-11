@@ -26,8 +26,15 @@ from app.cache import (
     mark_done,
     mark_error_id,
     mark_no_achievements,
+    unmark_no_achievements,
 )
-from app.catalog import load_with_ids, prioritize_by_with
+from app.catalog import (
+    load_store_empty_ids,
+    load_store_zero_ids,
+    load_with_ids,
+    prioritize_by_with,
+    unmark_store_advisory,
+)
 from app.config import load_config
 from app.exceptions import SAMError, SAMTooManyErrors
 from app.game_list import load_game_ids
@@ -87,8 +94,17 @@ def _process_one_game(
         tracker.record_success()
         if result.skipped:  # skip_reason == "no achievements"
             mark_no_achievements(game_id)
+            # SAM авторитетно подтвердил «без достижений» — снимаем ненадёжный
+            # Store-совет (store_zero/store_empty), если он был. No-op иначе.
+            unmark_store_advisory(game_id)
         else:
             mark_done(game_id)
+            # Игра оказалась с достижениями — вычищаем устаревшие «нет
+            # достижений» из всех источников (without + Store-advisory), чтобы
+            # --retry-without не гонял её впустую и stats не задвоил. No-op,
+            # если пометок не было (обычный прогон новой игры).
+            unmark_no_achievements(game_id)
+            unmark_store_advisory(game_id)
         return False
 
     except SAMTooManyErrors:
@@ -130,9 +146,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Сбросить весь прогресс (done/error/without) и начать заново",
     )
     parser.add_argument(
-        "--no-resume",
+        "--retry-without",
         action="store_true",
-        help="Обработать все игры, игнорируя сохранённый прогресс этим прогоном",
+        help="Перепроверить ТОЛЬКО игры без достижений "
+        "(without.txt + Store-советы store_zero/store_empty)",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
@@ -164,6 +181,26 @@ def _apply_resume_filter(game_ids: list[int]) -> list[int]:
             "Пропущено %d игр из done/error (--no-resume чтобы начать заново)",
             skipped,
         )
+    return filtered
+
+
+def _select_without_set(game_ids: list[int]) -> list[int]:
+    """Оставляет ТОЛЬКО игры, помеченные «без достижений» (для --retry-without).
+
+    Источник — объединение without.txt (SAM-терминал) и Store-советов
+    store_zero.txt / store_empty.txt. Порядок game_ids сохранён; игры вне
+    этого множества отбрасываются.
+    """
+    target = (
+        load_no_achievements_ids()
+        | load_store_zero_ids()
+        | load_store_empty_ids()
+    )
+    filtered = [gid for gid in game_ids if gid in target]
+    log.info(
+        "--retry-without: перепроверяю %d игр из without/store_zero/store_empty",
+        len(filtered),
+    )
     return filtered
 
 
@@ -261,7 +298,16 @@ def main() -> None:
         log.info("Список игр пуст (все исключены конфигом?)")
         sys.exit(0)
 
-    if not args.no_resume:
+    if args.retry_without and not args.reset:
+        # Перепроверка «без достижений»: берём только этот срез, обычный
+        # resume-фильтр (он бы их как раз исключил) не применяем.
+        game_ids = _select_without_set(game_ids)
+    else:
+        if args.retry_without:  # значит и --reset — избыточно
+            log.warning(
+                "--retry-without игнорируется: --reset и так гонит всю "
+                "библиотеку заново"
+            )
         game_ids = _apply_resume_filter(game_ids)
 
     # Advisory-приоритет: игры с подтверждёнными достижениями (with.txt) —
