@@ -49,6 +49,28 @@ def _is_live_owner(pid_str: str, ctime_str: str) -> bool:
     return ctime is not None and ctime == ctime_str
 
 
+def _remove_stale_lock(expected: str) -> None:
+    """Снимает lock ТОЛЬКО если на диске всё ещё ровно `expected` (мёртвый токен).
+
+    Между чтением мёртвого токена в acquire_run_lock и этим unlink другой
+    инстанс мог успеть создать СВОЙ живой лок. Безусловный unlink снёс бы чужой
+    живой лок — оба инстанса решили бы, что владеют локом → параллельный
+    farm+boost, ровно то, что лок обязан предотвращать. Compare-and-delete:
+    содержимое изменилось → не трогаем, пусть повторный цикл перечитает и найдёт
+    живого владельца (→ RuntimeError).
+    """
+    try:
+        current = LOCK_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return  # уже удалён/недоступен — нечего сносить
+    if current != expected:
+        return  # лок подменён (чужой захват) — не наш stale-токен
+    try:
+        LOCK_FILE.unlink()
+    except OSError:
+        pass
+
+
 def acquire_run_lock(name: str) -> None:
     """Атомарно захватывает lock. Если другой farm/boost активен — RuntimeError.
 
@@ -63,21 +85,21 @@ def acquire_run_lock(name: str) -> None:
         except FileExistsError:
             # Лок уже есть — жив ли владелец?
             try:
-                parts = LOCK_FILE.read_text(encoding="utf-8").split(":", 2)
-                pid_str, ctime_str, owner = (parts + ["", "", ""])[:3]
+                raw = LOCK_FILE.read_text(encoding="utf-8")
             except OSError:
-                pid_str = ctime_str = owner = ""
+                raw = ""
+            parts = raw.split(":", 2)
+            pid_str, ctime_str, owner = (parts + ["", "", ""])[:3]
             if _is_live_owner(pid_str, ctime_str):
                 raise RuntimeError(
                     f"Уже запущен '{owner.strip()}' (PID {pid_str.strip()}). "
                     f"farm и boost нельзя запускать одновременно — останови "
                     f"первый или дождись его завершения."
                 )
-            # Мёртвый/битый/PID-reuse лок — снести и повторить атомарный захват.
-            try:
-                LOCK_FILE.unlink()
-            except OSError:
-                pass
+            # Мёртвый/битый/PID-reuse лок — снести (только если содержимое
+            # неизменно: compare-and-delete против гонки с чужим захватом)
+            # и повторить атомарный захват.
+            _remove_stale_lock(raw)
             continue
         else:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
