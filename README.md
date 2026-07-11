@@ -51,28 +51,10 @@ python scripts/achievements/farm.py
 
 #    --retry-errors    retry games that errored out (clears error.txt)
 #    --reset           wipe all progress and start over
-#    --retry-without   re-check ONLY games marked "no achievements"
-#                      (without.txt + Store advisory store_zero/store_empty)
+#    --retry-without   re-check ONLY games SAM marked "no achievements" (without.txt)
 #    --retry-done      re-run ONLY already-unlocked games (unlocked.txt),
 #                      e.g. after new achievements were added to them
 ```
-
-### Achievements catalog (advisory, CLI)
-
-```bash
-# Classify the library via the Steam Store API into with.txt / store_zero.txt / store_empty.txt.
-# Cached and resumable — re-run to continue. Store API is ~1.2s per game.
-python scripts/categorize.py
-
-#    --limit N   cap Store requests this run (the full library takes hours)
-#    --reset     wipe the catalog and start over
-```
-
-> The catalog is **advisory only** — it never causes a game to be skipped.
-> Only SAM can terminally mark a game as having no achievements (`without.txt`).
-> The Store API is unreliable (demos, region-locked, or delisted apps report an
-> empty achievements block even when achievements exist), so its "0 achievements"
-> verdict goes to a separate `store_zero.txt` that farming ignores.
 
 ### Card farming (CLI)
 
@@ -150,7 +132,6 @@ sam-automation/
 │   ├── sam/                # SAM process automation (launcher, UI)
 │   ├── steam/              # Steam data access (API, CM, local files)
 │   ├── cache.py            # State file helpers
-│   ├── catalog.py          # Advisory achievements catalog (Store API)
 │   ├── config.py           # config.yaml loader
 │   ├── exceptions.py       # Custom exception hierarchy
 │   ├── game_list.py        # App ID source merging
@@ -163,7 +144,6 @@ sam-automation/
 │   └── validator.py        # Pre-run config/param validation
 ├── scripts/
 │   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
-│   ├── categorize.py       # Advisory achievements catalog (Store API)
 │   ├── achievements/
 │   │   └── farm.py         # Main achievement unlock loop
 │   ├── cards/
@@ -179,7 +159,7 @@ sam-automation/
 │       ├── names.json      # AppID → game name cache
 │       └── ids/
 │           ├── all.txt             # Master list of App IDs (from scan.py)
-│           ├── achievements/       # unlocked, error, without + catalog (with, store_zero, store_empty)
+│           ├── achievements/       # unlocked, error, without
 │           ├── cards/              # done.txt
 │           └── playtime/           # done.txt, skip.txt
 ├── logs/                   # Session logs (gitignored)
@@ -208,9 +188,6 @@ Delete or edit them manually if needed.
 | `unlocked.txt` | Successfully processed games |
 | `error.txt` | Games that errored out (retryable) |
 | `without.txt` | Games **SAM** confirmed have no achievements (skipped permanently) |
-| `with.txt` | Catalog: Store-confirmed to have achievements (advisory priority) |
-| `store_zero.txt` | Catalog: Store reported 0 achievements — advisory, farming does **not** skip these |
-| `store_empty.txt` | Catalog: Store responded but returned no achievements block — advisory |
 
 **Cards** (`data/games/ids/cards/`)
 
