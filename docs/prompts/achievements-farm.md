@@ -33,8 +33,8 @@ logs/achievements/farm/, и состояние achievements/{unlocked,error,with
 main(): parse args → setup_logging(category="achievements/farm") →
 acquire_run_lock("achievements/farm") [ДО сброса прогресса!] → atexit release →
 load_config/validate → _prepare_progress(args) → check_steam_running →
-ensure_sam → load_game_ids → выбор среза (--retry-without → _select_without_set,
-иначе _apply_resume_filter) → prioritize_by_with (advisory-порядок) →
+ensure_sam → load_game_ids → выбор среза (--retry-without/--retry-done →
+_select_retry_subset, иначе _apply_resume_filter) → prioritize_by_with →
 launch_picker → цикл _process_one_game по каждой игре → kill_process(proc) в
 finally → _report_result (честный тост+telegram по статусу ok/interrupted/aborted).
 
@@ -51,13 +51,15 @@ finally → _report_result (честный тост+telegram по статусу
   clear_error_ids (ТОЛЬКО error.txt). (elif: при обоих флагах побеждает --reset.)
 - _apply_resume_filter: skip = load_done_ids | load_error_ids |
   load_no_achievements_ids; исключает их из очереди.
-- _select_without_set (только при --retry-without): оставляет ТОЛЬКО игры из
-  without ∪ store_zero ∪ store_empty (перепроверка «без достижений»). При
-  одновременном --reset игнорируется (reset и так гонит всю библиотеку).
+- _select_retry_subset (при --retry-without и/или --retry-done): оставляет
+  ТОЛЬКО заранее обработанные игры — --retry-without → without ∪ store_zero ∪
+  store_empty; --retry-done → unlocked; оба вместе → объединение. При
+  одновременном --reset игнорируются (reset и так гонит всю библиотеку).
 
 # CLI-ФЛАГИ (scoped — не путать с другими скриптами)
 --retry-errors (чистит error.txt) · --reset (сброс done+error+without) ·
---retry-without (перепроверить ТОЛЬКО without+store_zero+store_empty).
+--retry-without (перепроверить ТОЛЬКО without+store_zero+store_empty) ·
+--retry-done (перепрогнать ТОЛЬКО unlocked).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - scripts/achievements/farm.py — оркестрация + флаги + итоговый отчёт.

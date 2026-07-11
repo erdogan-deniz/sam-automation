@@ -53,6 +53,8 @@ python scripts/achievements/farm.py
 #    --reset           wipe all progress and start over
 #    --retry-without   re-check ONLY games marked "no achievements"
 #                      (without.txt + Store advisory store_zero/store_empty)
+#    --retry-done      re-run ONLY already-unlocked games (unlocked.txt),
+#                      e.g. after new achievements were added to them
 ```
 
 ### Library stats (CLI)
