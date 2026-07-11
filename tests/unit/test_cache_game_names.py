@@ -91,3 +91,26 @@ def test_save_empty_dict(
     cache_mod.save_game_names({})
     # Empty save should not erase existing data
     assert cache_mod.load_game_names()[570] == "Dota 2"
+
+
+def test_save_write_failure_preserves_existing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # names.json дорого регенерировать (Steam API). Сбой записи не должен стереть
+    # уже накопленный кэш имён — та же атомарность, что у id-файлов.
+    import app.id_file as idf
+
+    _patch(monkeypatch, tmp_path)
+    cache_mod.save_game_names({570: "Dota 2"})
+
+    def boom(*_a: object) -> None:
+        raise OSError("crash во время замены")
+
+    monkeypatch.setattr(idf.os, "replace", boom)
+
+    with pytest.raises(OSError):
+        cache_mod.save_game_names({440: "TF2"})
+
+    # Старый кэш цел, tmp-мусор убран.
+    assert cache_mod.load_game_names() == {570: "Dota 2"}
+    assert list(tmp_path.glob("*.tmp")) == []
