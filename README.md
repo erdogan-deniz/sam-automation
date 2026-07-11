@@ -85,10 +85,7 @@ python scripts/categorize.py
 ### Card farming (CLI)
 
 ```bash
-# Show games with remaining card drops
-python scripts/cards/scan.py
-
-# Start farming (idles games until all drops are collected)
+# Start farming (idles games until all remaining card drops are collected)
 python scripts/cards/farm.py
 ```
 
@@ -180,7 +177,6 @@ sam-automation/
 │   ├── achievements/
 │   │   └── farm.py         # Main achievement unlock loop
 │   ├── cards/
-│   │   ├── scan.py         # Detect games with remaining card drops
 │   │   └── farm.py         # Idle games to collect card drops
 │   ├── playtime/
 │   │   └── boost.py        # Boost low-playtime games via short SAM sessions
