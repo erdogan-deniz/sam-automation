@@ -79,6 +79,24 @@ def test_mark_no_achievements_and_load(
     assert 440 in cache_mod.load_no_achievements_ids()
 
 
+def test_unmark_no_achievements_removes_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_all(monkeypatch, tmp_path)
+    cache_mod.mark_no_achievements(440)
+    cache_mod.mark_no_achievements(730)
+    cache_mod.unmark_no_achievements(440)
+    assert cache_mod.load_no_achievements_ids() == {730}
+
+
+def test_unmark_no_achievements_absent_is_noop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_all(monkeypatch, tmp_path)
+    cache_mod.unmark_no_achievements(999)  # файла нет — не должно падать
+    assert cache_mod.load_no_achievements_ids() == set()
+
+
 # ── clear_progress ─────────────────────────────────────────────────────────
 
 

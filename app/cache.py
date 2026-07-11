@@ -6,7 +6,12 @@ import json
 import logging
 from pathlib import Path
 
-from .id_file import _append_id, _atomic_write_text, load_ids_file
+from .id_file import (
+    _append_id,
+    _atomic_write_text,
+    _remove_id,
+    load_ids_file,
+)
 
 log = logging.getLogger("sam_automation")
 
@@ -86,6 +91,16 @@ def load_no_achievements_ids() -> set[int]:
 def mark_no_achievements(game_id: int) -> None:
     """Дозаписывает game_id в without.txt."""
     _append_id(NO_ACHIEVEMENTS_FILE, game_id)
+
+
+def unmark_no_achievements(game_id: int) -> None:
+    """Удаляет game_id из without.txt (игра оказалась с достижениями).
+
+    No-op, если игры там нет. Нужен для --retry-without: если SAM при
+    перепроверке разблокировал достижения, устаревшая пометка «без
+    достижений» должна уйти — иначе файл соврёт и stats задвоит игру.
+    """
+    _remove_id(NO_ACHIEVEMENTS_FILE, game_id)
 
 
 def load_playtime_skip_ids() -> set[int]:
