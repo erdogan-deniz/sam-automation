@@ -289,7 +289,6 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Сбросить прогресс (cards/done.txt) и начать заново",
     )
-    parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
 
@@ -304,9 +303,7 @@ def main() -> None:
     """Точка входа: запускает цикл фарма trading cards."""
     print()
     args = _build_parser().parse_args()
-    setup_logging(
-        verbose=args.verbose, name="farm_cards", category="cards/farm"
-    )
+    setup_logging(name="farm_cards", category="cards/farm")
     try:
         acquire_run_lock("cards/farm")
     except RuntimeError as e:

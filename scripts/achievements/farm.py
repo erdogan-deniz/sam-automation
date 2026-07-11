@@ -151,7 +151,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Перепроверить ТОЛЬКО игры без достижений "
         "(without.txt + Store-советы store_zero/store_empty)",
     )
-    parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
 
@@ -255,7 +254,6 @@ def main() -> None:
     print()
     args = _build_parser().parse_args()
     setup_logging(
-        verbose=args.verbose,
         name="farm_achievements",
         category="achievements/farm",
     )
