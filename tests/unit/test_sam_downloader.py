@@ -11,8 +11,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import app.sam.sam_downloader as dl
 from app.sam.sam_downloader import (
     _fetch_latest_release,
+    _read_installed_tag,
     _read_installed_version,
     _save_version,
     check_for_update,
@@ -91,6 +93,39 @@ def test_read_installed_version_missing_returns_none(tmp_path: Path) -> None:
 def test_read_installed_version_strips_whitespace(tmp_path: Path) -> None:
     (tmp_path / ".sam_version").write_text("  r68  \n", encoding="utf-8")
     assert _read_installed_version(tmp_path) == "r68"
+
+
+# ── _read_installed_tag ───────────────────────────────────────────────────────
+
+
+def test_read_installed_tag_reads_sam_version(tmp_path: Path) -> None:
+    _save_version(tmp_path, "r217")
+    assert _read_installed_tag(tmp_path) == "r217"
+
+
+def test_read_installed_tag_none_when_absent(tmp_path: Path) -> None:
+    assert _read_installed_tag(tmp_path) is None
+
+
+def test_check_for_update_compares_tag_not_pe_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Реальный SAM.Game.exe отдаёт PE-версию 'x.y.z', тег GitHub — 'rNN'.
+    # Сравнивать надо тег-с-тегом (.sam_version), иначе обновление «доступно»
+    # КАЖДЫЙ запуск → вечный промпт 'Обновить?'. Симулируем PE-present, мокнув
+    # _read_installed_version на 'x.y.z'; настоящий тег в .sam_version совпадает.
+    _save_version(tmp_path, "r217")
+    exe = tmp_path / "SAM.Game.exe"
+    exe.write_bytes(b"fake")
+    monkeypatch.setattr(dl, "_read_installed_version", lambda _d: "7.0.217")
+    monkeypatch.setattr(
+        dl, "_fetch_latest_release", lambda: _make_release("r217")
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda *a, **k: pytest.fail("актуальная версия — не спрашивать"),
+    )
+    assert check_for_update(str(exe)) is None
 
 
 # ── _fetch_latest_release ─────────────────────────────────────────────────────
