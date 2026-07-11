@@ -41,7 +41,7 @@ A) МУСОР / CRUFT
 
 B) DEAD / DEPRECATED КОД
 - Полностью мёртвый модуль app/cards/card_store.py: единственная публичная get_games_with_cards (card_store.py:45) реэкспортируется в app/cards/__init__.py:5,13, но НЕ вызывается нигде (ни scripts/, ни gui/, ни tests/ — grep подтверждает только определение+реэкспорт). Откат каталога trading-cards через Store API категория-29 в v1.1.1.
-- Транзитивно мёртвое: app/steam/store_api.py:15 _TRADING_CARDS_CATEGORY=29 и :19 _has_trading_cards (единственный внешний вызывающий — card_store.py:66).
+- [УСТРАНЕНО] Транзитивно мёртвое в store_api.py: весь app/steam/store_api.py удалён в v1.9.x вместе с advisory-каталогом (categorize.py + app/catalog.py).
 - Мёртвые константы: app/cards/card_cache.py:13 CARD_HAS_CARDS_FILE, :14 CARD_NO_CARDS_FILE — определены, но нигде не читаются (has_cards.txt/no_cards.txt пишет card_store.py через свои приватные _HAS_CARDS_FILE/_NO_CARDS_FILE).
 - Лишний реэкспорт: app/auth/__init__.py:19,44 держит _LEGACY_SESSION_FILE в импорте и __all__, но через фасад его никто не берёт (credentials.py импортирует относительно из ._constants:16 и использует в :76-90). Сам фасад app.auth используется — это лишь один неиспользуемый символ, НЕ мёртвый фасад.
 - ВНИМАНИЕ (ложные срабатывания): маркеров TODO/FIXME/HACK/deprecated в коде фактически НЕТ. «XXXX» в app/cookies/cdp.py:15,19 — плейсхолдер порта (--remote-debugging-port=XXXX), не маркер XXX. Все «legacy» (app/auth/interactive.py, iauth_service.py, jwt.py, steam_cm.py, _constants.py, credentials.py; тест test_logging_setup.py) — доменная терминология live-кода Steam-auth, НЕ долг. gevent-eventemitter и protobuf<4 — транзитивные зависимости steam[client], НЕ unused.
@@ -49,23 +49,23 @@ B) DEAD / DEPRECATED КОД
 C) СТРУКТУРНЫЕ НЕТОЧНОСТИ / НАРУШЕНИЯ АРХИТЕКТУРЫ
 - Оркестрация «утекла» в scripts (нарушение «scripts тонкие»): scripts/scan.py (162 стр.: _read_vdf_ids/_read_api_ids/_read_cm_ids + слияние 3 источников), scripts/achievements/farm.py (303), scripts/playtime/boost.py (281), scripts/cards/farm.py (245).
 - Дублирование публичной поверхности API: get_web_cookies определён в app/cookies/__init__.py:57, ре-экспортирован в app/steam/steam_cm.py:125 (noqa: F401, E402) и app/steam/__init__.py:8,16 — две публичные точки (app.cookies.get_web_cookies и app.steam.get_web_cookies; scripts/cards/* берут через app.steam).
-- Cross-subpackage импорт приватных символов: app/cards/card_store.py:13 тянет из app.steam.store_api приватные _REQUEST_DELAY и _has_trading_cards; app/catalog.py:20 импортирует app.steam.store_api.AchievementInfo.
+- [УСТРАНЕНО] Cross-subpackage импорт из app.steam.store_api: и card_store.py, и app/catalog.py (импортировал AchievementInfo) удалены — вместе с самим store_api.py (v1.9.x).
 - Гибридный фасад: app/cookies/__init__.py — НЕ чистый re-export, содержит бизнес-логику get_web_cookies (:57-93) + _browser_cookies_silent (:31) / _browser_cookies (:52). Остальные фасады (auth, cards, sam, steam) — чистые.
 - app.steam не листовой: импорт пакета тянет app.cookies+app.auth и транзитивно playwright/browser-стек — утяжеляет граф импорта скриптам, которым нужен лишь steam_local/registry.
 
 D) ДРЕЙФ ДОКОВ / ВЕРСИЙ
 - README badge (README.md:5) и Requirements (README.md:21-22) говорят «Python 3.10+», а pyproject/ruff/mypy/CI таргетят 3.12 — версия-дрейф, флагать.
-- ВАЖНО (каталог, не путать категории): в app/catalog.py живут ОБА файла — store_zero.txt (:27, «Store сказал 0») и store_empty.txt (:28, «Store ответил без данных»). Оба уже задокументированы в README (has_cards/no_cards из доков убраны в 409fb74).
+- [УСТРАНЕНО] Advisory-каталог целиком (app/catalog.py: with.txt/store_zero.txt/store_empty.txt + scripts/categorize.py + app/steam/store_api.py) удалён в v1.9.x — фича неактуальна (farm покрывает все игры, порядок-подсказки и ненадёжные Store-догадки не нужны).
 - CHANGELOG.md:40 (v1.4.0) ссылается на store_api.fetch_achievement_count. ВНИМАНИЕ: это может быть КОРРЕКТНАЯ историческая запись — на момент 1.4.0 функция так и называлась (переименована в fetch_achievement_info в 1.5.0). CHANGELOG — точечный во времени; не «исправлять» историю вслепую.
 - [УСТРАНЕНО, см. СТАТУС выше] Дрейф scripts/scan.py/gui/runner.py (путь «scripts/achievements/scan.py», «пишет ids.txt») закрыт коммитами 409fb74 + 0f1a8b7; остаточный ids.txt/scan_achievements.py в game_list/farm/playwright тоже устранён.
 - README «playtime/skip.txt» упомянут в прозе (README.md:237), но отсутствует в дереве структуры — сверь все playtime-файлы (done.txt, skip.txt) со scripts/playtime/boost.py.
 - README config-таблица (launch_delay, load_timeout, max_concurrent_games, card_check_interval, playtime_idle_duration, playtime_target_minutes и т.д.) — сверить с дефолтами app/config.py.
-- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py (--retry-errors/--reset/--retry-without/--retry-done), scripts/cards/farm.py (флагов НЕТ — --reset удалён в v1.9.x), scripts/playtime/boost.py:65,70 (--list/--reset), scripts/categorize.py:54,57 (--reset/--limit).
+- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py (--retry-errors/--reset/--retry-without/--retry-done), scripts/cards/farm.py (флагов НЕТ — --reset удалён в v1.9.x), scripts/playtime/boost.py:65,70 (--list/--reset). (scripts/categorize.py с --reset/--limit удалён в v1.9.x.)
 - ИНВАРИАНТ версии: VERSION-файл == верхняя секция CHANGELOG == последний тег `vX.Y.Z`. Сверяй ПЕРЕД каждым релизом (это инвариант, а не снапшот: пин коммита/PR ре-ротится каждым коммитом). Прецедент: на v1.3.0 забытый бамп дал тег с VERSION=1.2.0 — фикс-форвардом, тег НЕ перемещали.
 
 E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)
 - app/cookies/* — ВЕСЬ подпакет без юнит-тестов (cdp, chrome, firefox, dpapi, playwright, storage, web_refresh, get_web_cookies в __init__). Крупнейший пробел.
-- app/steam без тестов: steam_api.py (fetch_owned_games/fetch_all_game_ids/fetch_badge_app_ids), steam_id.py (resolve_steam_id), packageinfo.py. Покрыты steam_cm, steam_local, steam_registry, store_api (fetch_achievement_info; _has_trading_cards не тестируется).
+- app/steam без тестов: steam_api.py (fetch_owned_games/fetch_all_game_ids/fetch_badge_app_ids), steam_id.py (resolve_steam_id), packageinfo.py. Покрыты steam_cm, steam_local, steam_registry. (store_api.py удалён в v1.9.x вместе с advisory-каталогом.)
 - app/auth без тестов: credentials.py, interactive.py (покрыты totp, jwt через test_jwt_cache, iauth через test_iauth_2fa/test_iauth_rsa_login).
 - app/cards частично: тест только у card_parsers.py; card_cache/card_checker/card_store без прямых тестов.
 - app/sam: picker_session.py без теста; win32_utils.py частично (test_win32_error_window.py — только _has_error_window).
@@ -103,7 +103,6 @@ F) РАСКЛАДКА / ДУБЛИ
   - cards/done.txt (собранные карты; пишет cards/farm через mark_card_done, write-only — для пропуска НЕ читается, очередь строится из живого скрейпа badges).
   - playtime/done.txt и skip.txt (прогресс буста).
   - data/games/names.json (кэш AppID→имя; регенерируется, но дорого — Steam API).
-  - with.txt/store_zero.txt/store_empty.txt — advisory-каталог categorize (прогресс, хоть farm их не читает).
 - app/auth/__init__.py re-export приватных «for backward compat» — сознательный публичный контракт; не удалять без миграции вызывающих.
 - gevent-eventemitter, protobuf<4 — транзитивные зависимости steam[client], не «unused».
 Исключение: has_cards.txt/no_cards.txt в data/games/ids/cards/ — НЕ прогресс (вывод мёртвого card_store), их удаление безопасно (в отличие от done.txt).
@@ -114,7 +113,6 @@ F) РАСКЛАДКА / ДУБЛИ
 3. Ранжируй по severity (High/Med/Low): вес — риск потери данных/прогресса, поломка гейтов/CI, введение в заблуждение (дрейф доков перед релизом), затем чистый косметический мусор.
 4. Выдай отчёт. Правки — ТОЛЬКО после подтверждения находки и согласия пользователя.
 5. Если фиксишь: TDD (сначала тест на пробел/регресс, где применимо), затем правка, затем ВСЕ гейты. git-flow: feature/* от develop (merge --no-ff), release/X.Y.Z в main через PR (gh), тег vX.Y.Z, back-merge в develop; main защищён PR. Коммиты conventional, тело на русском, футер Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>; PR-боди заканчивать строкой про Generated with Claude Code. Держи репо чистым.
-6. Footgun: categorize.py --limit 0 = unlimited (полный прогон на всю библиотеку; scripts/categorize.py:59-60,80-81 — default 0, «0 = все оставшиеся») — не запускай вслепую.
 
 # ФОРМАТ ОТЧЁТА
 Ранжированный по severity список. Каждая находка:
