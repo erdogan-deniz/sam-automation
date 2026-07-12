@@ -54,12 +54,6 @@ def _load_shared_secret(username: str) -> str | None:
     return None
 
 
-def _save_shared_secret(username: str, secret: str) -> None:
-    """Сохраняет shared_secret в Windows Credential Manager."""
-    keyring.set_password(_KEYRING_2FA_SERVICE, username, secret)
-    log.info("shared_secret сохранён в Credential Manager")
-
-
 def _save_session(username: str, password: str) -> None:
     """Сохраняет username на диск, пароль — в Windows Credential Manager."""
     _CRED_DIR.mkdir(parents=True, exist_ok=True)
@@ -112,16 +106,6 @@ def _clear_session() -> None:
                 pass
         _USERNAME_FILE.unlink()
         log.info("Steam CM: учётные данные удалены из Credential Manager")
-
-
-def _clear_credentials() -> None:
-    """Удаляет все данные Steam CM (сессия + sentry)."""
-    import shutil
-
-    _clear_session()
-    if _CRED_DIR.exists():
-        shutil.rmtree(_CRED_DIR, ignore_errors=True)
-        log.info("Steam CM: все данные удалены (%s)", _CRED_DIR)
 
 
 def _ask_keep_credentials() -> bool:
