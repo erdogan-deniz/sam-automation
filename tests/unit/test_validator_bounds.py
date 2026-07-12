@@ -58,6 +58,26 @@ def test_launch_stagger_inf_is_error() -> None:
     assert validator._check_numeric_bounds(_cfg(launch_stagger=float("inf")))
 
 
+def test_playtime_idle_duration_too_high_is_error() -> None:
+    # INFO: абсурдная длительность (опечатка 10^9с ≈ 31 год idle) типо-валидна,
+    # но вешает boost без диагностики. Разумный потолок ловит опечатку.
+    assert validator._check_numeric_bounds(_cfg(playtime_idle_duration=10**9))
+
+
+def test_launch_stagger_too_high_is_error() -> None:
+    assert validator._check_numeric_bounds(_cfg(launch_stagger=10**9))
+
+
+def test_generous_durations_still_valid() -> None:
+    # Потолки щедрые — реальные конфиги не задевают.
+    assert (
+        validator._check_numeric_bounds(
+            _cfg(playtime_idle_duration=3600, launch_stagger=60)
+        )
+        == []
+    )
+
+
 def test_valid_bounds_no_error() -> None:
     errs = validator._check_numeric_bounds(
         _cfg(
