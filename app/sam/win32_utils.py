@@ -23,8 +23,9 @@ _user32 = ctypes.windll.user32
 
 # HANDLE на 64-битной Windows шире 32 бит. Без явного restype ctypes трактует
 # возврат как c_int и ОБРЕЗАЕТ дескриптор — тогда snap/handle указывают не туда,
-# а Process32First/CloseHandle/TerminateProcess работают по битому значению
-# (dpapi.py:47 документирует и лечит ту же ловушку).
+# а Process32First/CloseHandle/TerminateProcess работают по битому значению.
+# Та же ловушка у ЛЮБОГО ctypes-вызова, возвращающего pointer-sized HANDLE:
+# лечится явным restype=wintypes.HANDLE.
 _kernel32.CreateToolhelp32Snapshot.restype = ctypes.wintypes.HANDLE
 _kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
 

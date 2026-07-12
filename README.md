@@ -85,8 +85,8 @@ python scripts/playtime/boost.py
 | `sam_game_exe_path` | `./external/SAM/SAM.Game.exe` | Path to SAM.Game.exe; downloaded automatically if missing |
 | `steam_path` | *(auto)* | Steam installation directory; auto-detected from the registry if omitted |
 | `exclude_ids` | — | List of App IDs to skip (DLC, tools, demos) |
-| `game_ids_file` | — | Path to a text file with App IDs (one per line) |
-| `game_ids` | — | Explicit list of App IDs; overrides `scan.py` and `game_ids_file` |
+| `game_ids_file` | — | Path to a text file with App IDs (one per line); merged (union) on top of `game_ids`, and suppresses the `scan.py` list (`all.txt`) |
+| `game_ids` | — | Explicit list of App IDs; suppresses the `scan.py` list (`all.txt`), but is merged (union, deduped) with `game_ids_file` rather than overriding it |
 | `launch_delay` | `3` | Seconds to wait after launching SAM.Picker.exe |
 | `load_timeout` | `20` | Max seconds to wait for a game's stats to load in SAM |
 | `post_commit_delay` | `0.2` | Pause after Commit Changes (seconds) |

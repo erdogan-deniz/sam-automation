@@ -18,8 +18,7 @@ protobuf>=3.19,<4      # Protocol Buffers (used by steam library)
 pycryptodomex>=3.18     # RSA encryption for Steam IAuthenticationService login (Cryptodome namespace)
 
 # ── Browser Automation ────────────────────────────────────────
-playwright>=1.40        # CDP cookie extraction (bypasses v20 Chrome encryption)
-cryptography>=41.0      # AES-GCM decryption of Chrome v10 cookies (app/cookies/chrome.py)
+playwright>=1.40        # visible browser login for steamLoginSecure cookie
 
 # ── Testing ───────────────────────────────────────────────────
 pytest>=8.0             # Unit test runner
