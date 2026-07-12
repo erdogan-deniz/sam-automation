@@ -91,7 +91,10 @@ def _extract_app_ids_from_vdf(content: str) -> list[int]:
                 # pending — ключ, открывающий блок.
                 if pending == "apps" and tuple(stack[-3:]) == _APPS_PATH[:3]:
                     apps_found = True
-                if pending.isdigit() and tuple(stack[-4:]) == _APPS_PATH:
+                # isdecimal (не isdigit): App ID — ASCII-десятичные; isdigit
+                # True и для юникод-«цифр» (², ①), на которых int() бросает
+                # ValueError и роняет чтение ВСЕЙ библиотеки.
+                if pending.isdecimal() and tuple(stack[-4:]) == _APPS_PATH:
                     if pending not in seen:
                         seen.add(pending)
                         app_ids.append(int(pending))
