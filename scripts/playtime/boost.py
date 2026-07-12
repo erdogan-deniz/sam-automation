@@ -207,6 +207,35 @@ def _report_result(
     send_telegram(f"{mark} Playtime boost — {head}: {detail}", cfg)
 
 
+def _teardown(active: dict[int, subprocess.Popen]) -> None:
+    """Добивает active + сирот staggered-запуска. НИКОГДА не бросает (RA-C).
+
+    Вызывается из finally _boost_loop на ЛЮБОМ выходе. Инвариант «не бросает»
+    критичен: _report_result стоит ПОСЛЕ finally, поэтому исключение отсюда
+    потеряло бы честный отчёт, а сбой на первом kill_process пропустил бы бэкстоп
+    kill_all_sam_games (сироты недозапущенного батча держали бы global user).
+    Каждый kill_process изолирован — не-KI сбой одного (напр. Windows
+    PermissionError из proc.kill() в гонке терминации выходящего процесса) не
+    срывает остальные и бэкстоп. Повторный Ctrl+C во время уборки не обрывает её:
+    KeyboardInterrupt (BaseException, не Exception) проскакивает внутренние
+    except Exception к внешнему retry (bounded ×3, чтобы не крутиться вечно).
+    """
+    for _ in range(3):
+        try:
+            for proc in active.values():
+                try:
+                    kill_process(proc)
+                except Exception:
+                    log.exception("teardown: сбой добивания процесса")
+            try:
+                kill_all_sam_games()
+            except Exception:
+                log.exception("teardown: сбой kill_all_sam_games")
+            return
+        except KeyboardInterrupt:
+            continue
+
+
 def _boost_loop(games: list[dict], cfg: Any, persist_done: bool = True) -> None:
     """Batch-цикл: запустить N игр → ждать playtime_idle_duration → убить всех → следующий батч.
 
@@ -301,18 +330,9 @@ def _boost_loop(games: list[dict], cfg: Any, persist_done: bool = True) -> None:
         log.exception("Boost прерван ошибкой.")
     finally:
         # Гарантированно добить активные + сироты недозапущенного батча на ЛЮБОМ
-        # выходе (норма/Ctrl+C/ошибка) — иначе SAM.Game.exe осиротеют и займут
-        # global user. Ctrl+C/ошибка НЕ пишут done (survivors помечаются только в
-        # норме, внутри цикла). Второй Ctrl+C прямо во время уборки не должен её
-        # оборвать — повторяем свип до 3 раз, глотая повторные прерывания.
-        for _ in range(3):
-            try:
-                for proc in active.values():
-                    kill_process(proc)
-                kill_all_sam_games()
-                break
-            except KeyboardInterrupt:
-                continue
+        # выходе (норма/Ctrl+C/ошибка). Ctrl+C/ошибка НЕ пишут done (survivors
+        # помечаются только в норме, внутри цикла).
+        _teardown(active)
 
     _report_result(status, boosted_count, failed_count, total, cfg)
 
