@@ -120,3 +120,49 @@ def test_api_reachable_false_on_error(monkeypatch):
     monkeypatch.setattr(steam_cm.urllib.request, "urlopen", boom)
     assert steam_cm._steam_api_reachable(timeout=0.01, attempts=2) is False
     assert calls["n"] == 2  # обе попытки сделаны
+
+
+# ── read_steam_cm_app_ids: disconnect в try/finally (утечка gevent) ─────────
+
+
+import pytest  # noqa: E402
+
+
+class _FakeSteamClient:
+    """Двойник SteamClient: считает disconnect(), остальное — no-op."""
+
+    def __init__(self, *a, **k) -> None:
+        self.disconnect_calls = 0
+
+    def set_credential_location(self, *a, **k) -> None:
+        pass
+
+    def once(self, *a, **k) -> None:
+        pass
+
+    def disconnect(self) -> None:
+        self.disconnect_calls += 1
+
+
+def test_read_cm_disconnects_on_exception(monkeypatch):
+    # EOFError/любое исключение «в середине» (cron без stdin) НЕ должно оставлять
+    # gevent-соединение висеть: disconnect обязателен через finally.
+    created: dict = {}
+
+    def _make(*a, **k):
+        c = _FakeSteamClient()
+        created["client"] = c
+        return c
+
+    monkeypatch.setattr("steam.client.SteamClient", _make)
+    monkeypatch.setattr(steam_cm, "_steam_api_reachable", lambda *a, **k: True)
+
+    def _boom(*a, **k):
+        raise EOFError("нет stdin")
+
+    monkeypatch.setattr(steam_cm, "_load_session", _boom)
+
+    with pytest.raises(EOFError):
+        steam_cm.read_steam_cm_app_ids("C:/steam", "user", interactive=True)
+
+    assert created["client"].disconnect_calls >= 1

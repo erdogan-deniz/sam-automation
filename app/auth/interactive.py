@@ -40,6 +40,7 @@ def _getpass_stars(prompt: str) -> str:
 
 
 _LOGIN_TIMEOUT = 60  # секунд на попытку входа
+_MAX_TRANSIENT_TRIES = 3  # предел ре-логинов при транзиентной ошибке CM
 
 
 def _do_interactive_login(client: Any, username: str) -> tuple[Any, str, str]:
@@ -69,6 +70,7 @@ def _do_interactive_login(client: Any, username: str) -> tuple[Any, str, str]:
     prompt_for_unavailable = True
     rsa_tried = False
     invalid_pw_tries = 0
+    transient_tries = 0
 
     result = _login_timed(username, password)
     if result is None:
@@ -138,17 +140,34 @@ def _do_interactive_login(client: Any, username: str) -> tuple[Any, str, str]:
                 auth_code, two_factor_code = None, input(prompt)
         elif result in (EResult.TryAnotherCM, EResult.ServiceUnavailable):
             if prompt_for_unavailable and result == EResult.ServiceUnavailable:
-                while True:
-                    answer = input(
-                        "[Steam Client Master] Steam недоступен. Попробовать снова? [yes/no]: "
-                    ).lower()
-                    if answer in "yesддаnoннет":
-                        break
+                yes = {"y", "yes", "д", "да"}
+                no = {"n", "no", "н", "нет"}
+                answer = ""
+                while answer not in yes and answer not in no:
+                    answer = (
+                        input(
+                            "[Steam Client Master] Steam недоступен. "
+                            "Попробовать снова? [yes/no]: "
+                        )
+                        .strip()
+                        .lower()
+                    )
                 prompt_for_unavailable = False
-                if answer == "n":
+                if answer in no:
                     break
+            # Счётчик транзиентных попыток: без него `result` мог навсегда
+            # оставаться TryAnotherCM (login не звался — был `continue`).
+            transient_tries += 1
+            if transient_tries > _MAX_TRANSIENT_TRIES:
+                log.warning(
+                    "Steam CM: транзиентная ошибка (%s) не прошла за %d попыток",
+                    getattr(result, "name", result),
+                    _MAX_TRANSIENT_TRIES,
+                )
+                break
             _reconnect_timed()
-            continue
+            # НЕ continue: управление доходит до ре-логина ниже, result
+            # переприсваивается — иначе вечный цикл на транзиентной ошибке.
 
         result = _login_timed(
             username, password, None, auth_code, two_factor_code
