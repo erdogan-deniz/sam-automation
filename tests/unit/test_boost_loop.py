@@ -284,6 +284,76 @@ def test_boost_loop_ctrl_c_during_launch_kills_all_sam(monkeypatch):
     assert swept == [True]  # страховка добила процессы
 
 
+def test_boost_loop_kill_process_raises_still_sweeps_and_reports(monkeypatch):
+    # RA-C: не-KI из kill_process в teardown (Windows proc.kill()→PermissionError
+    # в гонке терминации) НЕ должен пропустить бэкстоп kill_all_sam_games (сироты)
+    # и НЕ должен пропустить честный _report_result.
+    swept: list[bool] = []
+    tg: list[str] = []
+
+    def bad_kill(proc):
+        raise PermissionError("terminate race")
+
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "kill_process", bad_kill)
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: swept.append(True))
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text)
+    )
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # не должно пробросить PermissionError
+
+    assert swept == [True]  # бэкстоп добил сирот несмотря на сбой kill_process
+    assert tg and "обработано" in tg[-1]  # честный отчёт не потерян
+
+
+def test_boost_loop_kill_all_raises_still_reports(monkeypatch):
+    # RA-C: не-KI из самого kill_all_sam_games НЕ должен пропустить _report_result.
+    tg: list[str] = []
+
+    def bad_sweep():
+        raise OSError("win32 sweep fail")
+
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", bad_sweep)
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text)
+    )
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # не должно пробросить OSError
+
+    assert tg  # отчёт не потерян даже при сбое бэкстопа
+
+
 def test_boost_loop_second_ctrl_c_during_teardown_retries_sweep(monkeypatch):
     # C5: второй Ctrl+C во время finally-свипа не обрывает уборку — повторяем.
     calls = {"sweep": 0}
