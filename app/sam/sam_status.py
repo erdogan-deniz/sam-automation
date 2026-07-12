@@ -62,7 +62,7 @@ def _find_child(parent, automation_id: str):
 def _read_achievement_count(game_window) -> int | None:
     """Число строк (ListItem) в _AchievementListView.
 
-    Путь по дереву окна (см. дамп scripts/diag/dump_sam_window.py):
+    Путь по дереву окна (как снять дамп — docs/debug-sam-uia.md):
     Manager → _MainTabControl → _AchievementsTabPage → _AchievementListView.
 
     Returns:
