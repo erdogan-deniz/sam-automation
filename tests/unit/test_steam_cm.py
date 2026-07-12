@@ -128,6 +128,58 @@ def test_api_reachable_false_on_error(monkeypatch):
     assert calls["n"] == 2  # обе попытки сделаны
 
 
+# ── интеграция: достоверный InvalidPassword → _clear_session → skip CM ──────
+
+
+class _FakeCM:
+    """Минимальный SteamClient для saved-пути read_steam_cm_app_ids."""
+
+    def __init__(self) -> None:
+        self.disconnect_calls = 0
+
+    def set_credential_location(self, _path) -> None:
+        pass
+
+    def once(self, _msg, _cb) -> None:
+        pass
+
+    def login(self, *_a, **_k):
+        return EResult.InvalidPassword  # legacy отвергает
+
+    def disconnect(self) -> None:
+        self.disconnect_calls += 1
+
+    def sleep(self, _s) -> None:
+        pass
+
+
+def test_definitive_invalid_password_clears_session_and_skips(monkeypatch):
+    # Шов #5: saved-логин → legacy InvalidPassword → try_rsa → RSA тоже
+    # InvalidPassword (достоверно) → _should_clear_session_after_rsa=True →
+    # _clear_session() + saved=None → (interactive=False) чистый возврат [].
+    fake = _FakeCM()
+    monkeypatch.setattr("steam.client.SteamClient", lambda: fake)
+    monkeypatch.setattr(steam_cm, "_steam_api_reachable", lambda *a, **k: True)
+    monkeypatch.setattr(steam_cm, "_load_session", lambda: ("user", "pw"))
+    monkeypatch.setattr(steam_cm, "_load_refresh_token", lambda _f: None)
+    monkeypatch.setattr(
+        steam_cm, "_rsa_jwt_login", lambda *a, **k: EResult.InvalidPassword
+    )
+    cleared = {"n": 0}
+    monkeypatch.setattr(
+        steam_cm,
+        "_clear_session",
+        lambda: cleared.__setitem__("n", cleared["n"] + 1),
+    )
+
+    result = steam_cm.read_steam_cm_app_ids(
+        "C:/steam", "user", interactive=False
+    )
+
+    assert result == []
+    assert cleared["n"] == 1  # сессия стёрта ровно один раз
+
+
 # ── read_steam_cm_app_ids: disconnect в try/finally (утечка gevent) ─────────
 
 
