@@ -1,8 +1,8 @@
 """Тесты для app/steam/steam_registry.py.
 
 Тестируем только steamid64_to_id3 — чистую арифметическую функцию.
-find_steam_path / read_steam_username используют winreg и файловую систему,
-поэтому остаются без тестов (интеграционный уровень).
+find_steam_path использует winreg и файловую систему,
+поэтому остаётся без тестов (интеграционный уровень).
 """
 
 from __future__ import annotations
