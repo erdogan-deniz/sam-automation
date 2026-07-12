@@ -64,6 +64,16 @@ def test_read_ids_ordered_skips_comments(tmp_path: Path) -> None:
     assert read_ids_ordered(f) == [730, 440]
 
 
+def test_read_ids_ordered_dedups_preserving_order(tmp_path: Path) -> None:
+    # INFO: boost — единственный потребитель, полагающийся на порядок; дубль
+    # appid из вручную-правленного all.txt дал бы двойной запуск игры (два
+    # SAM.Game.exe на один appid дерутся за global user). Дедуп по первому
+    # вхождению сохраняет порядок.
+    f = tmp_path / "ids.txt"
+    f.write_text("30\n10\n30\n20\n10\n", encoding="utf-8")
+    assert read_ids_ordered(f) == [30, 10, 20]
+
+
 # ── _append_id ─────────────────────────────────────────────────────────────
 
 
