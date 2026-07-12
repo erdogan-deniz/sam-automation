@@ -2,6 +2,17 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.10.1]
+
+### Внутреннее
+
+- **Диаг-скрипт `scripts/diag/dump_sam_window.py` перенесён в
+  `docs/debug-sam-uia.md`** — техника дампа UIA-дерева окна SAM.Game (обход через
+  `.children()`, обходя ловушку `child_window()` у `UIAWrapper`) сохранена как
+  memo, а не запускаемый в цикле standalone-скрипт. Каталог `scripts/diag/`
+  удалён; ссылки из `sam_status.py` и farm-промпта ведут на doc. Полная исходная
+  версия — в истории git.
+
 ## [1.10.0]
 
 ### Удаление
