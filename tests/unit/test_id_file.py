@@ -118,6 +118,32 @@ def test_append_id_write_failure_preserves_existing(
     assert list(tmp_path.glob("*.tmp")) == []  # tmp-мусор убран
 
 
+def test_append_id_read_failure_preserves_existing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # RA-8: транзиентный сбой ЧТЕНИЯ существующего файла (Windows sharing-
+    # violation от AV/OneDrive на только что перезаписанном файле) не должен
+    # усечь накопленное до одного нового id. _iter_ids глушит ошибку чтения в
+    # пустой набор → безусловная запись стёрла бы всё; _append_id обязан НЕ
+    # переписывать при сбое чтения существующего файла.
+    f = tmp_path / "ids.txt"
+    f.write_text("10\n20\n30\n", encoding="utf-8")
+
+    orig_read_text = Path.read_text
+
+    def flaky_read_text(self: Path, *a: object, **k: object) -> str:
+        if self == f:
+            raise PermissionError(13, "sharing violation")
+        return orig_read_text(self, *a, **k)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    _append_id(f, 40)  # не должно усечь (чтение существующего файла упало)
+
+    monkeypatch.setattr(Path, "read_text", orig_read_text)
+    assert load_ids_file(f) == {10, 20, 30}  # накопленное цело, 40 не дописан
+
+
 # ── _remove_id ─────────────────────────────────────────────────────────────
 
 
