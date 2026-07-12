@@ -93,7 +93,7 @@ def test_rsa_login_requests_steamclient_scope_token(monkeypatch):
     # for_steam_client=True обязателен — иначе CM отвергнет веб-токен (AccessDenied).
     captured: dict = {}
 
-    def _fake_web(username, password, *, for_steam_client=False):
+    def _fake_web(username, password, *, for_steam_client=False, _outcome=None):
         captured["for_steam_client"] = for_steam_client
         return None
 
@@ -102,6 +102,57 @@ def test_rsa_login_requests_steamclient_scope_token(monkeypatch):
     iauth._rsa_jwt_login(_FakeClient(), "user", "pass", 30)
 
     assert captured["for_steam_client"] is True
+
+
+def test_rsa_login_returns_invalid_password_on_definitive_rejection(
+    monkeypatch,
+):
+    # Современный Begin достоверно отверг RSA-пароль (записал InvalidPassword в
+    # _outcome) → _rsa_jwt_login пробрасывает EResult.InvalidPassword (а не None),
+    # чтобы вызывающий мог стереть сессию и переспросить.
+    from steam.enums import EResult
+
+    def _fake_web(username, password, *, for_steam_client=False, _outcome=None):
+        if _outcome is not None:
+            _outcome.append(EResult.InvalidPassword)
+        return None
+
+    monkeypatch.setattr(iauth, "_jwt_web_cookies", _fake_web)
+    monkeypatch.setattr(iauth, "_cm_login_with_jwt", _must_not_call)
+
+    result = iauth._rsa_jwt_login(_FakeClient(), "user", "pass", 30)
+
+    assert result == EResult.InvalidPassword
+
+
+def test_rsa_login_returns_none_on_transient_without_verdict(monkeypatch):
+    # Сеть/таймаут: cookies=None, но _outcome пуст (Begin не дошёл до вердикта) →
+    # НЕ выдаём InvalidPassword, возвращаем None (креды выше не трогаются).
+    def _fake_web(username, password, *, for_steam_client=False, _outcome=None):
+        return None  # ничего не пишет в _outcome
+
+    monkeypatch.setattr(iauth, "_jwt_web_cookies", _fake_web)
+    monkeypatch.setattr(iauth, "_cm_login_with_jwt", _must_not_call)
+
+    assert iauth._rsa_jwt_login(_FakeClient(), "user", "pass", 30) is None
+
+
+def test_rsa_login_swallows_invalid_password_from_cm_token_stage(monkeypatch):
+    # token-этап (_cm_login_with_jwt по refresh_token) НЕ несёт вердикта по
+    # паролю (пароля в ClientLogon нет). Если CM вернёт InvalidPassword, он НЕ
+    # должен просочиться как authoritative-сигнал в решение о стирании кред —
+    # _rsa_jwt_login нормализует его в None (единственный источник вердикта —
+    # _outcome от Begin-пути).
+    from steam.enums import EResult
+
+    monkeypatch.setattr(
+        iauth, "_jwt_web_cookies", lambda *_a, **_k: {"refresh_token": "RT"}
+    )
+    monkeypatch.setattr(
+        iauth, "_cm_login_with_jwt", lambda *_a, **_k: EResult.InvalidPassword
+    )
+
+    assert iauth._rsa_jwt_login(_FakeClient(), "user", "pass", 30) is None
 
 
 # ── _jwt_web_cookies: короткое замыкание из кэша по scope ──

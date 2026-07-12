@@ -69,21 +69,27 @@ def test_password_failure_account_error_skips_cm():
     assert _password_failure_action(EResult.Banned) == "skip_cm"
 
 
-# ── _should_clear_session_after_rsa: транзиент не стирает валидные креды ─────
+# ── _should_clear_session_after_rsa: чистим ТОЛЬКО на достоверном пароле ─────
 
 
-def test_rsa_failure_never_clears_session():
-    # Ни один исход _rsa_jwt_login не является надёжным «неверный пароль»:
-    # None неразличимо (сеть ИЛИ отказ поллинга), а конкретный EResult приходит
-    # из _cm_login_with_jwt, который выполняется УЖЕ имея валидный токен (пароль
-    # принят). Стирать необратимые креды на этом основании нельзя — инвариант
-    # «transient не удаляет креды».
+def test_rsa_definitive_invalid_password_clears_session():
+    # _rsa_jwt_login отдаёт EResult.InvalidPassword ТОЛЬКО когда СОВРЕМЕННЫЙ
+    # Begin-путь (authoritative) отверг RSA-пароль → пароль реально неверен
+    # (legacy И modern отказали) → безопасно стереть сессию и переспросить.
+    assert _should_clear_session_after_rsa(EResult.InvalidPassword) is True
+
+
+def test_rsa_indeterminate_never_clears_session():
+    # None (сеть/таймаут/нет токена) и любой транзиентный/не-пароль EResult из
+    # _cm_login_with_jwt (выполняется УЖЕ с валидным refresh_token — пароль
+    # принят) → креды сохраняем (инвариант «transient не удаляет креды»).
     for r in (
         None,
-        EResult.InvalidPassword,
+        EResult.OK,
         EResult.TryAnotherCM,
         EResult.ServiceUnavailable,
         EResult.Timeout,
+        EResult.Busy,
     ):
         assert _should_clear_session_after_rsa(r) is False, r
 
@@ -120,3 +126,130 @@ def test_api_reachable_false_on_error(monkeypatch):
     monkeypatch.setattr(steam_cm.urllib.request, "urlopen", boom)
     assert steam_cm._steam_api_reachable(timeout=0.01, attempts=2) is False
     assert calls["n"] == 2  # обе попытки сделаны
+
+
+# ── read_steam_cm_app_ids: disconnect в try/finally (утечка gevent) ─────────
+
+
+import pytest  # noqa: E402
+
+
+class _FakeSteamClient:
+    """Двойник SteamClient: считает disconnect(), остальное — no-op."""
+
+    def __init__(self, *a, **k) -> None:
+        self.disconnect_calls = 0
+
+    def set_credential_location(self, *a, **k) -> None:
+        pass
+
+    def once(self, *a, **k) -> None:
+        pass
+
+    def disconnect(self) -> None:
+        self.disconnect_calls += 1
+
+
+def test_read_cm_disconnects_on_exception(monkeypatch):
+    # EOFError/любое исключение «в середине» (cron без stdin) НЕ должно оставлять
+    # gevent-соединение висеть: disconnect обязателен через finally.
+    created: dict = {}
+
+    def _make(*a, **k):
+        c = _FakeSteamClient()
+        created["client"] = c
+        return c
+
+    monkeypatch.setattr("steam.client.SteamClient", _make)
+    monkeypatch.setattr(steam_cm, "_steam_api_reachable", lambda *a, **k: True)
+
+    def _boom(*a, **k):
+        raise EOFError("нет stdin")
+
+    monkeypatch.setattr(steam_cm, "_load_session", _boom)
+
+    with pytest.raises(EOFError):
+        steam_cm.read_steam_cm_app_ids("C:/steam", "user", interactive=True)
+
+    assert created["client"].disconnect_calls >= 1
+
+
+# ── _login_saved_with_2fa: авто-TOTP с откатом на ручной ввод ──────────────
+
+
+def test_2fa_auto_ok_no_manual():
+    # Верный авто-код → OK, ручной ввод не запрашивается.
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return EResult.OK
+
+    def prompt():
+        raise AssertionError("ручной ввод не должен вызываться")
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, "AUTO", prompt, EResult.OK
+    )
+    assert result == EResult.OK
+    assert calls == ["AUTO"]
+
+
+def test_2fa_auto_wrong_falls_back_to_manual():
+    # Неверный авто-код (перекос часов) → откат на ручной ввод, затем OK.
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return EResult.OK if code == "MANUAL" else EResult.TwoFactorCodeMismatch
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, "AUTO", lambda: "MANUAL", EResult.OK
+    )
+    assert result == EResult.OK
+    assert calls == ["AUTO", "MANUAL"]  # авто первым, потом ручной
+
+
+def test_2fa_no_shared_uses_manual():
+    # Нет shared_secret (auto_code None) → сразу ручной ввод.
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return EResult.OK
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, None, lambda: "TYPED", EResult.OK
+    )
+    assert result == EResult.OK
+    assert calls == ["TYPED"]
+
+
+def test_2fa_timeout_returns_none_immediately():
+    # do_login вернул None (таймаут) → возврат None сразу, без ретрая.
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return None
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, "AUTO", lambda: "MANUAL", EResult.OK
+    )
+    assert result is None
+    assert calls == ["AUTO"]
+
+
+def test_2fa_all_wrong_returns_last_result():
+    # Все попытки неверны → возврат последнего неуспеха (не виснем).
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return EResult.TwoFactorCodeMismatch
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, "AUTO", lambda: "MANUAL", EResult.OK
+    )
+    assert result == EResult.TwoFactorCodeMismatch
+    assert calls == ["AUTO", "MANUAL"]
