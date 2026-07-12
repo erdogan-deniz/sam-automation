@@ -12,6 +12,12 @@ import pytest
 import app.run_lock as rl
 
 
+@pytest.fixture(autouse=True)
+def _no_backoff_sleep(monkeypatch):
+    # Ретрай-бэкофф захвата (RA-7) не должен реально усыплять тесты.
+    monkeypatch.setattr(rl.time, "sleep", lambda s: None)
+
+
 def test_acquire_creates_lock(tmp_path, monkeypatch):
     monkeypatch.setattr(rl, "LOCK_FILE", tmp_path / "run.lock")
     rl.acquire_run_lock("farm")
@@ -120,6 +126,35 @@ def test_acquire_does_not_clobber_live_lock_taken_during_removal(
     with pytest.raises(RuntimeError, match="farm"):
         rl.acquire_run_lock("boost")
     assert lock.read_text(encoding="utf-8") == "99999:aaa:farm"  # чужой лок цел
+
+
+def test_acquire_retries_past_transient_removal_failure(tmp_path, monkeypatch):
+    # RA-7: мёртвый лок, снятие транзиентно не срабатывает (проглоченный Windows
+    # sharing-violation при contended unlink). Старый range(2) сдавался и давал
+    # ложный RuntimeError на СВОБОДНОМ локе. Теперь ретраим до дедлайна и
+    # захватываем, как только снятие проходит.
+    lock = tmp_path / "run.lock"
+    monkeypatch.setattr(rl, "LOCK_FILE", lock)
+    lock.write_text("99999:dead:boost", encoding="utf-8")
+    monkeypatch.setattr(
+        rl, "_proc_create_time", lambda pid: None if pid == 99999 else "me"
+    )
+
+    calls = {"n": 0}
+    real_remove = rl._remove_stale_lock
+
+    def flaky_remove(expected):
+        calls["n"] += 1
+        if calls["n"] <= 3:
+            return  # транзиентно не сносит (как проглоченный sharing-violation)
+        real_remove(expected)  # затем реально сносит
+
+    monkeypatch.setattr(rl, "_remove_stale_lock", flaky_remove)
+
+    rl.acquire_run_lock("farm")  # должен ретраить и захватить, не упасть
+
+    assert "farm" in lock.read_text(encoding="utf-8")
+    assert calls["n"] >= 4  # ретраил дольше старого жёсткого range(2)
 
 
 def test_release_removes_own_lock(tmp_path, monkeypatch):

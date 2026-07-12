@@ -47,7 +47,7 @@ class _FakeProc:
 
 
 class _Clock:
-    """Фейковые time.time/time.sleep: sleep двигает часы, чтобы цикл сходился."""
+    """Фейковые monotonic/sleep: sleep двигает часы, чтобы цикл сходился."""
 
     def __init__(self, start: float = 1000.0) -> None:
         self.t = start
@@ -111,7 +111,8 @@ def test_staggered_launch_empty_list_returns_empty():
 def _patch_clock_and_kill(monkeypatch) -> tuple[_Clock, list]:
     clock = _Clock()
     killed: list = []
-    monkeypatch.setattr(launcher.time, "time", clock.time)
+    # idle_and_split_survivors меряет idle монотонными часами (RA-4).
+    monkeypatch.setattr(launcher.time, "monotonic", clock.time)
     monkeypatch.setattr(launcher.time, "sleep", clock.sleep)
     monkeypatch.setattr(launcher, "kill_process", killed.append)
     return clock, killed
@@ -240,6 +241,36 @@ def test_idle_split_zero_idle_still_checks_each_process(monkeypatch):
 
     assert survivors == []
     assert failed == [20]
+
+
+def test_idle_split_uses_monotonic_not_wall_clock(monkeypatch):
+    # RA-4: idle-окно меряется time.monotonic(), НЕ настенными time.time().
+    # Скачок настенных часов (NTP-ресинк/возврат из suspend/VM-snapshot) больше
+    # остатка idle иначе даёт ложный ранний выход → unknown-выживший ложно
+    # помечается done после ~1 проверки. Монотонные часы иммунны к скачку.
+    clock = _Clock()
+    killed: list = []
+    monkeypatch.setattr(launcher.time, "monotonic", clock.time)
+    monkeypatch.setattr(launcher.time, "sleep", clock.sleep)
+    monkeypatch.setattr(launcher, "kill_process", killed.append)
+    monkeypatch.setattr(launcher, "_has_error_window", lambda pid: False)
+
+    # Настенные часы трогать нельзя для deadline: любой их вызов = баг.
+    def _forbidden_wall_clock() -> float:
+        raise AssertionError(
+            "idle_and_split_survivors must use time.monotonic, not time.time"
+        )
+
+    monkeypatch.setattr(launcher.time, "time", _forbidden_wall_clock)
+
+    active = {10: _FakeProc(1, None)}  # процесс жив весь idle
+    survivors, failed = idle_and_split_survivors(
+        active, idle_duration=10, poll_interval=5
+    )
+
+    assert survivors == [10]  # пережил полный idle по монотонным часам
+    assert failed == []
+    assert sum(clock.sleeps) == 10  # идлил весь срок
 
 
 def test_kill_all_sam_games_kills_each_pid(monkeypatch):
