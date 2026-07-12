@@ -3,11 +3,7 @@
 Субмодули:
   storage     — manual_cookie.txt, remember_login.txt, jwt_expired()
   web_refresh — обновление через steamRememberLogin
-  dpapi       — Win32 DPAPI расшифровка и _copy_shared
-  firefox     — SQLite extractor (Firefox)
-  chrome      — DPAPI+AES-GCM extractor (Chrome/Edge/Brave)
-  cdp         — Chrome DevTools Protocol extractor
-  playwright  — Playwright headless + visible login
+  playwright  — Playwright visible login (одноразовый вход)
 
 Публичный API: get_web_cookies(username, *, interactive=True)
 """
@@ -18,40 +14,11 @@ import logging
 
 from app.auth.jwt import _jwt_from_refresh_token
 
-from .cdp import _cdp_steam_cookies
-from .chrome import _chrome_steam_cookies
-from .firefox import _firefox_steam_cookies
-from .playwright import _playwright_login, _playwright_steam_cookies
+from .playwright import _playwright_login
 from .storage import _load_manual_cookie, _save_manual_cookie
 from .web_refresh import _web_refresh
 
 log = logging.getLogger("sam_automation")
-
-
-def _browser_cookies_silent() -> dict | None:
-    """Тихое извлечение куки: CDP → Firefox (SQLite) → Chrome/Edge (DPAPI) → Playwright headless.
-
-    Не требует ввода данных. CDP работает даже когда браузер запущен.
-    SQLite может не сработать если браузер держит файл заблокированным.
-    """
-    cookies = _cdp_steam_cookies()
-    if cookies:
-        return cookies
-
-    cookies = _firefox_steam_cookies()
-    if cookies:
-        return cookies
-
-    cookies = _chrome_steam_cookies()
-    if cookies:
-        return cookies
-
-    return _playwright_steam_cookies(visible_fallback=False)
-
-
-def _browser_cookies() -> dict | None:
-    """Читает Steam Community куки из браузеров (включая открытие окна браузера)."""
-    return _playwright_steam_cookies(visible_fallback=True)
 
 
 def get_web_cookies(username: str, *, interactive: bool = True) -> dict | None:
