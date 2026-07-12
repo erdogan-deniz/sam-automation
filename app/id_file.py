@@ -68,9 +68,47 @@ def read_ids_ordered(path: Path) -> list[int]:
     return list(_iter_ids(path))
 
 
+def _read_ids_strict(path: Path) -> set[int]:
+    """Читает id-файл в set; при СБОЕ чтения существующего файла бросает OSError.
+
+    Для писателей (_append_id), в отличие от _iter_ids: тот глушит любую ошибку
+    чтения в пустой результат — уместно для читателей, но для писателя
+    катастрофично (транзиентный сбой чтения → перезапись файла одним новым id,
+    потеря всего накопленного). Отсутствие файла — не ошибка (пустой set); сбой
+    чтения существующего — пробрасывается, чтобы writer НЕ перезаписал усечённым.
+    """
+    if not path.exists():
+        return set()
+    out: set[int] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            try:
+                out.add(int(line))
+            except ValueError:
+                log.warning("Невалидная строка в %s: %r", path, line)
+    return out
+
+
 def _append_id(path: Path, game_id: int) -> None:
-    """Добавляет ID в файл, сохраняя числовую сортировку (атомарно)."""
-    ids = set(_iter_ids(path))
+    """Добавляет ID в файл, сохраняя числовую сортировку (атомарно).
+
+    Если чтение СУЩЕСТВУЮЩЕГО файла упало (не «файла нет», а транзиентный сбой —
+    напр. Windows sharing-violation от AV/OneDrive на только что перезаписанном
+    файле), НЕ перезаписываем: иначе усечём весь накопленный список до одного
+    нового id. Пропускаем дозапись (файл цел; для resume-файлов недобавленный id
+    безвреден — обработается следующим прогоном), а не теряем данные.
+    """
+    try:
+        ids = _read_ids_strict(path)
+    except OSError as e:
+        log.warning(
+            "Не удалось прочитать %s для дозаписи (%s) — пропускаю, "
+            "файл не перезаписан",
+            path,
+            e,
+        )
+        return
     ids.add(game_id)
     _atomic_write_text(path, "\n".join(str(i) for i in sorted(ids)) + "\n")
 
