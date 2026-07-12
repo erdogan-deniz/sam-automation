@@ -16,8 +16,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import psutil
-
 from app.config import Config
 
 log = logging.getLogger("sam_automation")
@@ -92,20 +90,6 @@ def _check_numeric_bounds(cfg: Config) -> list[str]:
 
 
 # ── Phase 2: external checks ──────────────────────────────────────────────
-
-
-def _check_steam_process() -> list[str]:
-    """Проверяет, запущен ли процесс steam.exe."""
-    try:
-        # Use p.name() (method) rather than p.info["name"] (attrs accessor);
-        # the attrs pattern requires process_iter to be called with attrs=["name"],
-        # but method access works regardless of which attrs were requested.
-        names = {p.name().lower() for p in psutil.process_iter(["name"])}
-        if "steam.exe" not in names:
-            return ["Steam is not running — start Steam and try again"]
-        return []
-    except Exception as exc:
-        return [f"Could not check Steam process: {exc}"]
 
 
 def _check_steam_api(cfg: Config) -> list[str]:

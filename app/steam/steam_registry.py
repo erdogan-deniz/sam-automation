@@ -44,20 +44,6 @@ def find_steam_path() -> str | None:
     return None
 
 
-def read_steam_username() -> str | None:
-    """Читает имя последнего залогиненного пользователя из реестра Windows."""
-    try:
-        import winreg
-
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam"
-        ) as key:
-            username, _ = winreg.QueryValueEx(key, "AutoLoginUser")
-            return username or None
-    except Exception:
-        return None
-
-
 def steamid64_to_id3(steam_id64: str) -> int:
     """Конвертирует Steam ID64 в ID3 (используется в папке userdata)."""
     return int(steam_id64) - STEAM_ID64_BASE
