@@ -111,6 +111,10 @@ def _do_interactive_login(client: Any, username: str) -> tuple[Any, str, str]:
             password = _getpass_stars(
                 "[Steam Client Master] Неверный пароль от учётной записи Steam. Введите пароль снова: "
             )
+            # Новый пароль → снова разрешаем RSA: если на попытке 1 была опечатка,
+            # исправленный пароль modern-auth аккаунта иначе не получит RSA
+            # (legacy ClientLogon его отвергнет) и ложно уйдёт в InvalidPassword.
+            rsa_tried = False
             _reconnect_timed()
         elif result in (
             EResult.AccountLogonDenied,
