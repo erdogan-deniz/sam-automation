@@ -93,6 +93,19 @@ def test_load_config_non_numeric_scalar_falls_back_with_warning(
     assert any("load_timeout" in r.message for r in caplog.records)
 
 
+def test_load_config_infinity_int_field_falls_back_with_warning(
+    write_config: Callable[..., str], caplog
+) -> None:  # type: ignore[no-untyped-def]
+    # RA-5: .inf в int-поле → int(float('inf')) бросает OverflowError (подкласс
+    # ArithmeticError, НЕ ValueError/TypeError) → _num раньше пробрасывал сырой
+    # трейсбек ДО validate. Теперь ловится → дефолт + warning.
+    path = write_config(playtime_idle_duration=float("inf"))
+    with caplog.at_level(logging.WARNING, logger="sam_automation"):
+        cfg = load_config(path)  # не должно бросить
+    assert cfg.playtime_idle_duration == 120  # дефолт (int)
+    assert any("playtime_idle_duration" in r.message for r in caplog.records)
+
+
 # ── load_config — Telegram ────────────────────────────────────────────────
 
 
