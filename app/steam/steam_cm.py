@@ -108,23 +108,22 @@ def _password_failure_action(result) -> str:
 def _should_clear_session_after_rsa(rsa_result) -> bool:
     """Стирать ли сохранённые креды после неуспешного RSA/JWT-входа.
 
-    ВСЕГДА False: результат _rsa_jwt_login не даёт надёжного сигнала «неверный
-    пароль», а стирание кред необратимо (нарушает инвариант «transient не
-    удаляет креды» и виснет в ре-промпте на сетевом сбое).
+    True ТОЛЬКО на достоверно-неверном пароле: _rsa_jwt_login отдаёт
+    EResult.InvalidPassword, когда СОВРЕМЕННЫЙ Begin-путь
+    (BeginAuthSessionViaCredentials, authoritative) отверг RSA-пароль. Это
+    значит пароль реально неверен — legacy ClientLogon уже отказал, и modern
+    тоже, — поэтому безопасно стереть сессию и переспросить логин. (Верный
+    пароль modern-auth аккаунта, ложно отвергнутый legacy, дал бы здесь OK.)
 
-    Почему ни один исход не оправдывает удаление:
-      * None — RSA-этап не выдал токен: это и сетевой сбой (RSA-ключ по HTTP
-        или CM недоступны), и отказ поллинга — на месте вызова неразличимо.
-      * конкретный EResult приходит из _cm_login_with_jwt, который выполняется
-        УЖЕ имея валидный refresh_token (значит пароль был принят) — его неуспех
+    Всё прочее → False, креды сохраняем (инвариант «transient не удаляет
+    креды», без зависания в ре-промпте на сетевом сбое):
+      * None — RSA-этап не дал токена по неопределённой причине (RSA-ключ по
+        HTTP или CM недоступны, отказ поллинга) — неотличимо от сети.
+      * любой другой EResult приходит из _cm_login_with_jwt, который выполняется
+        УЖЕ имея валидный refresh_token (пароль принят) — его неуспех
         транзиентный, CM-сторонний.
-
-    Надёжно отличить настоящий неверный пароль можно лишь tri-state (OK /
-    rejected / transient) через весь auth-стек (_jwt_web_cookies →
-    _rsa_jwt_login) — оставлено follow-up. До тех пор безопасный дефолт —
-    сохранить креды и пропустить CM (скан идёт по localconfig + Steam API).
     """
-    return False
+    return getattr(rsa_result, "name", None) == "InvalidPassword"
 
 
 def _login_saved_with_2fa(
@@ -362,8 +361,9 @@ def read_steam_cm_app_ids(
                             "Steam CM: вход через RSA/JWT (%s)", saved_username
                         )
                     elif _should_clear_session_after_rsa(result):
-                        # Зарезервировано под будущий tri-state: удалять сессию ТОЛЬКО
-                        # на достоверно-неверном пароле (сейчас недостижимо → no-op).
+                        # Достоверно-неверный пароль: современный Begin-путь
+                        # (authoritative) отверг RSA-пароль → стираем сессию и
+                        # переспрашиваем логин ниже (типично после смены пароля).
                         log.warning("Steam CM: неверный пароль, удаляю сессию")
                         _clear_session()
                         saved = None  # → интерактивный ре-ввод ниже
