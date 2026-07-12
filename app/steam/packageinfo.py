@@ -36,7 +36,6 @@ def expand_packages_to_apps(
                     pkg_id = pkg.get("packageid")
                     if pkg_id not in owned_packages:
                         continue
-                    found_pkgs += 1
                     inner = pkg.get("data", {}).get(str(pkg_id), {})
                     for app_id in inner.get("appids", {}).values():
                         if not isinstance(app_id, int):
@@ -49,6 +48,10 @@ def expand_packages_to_apps(
                         if app_id not in seen:
                             seen.add(app_id)
                             app_ids.append(app_id)
+                    # Счётчик найденных — ПОСЛЕ успешного разбора: битый
+                    # владеемый пакет (пойман ниже) не должен ложно числиться
+                    # найденным, иначе «пропущено пакетов» занижается.
+                    found_pkgs += 1
                 except Exception as e:
                     pkg_id = (
                         pkg.get("packageid") if isinstance(pkg, dict) else "?"
