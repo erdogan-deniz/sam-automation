@@ -2,6 +2,39 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.11.0]
+
+### Удаление мёртвого кода (legacy-чистка)
+
+- **Мёртвое поддерево извлечения браузерных cookie удалено** (~600 строк).
+  `get_web_cookies` давно работает по цепочке manual-cookie → web_refresh →
+  JWT-CM → интерактивный playwright-login, а старая стратегия «тихого»
+  извлечения (`_browser_cookies_silent`/`_browser_cookies`) не вызывалась
+  ниоткуда. Удалены `app/cookies/{cdp,chrome,firefox,dpapi}.py` целиком и
+  `_playwright_steam_cookies`; живые `_playwright_login` / `storage` /
+  `web_refresh` не затронуты.
+- **Осиротевшие символы удалены** (0 потребителей, grep по всему репо):
+  `_save_shared_secret`, `_clear_credentials` и реэкспорт `_LEGACY_SESSION_FILE`
+  (auth); `fetch_all_game_ids`, `fetch_badge_app_ids`, `read_steam_username`
+  (steam); `_check_steam_process` (validator — дубль `check_steam_running`,
+  который `validate()` не звал) вместе с его тестами.
+
+### Исправлено
+
+- **Зависимость `pycryptodome` → `pycryptodomex`**: код импортит namespace
+  `Cryptodome.*` (RSA-логин `IAuthenticationService`), который предоставляет
+  именно `pycryptodomex`; прежде это работало лишь транзитивно через
+  `steam[client]`. Теперь реально-импортируемый пакет объявлен явно.
+- Мёртвые `mypy`-overrides `win32con` / `win32gui` / `win32process` /
+  `pywintypes` убраны — из pywin32 импортируется только `win32api`.
+
+### Документация
+
+- Устранён дрейф докстрингов и доков, ссылавшихся на удалённые модули
+  (Store API, stats, categorize, card_store): `app/steam/__init__.py`,
+  `app/cache.py`, `CLAUDE.md`,
+  `docs/prompts/{scan,cards-farm,project-auditor}.md`.
+
 ## [1.10.1]
 
 ### Внутреннее

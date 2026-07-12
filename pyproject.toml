@@ -34,9 +34,5 @@ module = [
     "steam.*",
     "gevent.*",
     "win32api",
-    "win32con",
-    "win32gui",
-    "win32process",
-    "pywintypes",
 ]
 ignore_missing_imports = true
