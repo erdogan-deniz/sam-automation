@@ -117,13 +117,19 @@ def main(allow_shrink: bool = False) -> None:
     log.info(SEPARATOR)
     cfg = load_config()
 
-    # Резолвим Steam ID (vanity/URL → ID64) ДО валидации — как boost/cards.
-    # Числовой ID64 резолвер пропускает без сети.
-    try:
-        cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
-    except RuntimeError as e:
-        log.error("Не удалось определить Steam ID: %s", e)
-        sys.exit(1)
+    # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации: validate шлёт
+    # steam_id в GetPlayerSummaries, которому нужен числовой ID64. Числовой ID64
+    # резолвер пропускает без сети. Пустой steam_id НЕ резолвим — пусть validate
+    # выдаст локальную ошибку «steam_id is missing» без лишнего сетевого вызова.
+    # (Порядок resolve→validate отличается от boost/cards, где validate раньше.)
+    if cfg.steam_id:
+        try:
+            cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
+        except (RuntimeError, KeyError) as e:
+            # KeyError — аномальный ответ ResolveVanityURL (success=1 без
+            # steamid); RuntimeError — сеть/неуспех. Оба → чистый exit, не трейс.
+            log.error("Не удалось определить Steam ID: %s", e)
+            sys.exit(1)
 
     validate(cfg)
 
@@ -215,7 +221,8 @@ def main(allow_shrink: bool = False) -> None:
     )
 
 
-if __name__ == "__main__":
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Разбирает CLI-аргументы scan (вынесено из __main__ для тестируемости)."""
     parser = argparse.ArgumentParser(
         description="Сканирование библиотеки Steam → all.txt"
     )
@@ -225,5 +232,8 @@ if __name__ == "__main__":
         help="перезаписать all.txt даже при резкой усадке библиотеки "
         "(обход защиты от транзиентного отказа источника)",
     )
-    args = parser.parse_args()
-    main(allow_shrink=args.allow_shrink)
+    return parser.parse_args(argv)
+
+
+if __name__ == "__main__":
+    main(allow_shrink=_parse_args().allow_shrink)
