@@ -323,6 +323,19 @@ def main() -> None:
 
     setup_logging(name="boost_playtime", category="playtime/boost")
     cfg = load_config()
+
+    # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации: validate шлёт
+    # steam_id в GetPlayerSummaries, которому нужен числовой ID64 (сырой vanity
+    # даёт ложное «API key invalid»). Числовой ID64 резолвер пропускает без сети;
+    # пустой steam_id НЕ резолвим — пусть validate выдаст локальную «missing».
+    # (RA-B; порядок resolve→validate выровнен со scan.py de7e9e4.)
+    if cfg.steam_id:
+        try:
+            cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
+        except (RuntimeError, KeyError) as e:
+            log.error("Не удалось определить Steam ID: %s", e)
+            sys.exit(1)
+
     validate(cfg)
 
     if not check_steam_running():
@@ -336,12 +349,7 @@ def main() -> None:
         log.error(str(e))
         sys.exit(1)
 
-    try:
-        steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
-    except RuntimeError as e:
-        log.error("Не удалось определить Steam ID: %s", e)
-        sys.exit(1)
-    log.info("Steam ID: %s", steam_id)
+    log.info("Steam ID: %s", cfg.steam_id)
 
     if args.list and (args.reset or args.retry_skips):
         log.warning(
@@ -361,7 +369,7 @@ def main() -> None:
 
     log.info("Собираю игры для набивки из all.txt (вся библиотека)...")
     try:
-        games, blind = _fetch_targets(cfg, steam_id)
+        games, blind = _fetch_targets(cfg, cfg.steam_id)
     except RuntimeError as e:
         log.error("Не удалось собрать список игр: %s", e)
         sys.exit(1)
