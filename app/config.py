@@ -24,7 +24,9 @@ def _num(raw: dict, key: str, cast: Callable[..., Any], current: Any) -> Any:
         return current
     try:
         return cast(raw[key])
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
+        # OverflowError: int(float('inf')) на `<int_field>: .inf` (подкласс
+        # ArithmeticError, не ValueError) — тоже дефолт, а не сырой трейсбек.
         log.warning(
             "config.yaml: %s=%r не число — использую значение по умолчанию %r",
             key,
