@@ -69,21 +69,27 @@ def test_password_failure_account_error_skips_cm():
     assert _password_failure_action(EResult.Banned) == "skip_cm"
 
 
-# ── _should_clear_session_after_rsa: транзиент не стирает валидные креды ─────
+# ── _should_clear_session_after_rsa: чистим ТОЛЬКО на достоверном пароле ─────
 
 
-def test_rsa_failure_never_clears_session():
-    # Ни один исход _rsa_jwt_login не является надёжным «неверный пароль»:
-    # None неразличимо (сеть ИЛИ отказ поллинга), а конкретный EResult приходит
-    # из _cm_login_with_jwt, который выполняется УЖЕ имея валидный токен (пароль
-    # принят). Стирать необратимые креды на этом основании нельзя — инвариант
-    # «transient не удаляет креды».
+def test_rsa_definitive_invalid_password_clears_session():
+    # _rsa_jwt_login отдаёт EResult.InvalidPassword ТОЛЬКО когда СОВРЕМЕННЫЙ
+    # Begin-путь (authoritative) отверг RSA-пароль → пароль реально неверен
+    # (legacy И modern отказали) → безопасно стереть сессию и переспросить.
+    assert _should_clear_session_after_rsa(EResult.InvalidPassword) is True
+
+
+def test_rsa_indeterminate_never_clears_session():
+    # None (сеть/таймаут/нет токена) и любой транзиентный/не-пароль EResult из
+    # _cm_login_with_jwt (выполняется УЖЕ с валидным refresh_token — пароль
+    # принят) → креды сохраняем (инвариант «transient не удаляет креды»).
     for r in (
         None,
-        EResult.InvalidPassword,
+        EResult.OK,
         EResult.TryAnotherCM,
         EResult.ServiceUnavailable,
         EResult.Timeout,
+        EResult.Busy,
     ):
         assert _should_clear_session_after_rsa(r) is False, r
 
