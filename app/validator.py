@@ -48,6 +48,10 @@ def _check_file_paths(cfg: Config) -> list[str]:
 
 
 _MAX_CONCURRENT_LIMIT = 20  # разумный потолок; выше — почти наверняка опечатка
+# Щедрые потолки длительностей — реальные конфиги не задевают, но ловят
+# типо-валидную опечатку (напр. idle 10^9с ≈ 31 год), иначе тихо вешающую boost.
+_MAX_IDLE_DURATION = 86400  # сек (1 сутки idle на игру — уже абсурд)
+_MAX_LAUNCH_STAGGER = 3600  # сек (1 час между стартами в батче — абсурд)
 
 
 def _check_numeric_bounds(cfg: Config) -> list[str]:
@@ -80,6 +84,11 @@ def _check_numeric_bounds(cfg: Config) -> list[str]:
             f"playtime_idle_duration must be >= 1 second "
             f"(got {cfg.playtime_idle_duration})"
         )
+    elif cfg.playtime_idle_duration > _MAX_IDLE_DURATION:
+        errors.append(
+            f"playtime_idle_duration too high: {cfg.playtime_idle_duration} "
+            f"(max {_MAX_IDLE_DURATION})"
+        )
     if cfg.playtime_target_minutes < 1:
         errors.append(
             f"playtime_target_minutes must be >= 1 "
@@ -91,6 +100,11 @@ def _check_numeric_bounds(cfg: Config) -> list[str]:
         errors.append(
             f"launch_stagger must be a finite number >= 0 "
             f"(got {cfg.launch_stagger})"
+        )
+    elif cfg.launch_stagger > _MAX_LAUNCH_STAGGER:
+        errors.append(
+            f"launch_stagger too high: {cfg.launch_stagger} "
+            f"(max {_MAX_LAUNCH_STAGGER})"
         )
     return errors
 
