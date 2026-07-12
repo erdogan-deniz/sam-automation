@@ -15,7 +15,6 @@ from app.validator import (
     _check_numeric_bounds,
     _check_required_fields,
     _check_steam_api,
-    _check_steam_process,
     validate,
 )
 
@@ -132,32 +131,6 @@ def test_bounds_launch_stagger_negative() -> None:
 def test_bounds_playtime_concurrent_zero() -> None:
     errors = _check_numeric_bounds(Config(playtime_concurrent_games=0))
     assert any("playtime_concurrent_games" in e for e in errors)
-
-
-# ── _check_steam_process ──────────────────────────────────────────────────
-
-
-def test_steam_process_running() -> None:
-    proc = MagicMock()
-    proc.name.return_value = "steam.exe"
-    with patch("psutil.process_iter", return_value=[proc]):
-        assert _check_steam_process() == []
-
-
-def test_steam_process_not_running() -> None:
-    proc = MagicMock()
-    proc.name.return_value = "chrome.exe"
-    with patch("psutil.process_iter", return_value=[proc]):
-        errors = _check_steam_process()
-        assert any("Steam is not running" in e for e in errors)
-
-
-def test_steam_process_psutil_raises() -> None:
-    with patch(
-        "psutil.process_iter", side_effect=RuntimeError("access denied")
-    ):
-        errors = _check_steam_process()
-        assert any("Could not check Steam process" in e for e in errors)
 
 
 # ── _check_steam_api ──────────────────────────────────────────────────────

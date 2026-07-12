@@ -16,17 +16,14 @@ from ._constants import (
     _JWT_REFRESH_FILE,
     _KEYRING_2FA_SERVICE,
     _KEYRING_SERVICE,
-    _LEGACY_SESSION_FILE,
     _USERNAME_FILE,
 )
 from .credentials import (
     _ask_keep_credentials,
-    _clear_credentials,
     _clear_session,
     _load_session,
     _load_shared_secret,
     _save_session,
-    _save_shared_secret,
 )
 from .iauth_service import _jwt_web_cookies, _rsa_jwt_login
 from .interactive import _do_interactive_login
@@ -41,18 +38,15 @@ from .totp import _compute_steam_totp
 __all__ = [
     "_CRED_DIR",
     "_USERNAME_FILE",
-    "_LEGACY_SESSION_FILE",
     "_KEYRING_SERVICE",
     "_KEYRING_2FA_SERVICE",
     "_JWT_REFRESH_FILE",
     "_JWT_REFRESH_CLIENT_FILE",
     "_compute_steam_totp",
     "_load_shared_secret",
-    "_save_shared_secret",
     "_load_session",
     "_save_session",
     "_clear_session",
-    "_clear_credentials",
     "_ask_keep_credentials",
     "_save_jwt_refresh",
     "_jwt_from_refresh_token",

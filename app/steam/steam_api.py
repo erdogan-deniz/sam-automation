@@ -39,9 +39,6 @@ def _api_get(url: str) -> dict:
         raise RuntimeError(f"Steam API вернул не-JSON ответ: {e}") from e
 
 
-from .steam_id import resolve_steam_id  # noqa: E402
-
-
 def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
     """Получает список всех игр пользователя.
 
@@ -69,40 +66,3 @@ def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
         return []
 
     return games
-
-
-def fetch_all_game_ids(api_key: str, steam_id_or_url: str) -> list[int]:
-    """Получает App ID ВСЕХ игр пользователя одним запросом (быстро).
-
-    Включает демо, ПО и всё что есть в библиотеке.
-    Не проверяет достижения — обработка займёт секунды вместо минут.
-    """
-    steam_id = resolve_steam_id(api_key, steam_id_or_url)
-
-    games = fetch_owned_games(api_key, steam_id)
-    if not games:
-        return []
-
-    ids = [g["appid"] for g in games]
-    log.info(
-        "Найдено %d ID приложений библиотеки Steam через Steam API", len(ids)
-    )
-    return ids
-
-
-def fetch_badge_app_ids(api_key: str, steam_id: str) -> set[int]:
-    """Возвращает appid всех игр, для которых у аккаунта есть хоть какой-то значок.
-
-    Использует IPlayerService/GetBadges. Нужен для метода A в detect_card_drops.py.
-    """
-    url = (
-        f"{BASE_URL}/IPlayerService/GetBadges/v1"
-        f"?key={api_key}&steamid={steam_id}"
-    )
-    try:
-        data = _api_get(url)
-        badges = data.get("response", {}).get("badges", [])
-        return {b["appid"] for b in badges if "appid" in b}
-    except Exception as e:
-        log.warning("IPlayerService/GetBadges: %s", e)
-        return set()
