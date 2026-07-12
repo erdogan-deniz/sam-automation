@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 
 import psutil
@@ -20,6 +21,13 @@ log = logging.getLogger("sam_automation")
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 LOCK_FILE = _PROJECT_ROOT / "data" / ".sam_run.lock"
+
+# Бюджет ретраев захвата при контеншене за stale-лок: почти одновременные старты
+# могут по очереди мешать друг другу снять мёртвый токен (Windows sharing-
+# violation на unlink под чужим read-хендлом проглатывается). Ретрай до дедлайна
+# расчищает свободный лок, вместо ложного отказа после пары попыток.
+_ACQUIRE_TIMEOUT = 2.0  # сек
+_ACQUIRE_BACKOFF = 0.02  # пауза между попытками (без busy-spin)
 
 
 def _proc_create_time(pid: int) -> str | None:
@@ -79,7 +87,8 @@ def acquire_run_lock(name: str) -> None:
     """
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     token = _own_token(name)
-    for _ in range(2):
+    deadline = time.monotonic() + _ACQUIRE_TIMEOUT
+    while True:
         try:
             fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         except FileExistsError:
@@ -97,18 +106,23 @@ def acquire_run_lock(name: str) -> None:
                     f"первый или дождись его завершения."
                 )
             # Мёртвый/битый/PID-reuse лок — снести (только если содержимое
-            # неизменно: compare-and-delete против гонки с чужим захватом)
-            # и повторить атомарный захват.
+            # неизменно: compare-and-delete против гонки с чужим захватом) и
+            # повторить атомарный захват. Снятие может транзиентно не сработать
+            # (contended unlink → проглоченный sharing-violation); ретраим до
+            # дедлайна, а не сдаёмся после пары попыток на СВОБОДНОМ локе.
+            # RuntimeError отсюда — только при УСТОЙЧИВОЙ гонке (истёк бюджет);
+            # честный отказ по живому владельцу даёт ветка выше.
             _remove_stale_lock(raw)
-            continue
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    "Не удалось захватить run-lock (устойчивая гонка) — повтори."
+                )
+            time.sleep(_ACQUIRE_BACKOFF)
         else:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(token)
             log.debug("Run-lock захвачен: %s (PID %d)", name, os.getpid())
             return
-    raise RuntimeError(
-        "Не удалось захватить run-lock (гонка с другим инстансом) — повтори."
-    )
 
 
 def release_run_lock() -> None:

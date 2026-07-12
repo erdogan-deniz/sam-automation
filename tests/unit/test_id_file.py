@@ -64,6 +64,16 @@ def test_read_ids_ordered_skips_comments(tmp_path: Path) -> None:
     assert read_ids_ordered(f) == [730, 440]
 
 
+def test_read_ids_ordered_dedups_preserving_order(tmp_path: Path) -> None:
+    # INFO: boost — единственный потребитель, полагающийся на порядок; дубль
+    # appid из вручную-правленного all.txt дал бы двойной запуск игры (два
+    # SAM.Game.exe на один appid дерутся за global user). Дедуп по первому
+    # вхождению сохраняет порядок.
+    f = tmp_path / "ids.txt"
+    f.write_text("30\n10\n30\n20\n10\n", encoding="utf-8")
+    assert read_ids_ordered(f) == [30, 10, 20]
+
+
 # ── _append_id ─────────────────────────────────────────────────────────────
 
 
@@ -116,6 +126,32 @@ def test_append_id_write_failure_preserves_existing(
 
     assert f.read_text(encoding="utf-8") == "1\n2\n3\n"  # прогресс не потерян
     assert list(tmp_path.glob("*.tmp")) == []  # tmp-мусор убран
+
+
+def test_append_id_read_failure_preserves_existing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # RA-8: транзиентный сбой ЧТЕНИЯ существующего файла (Windows sharing-
+    # violation от AV/OneDrive на только что перезаписанном файле) не должен
+    # усечь накопленное до одного нового id. _iter_ids глушит ошибку чтения в
+    # пустой набор → безусловная запись стёрла бы всё; _append_id обязан НЕ
+    # переписывать при сбое чтения существующего файла.
+    f = tmp_path / "ids.txt"
+    f.write_text("10\n20\n30\n", encoding="utf-8")
+
+    orig_read_text = Path.read_text
+
+    def flaky_read_text(self: Path, *a: object, **k: object) -> str:
+        if self == f:
+            raise PermissionError(13, "sharing violation")
+        return orig_read_text(self, *a, **k)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    _append_id(f, 40)  # не должно усечь (чтение существующего файла упало)
+
+    monkeypatch.setattr(Path, "read_text", orig_read_text)
+    assert load_ids_file(f) == {10, 20, 30}  # накопленное цело, 40 не дописан
 
 
 # ── _remove_id ─────────────────────────────────────────────────────────────
