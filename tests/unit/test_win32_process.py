@@ -1,8 +1,8 @@
 """Тесты win32_utils: корректность HANDLE (restype) и sentinel снапшота.
 
 HANDLE на 64-битной Windows шире 32 бит. Без явного restype=HANDLE ctypes
-трактует возврат как c_int (32-бит) и обрезает дескриптор — тот же класс
-ловушки, что dpapi.py документирует и лечит (restype=wt.HANDLE).
+трактует возврат как c_int (32-бит) и обрезает дескриптор — фикс: явно
+задавать restype=wt.HANDLE у каждого ctypes-вызова, возвращающего HANDLE.
 """
 
 from __future__ import annotations
