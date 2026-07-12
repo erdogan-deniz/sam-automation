@@ -64,8 +64,13 @@ def load_ids_file(path: Path) -> set[int]:
 
 
 def read_ids_ordered(path: Path) -> list[int]:
-    """Читает текстовый файл с ID, сохраняя порядок; строки с # — комментарии."""
-    return list(_iter_ids(path))
+    """Читает текстовый файл с ID, сохраняя порядок первых вхождений (дедуп).
+
+    Дедуп важен для boost — единственного потребителя, полагающегося на порядок:
+    дубль appid (напр. из вручную-правленного all.txt) иначе дал бы двойной
+    запуск игры (два SAM.Game.exe на один appid дерутся за Steam global user).
+    """
+    return list(dict.fromkeys(_iter_ids(path)))
 
 
 def _read_ids_strict(path: Path) -> set[int]:
