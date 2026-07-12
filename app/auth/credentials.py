@@ -11,6 +11,8 @@ import keyring.errors
 
 from ._constants import (
     _CRED_DIR,
+    _JWT_REFRESH_CLIENT_FILE,
+    _JWT_REFRESH_FILE,
     _KEYRING_2FA_SERVICE,
     _KEYRING_SERVICE,
     _LEGACY_SESSION_FILE,
@@ -96,7 +98,7 @@ def _load_session() -> tuple[str, str] | None:
 
 
 def _clear_session() -> None:
-    """Удаляет пароль из Credential Manager и username-файл. Sentry сохраняется."""
+    """Удаляет пароль (Credential Manager), username-файл и JWT-кэши. Sentry сохраняется."""
     if _USERNAME_FILE.exists():
         username = _USERNAME_FILE.read_text(encoding="utf-8").strip()
         if username:
@@ -106,6 +108,11 @@ def _clear_session() -> None:
                 pass
         _USERNAME_FILE.unlink()
         log.info("Steam CM: учётные данные удалены из Credential Manager")
+    # JWT-кэши тоже сносим: после стирания на достоверно-неверном пароле
+    # short-circuit _jwt_web_cookies (игнорирует username) иначе переиспользовал
+    # бы старый client-scope токен для другого аккаунта на ре-промпте.
+    _JWT_REFRESH_CLIENT_FILE.unlink(missing_ok=True)
+    _JWT_REFRESH_FILE.unlink(missing_ok=True)
 
 
 def _ask_keep_credentials() -> bool:
