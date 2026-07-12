@@ -1,4 +1,4 @@
-"""Пакет Steam: Web API, CM протокол, локальные файлы, реестр, Store API."""
+"""Пакет Steam: Web API, CM протокол, локальные файлы, реестр."""
 
 from .steam_api import fetch_owned_games
 from .steam_cm import get_web_cookies, read_steam_cm_app_ids
