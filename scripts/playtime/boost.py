@@ -95,21 +95,31 @@ def _select_targets(
     all_ids: list[int],
     played: dict[int, int],
     skip: set[int],
+    done: set[int],
     target: int,
     names: dict[int, str],
 ) -> list[dict]:
     """Игры из all_ids, которым нужно набить время (порядок сохранён).
 
-    Пропускает игры из skip и те, у которых известный playtime >= target.
+    skip (exclude_ids ∪ skip.txt) — жёсткий пропуск для любых игр. done (done.txt)
+    — resume-маркер, писанный ТОЛЬКО для unknown-игр, поэтому глушит ТОЛЬКО пока
+    игра всё ещё unknown: как только Steam API снова отдаёт по ней playtime (стала
+    known), гейтим её по played/target и игнорируем устаревший done. Это чинит
+    переход unknown→known и делает самоисцеляющимся транзиентно-пустой owned
+    (RA-A: иначе весь набитый вслепую в слепом прогоне список глушился навсегда).
     Для игр без известного playtime (нет в `played`) считаем 0 — их идлим.
     """
     out: list[dict] = []
     for appid in all_ids:
         if appid in skip:
             continue
+        known = appid in played
         pt = played.get(appid, 0)
-        if pt >= target:
-            continue
+        if known:
+            if pt >= target:
+                continue  # known & набрана — истина по API
+        elif appid in done:
+            continue  # unknown & уже набивали вслепую — resume-пропуск
         out.append(
             {
                 "appid": appid,
@@ -117,45 +127,54 @@ def _select_targets(
                 "playtime_forever": pt,
                 # known=True → Steam API отдаёт playtime, факт проверяется по API
                 # (в done.txt не пишем); False → проверить нельзя, пишем в done.
-                "known": appid in played,
+                "known": known,
             }
         )
     return out
 
 
-def _fetch_targets(cfg: Any, steam_id: str) -> list[dict]:
-    """Все игры из all.txt, которым нужно набить время.
+def _fetch_targets(cfg: Any, steam_id: str) -> tuple[list[dict], bool]:
+    """Игры из all.txt к набивке + признак «слепого» прогона (blind).
 
     Вселенная — `all.txt` (полная библиотека). Steam Web API даёт playtime
     только для части игр; известные с playtime >= target пропускаем, остальные
     (в т.ч. free/демо/лицензии без данных API) идлим вслепую один раз.
-    Пропускаем exclude_ids, playtime/skip.txt (не подключаются) и
-    playtime/done.txt (уже набили — resume).
+    exclude_ids и playtime/skip.txt — жёсткий пропуск; playtime/done.txt —
+    resume только для игр, всё ещё unknown (см. _select_targets).
+
+    Returns:
+        (games, blind) — blind=True, если owned-games API вернул пусто: тогда
+        проверить нельзя НИЧЕГО, и вызывающий не персистит done (RA-A).
     """
     all_ids = read_ids_ordered(ALL_IDS_FILE)
     played = {
         g["appid"]: g.get("playtime_forever", 0)
         for g in fetch_owned_games(cfg.steam_api_key, steam_id)
     }
-    if all_ids and not played:
-        # Owned-games API пуст при непустой библиотеке — почти наверняка
-        # приватные Game details (validate дёргает GetPlayerSummaries, не
-        # GetOwnedGames, и это пропускает). Тогда ВСЕ игры считаются unknown и
-        # набиваются вслепую (done без проверки playtime). Не абортим (аккаунт
-        # может быть полностью на Family Share), но громко предупреждаем.
+    blind = not played
+    if all_ids and blind:
+        # Owned-games API пуст при непустой библиотеке — приватные Game details
+        # ЛИБО транзиентно-битый ответ (validate дёргает GetPlayerSummaries, не
+        # GetOwnedGames, и это пропускает). Тогда ВСЕ игры считаются unknown.
+        # Не абортим (аккаунт может быть полностью на Family Share), но громко
+        # предупреждаем И не персистим done (blind=True) — иначе один слепой
+        # прогон навсегда пометил бы done всю библиотеку (RA-A).
         log.warning(
             "Steam API не вернул owned-games при непустой all.txt — ВСЕ игры "
-            "считаются unknown и набиваются вслепую. Проверь приватность "
-            "профиля (Game details должны быть публичны)."
+            "считаются unknown и набиваются вслепую (прогресс НЕ сохраняется). "
+            "Проверь приватность профиля (Game details должны быть публичны)."
         )
-    skip = (
-        set(cfg.exclude_ids)
-        | load_playtime_skip_ids()
-        | load_playtime_done_ids()
+    skip = set(cfg.exclude_ids) | load_playtime_skip_ids()
+    done = load_playtime_done_ids()
+    games = _select_targets(
+        all_ids,
+        played,
+        skip,
+        done,
+        cfg.playtime_target_minutes,
+        load_game_names(),
     )
-    return _select_targets(
-        all_ids, played, skip, cfg.playtime_target_minutes, load_game_names()
-    )
+    return games, blind
 
 
 def _report_result(
@@ -188,8 +207,13 @@ def _report_result(
     send_telegram(f"{mark} Playtime boost — {head}: {detail}", cfg)
 
 
-def _boost_loop(games: list[dict], cfg: Any) -> None:
-    """Batch-цикл: запустить N игр → ждать playtime_idle_duration → убить всех → следующий батч."""
+def _boost_loop(games: list[dict], cfg: Any, persist_done: bool = True) -> None:
+    """Batch-цикл: запустить N игр → ждать playtime_idle_duration → убить всех → следующий батч.
+
+    persist_done=False (слепой прогон, owned-games пуст) → unknown-выжившие НЕ
+    пишутся в done.txt: проверить нечем, а один слепой прогон иначе навсегда
+    пометил бы done всю библиотеку (RA-A, инвариант «unverified → НЕ done»).
+    """
     total = len(games)
     boosted_count = 0
     failed_count = 0
@@ -255,8 +279,9 @@ def _boost_loop(games: list[dict], cfg: Any) -> None:
                 )
             for appid in survivors:
                 # known гейтятся по реальному playtime_forever через API —
-                # в done.txt их не пишем; unknown проверить нельзя → resume.
-                if appid not in known_ids:
+                # в done.txt их не пишем; unknown проверить нельзя → resume
+                # (но только в НЕслепом прогоне: persist_done, RA-A).
+                if persist_done and appid not in known_ids:
                     mark_playtime_done(appid)
                 log.info("[%d] Закрыт", appid)
 
@@ -336,7 +361,7 @@ def main() -> None:
 
     log.info("Собираю игры для набивки из all.txt (вся библиотека)...")
     try:
-        games = _fetch_targets(cfg, steam_id)
+        games, blind = _fetch_targets(cfg, steam_id)
     except RuntimeError as e:
         log.error("Не удалось собрать список игр: %s", e)
         sys.exit(1)
@@ -363,7 +388,7 @@ def main() -> None:
             print(f"{g['appid']:>10}  [{pt:>3} мин]  —  {g.get('name', '?')}")
         sys.exit(0)
 
-    _boost_loop(games, cfg)
+    _boost_loop(games, cfg, persist_done=not blind)
 
 
 if __name__ == "__main__":
