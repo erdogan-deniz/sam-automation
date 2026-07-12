@@ -87,6 +87,57 @@ def test_boost_loop_marks_done_skip_and_spares_known(monkeypatch):
     assert seen["idle"] == 7
 
 
+def test_boost_loop_blind_run_does_not_persist_done(monkeypatch):
+    # RA-A: persist_done=False (слепой прогон, пустой owned-games) → выжившие
+    # НЕ пишутся в done.txt. Транзиентно-пустой GetOwnedGames больше не травит
+    # всю библиотеку (инвариант «unverified → НЕ done»).
+    done: list[int] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", done.append)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg(), persist_done=False)
+
+    assert done == []  # слепой прогон ничего не хоронит в done
+
+
+def test_boost_loop_persist_done_true_marks_unknown(monkeypatch):
+    # Контроль: не-слепой прогон (persist_done=True, дефолт) — unknown-выживший
+    # ПИШЕТСЯ в done как обычно.
+    done: list[int] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", done.append)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg(), persist_done=True)
+
+    assert done == [10]
+
+
 def test_boost_loop_known_failure_not_written_to_skip(monkeypatch):
     # H1: провал KNOWN-игры НЕ пишется в skip (истина по Steam API — ретрай на
     # следующем прогоне); в skip уходят только unknown-провалы.
@@ -231,6 +282,76 @@ def test_boost_loop_ctrl_c_during_launch_kills_all_sam(monkeypatch):
     boost._boost_loop(games, _cfg())  # не должно пробросить наружу
 
     assert swept == [True]  # страховка добила процессы
+
+
+def test_boost_loop_kill_process_raises_still_sweeps_and_reports(monkeypatch):
+    # RA-C: не-KI из kill_process в teardown (Windows proc.kill()→PermissionError
+    # в гонке терминации) НЕ должен пропустить бэкстоп kill_all_sam_games (сироты)
+    # и НЕ должен пропустить честный _report_result.
+    swept: list[bool] = []
+    tg: list[str] = []
+
+    def bad_kill(proc):
+        raise PermissionError("terminate race")
+
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "kill_process", bad_kill)
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: swept.append(True))
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text)
+    )
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # не должно пробросить PermissionError
+
+    assert swept == [True]  # бэкстоп добил сирот несмотря на сбой kill_process
+    assert tg and "обработано" in tg[-1]  # честный отчёт не потерян
+
+
+def test_boost_loop_kill_all_raises_still_reports(monkeypatch):
+    # RA-C: не-KI из самого kill_all_sam_games НЕ должен пропустить _report_result.
+    tg: list[str] = []
+
+    def bad_sweep():
+        raise OSError("win32 sweep fail")
+
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", bad_sweep)
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text)
+    )
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # не должно пробросить OSError
+
+    assert tg  # отчёт не потерян даже при сбое бэкстопа
 
 
 def test_boost_loop_second_ctrl_c_during_teardown_retries_sweep(monkeypatch):
@@ -379,3 +500,43 @@ def test_boost_loop_all_failed_report_no_success_mark(monkeypatch):
     boost._boost_loop(games, _cfg())
 
     assert tg and "✅" not in tg[-1]  # провал всех — не success
+
+
+# ── RA-10: прямая матрица _report_result (все 4 ветки status × failed) ────────
+
+
+def _capture_report(monkeypatch):  # type: ignore[no-untyped-def]
+    tg: list[str] = []
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text)
+    )
+    return tg
+
+
+def test_report_result_ok_clean_is_success(monkeypatch):
+    tg = _capture_report(monkeypatch)
+    boost._report_result("ok", boosted=5, failed=0, total=5, cfg=object())
+    assert "✅" in tg[-1] and "готово" in tg[-1]
+
+
+def test_report_result_ok_with_failures_is_warning(monkeypatch):
+    tg = _capture_report(monkeypatch)
+    boost._report_result("ok", boosted=3, failed=2, total=5, cfg=object())
+    assert "✅" not in tg[-1] and "оговорками" in tg[-1]
+
+
+def test_report_result_interrupted_is_warning(monkeypatch):
+    tg = _capture_report(monkeypatch)
+    boost._report_result(
+        "interrupted", boosted=1, failed=0, total=5, cfg=object()
+    )
+    assert "✅" not in tg[-1] and "Ctrl+C" in tg[-1]
+
+
+def test_report_result_error_is_warning(monkeypatch):
+    # RA-10: ветка error раньше не пиннилась прямым ассертом честности —
+    # регрессия ok=True на error-пути прошла бы весь сьют.
+    tg = _capture_report(monkeypatch)
+    boost._report_result("error", boosted=0, failed=0, total=5, cfg=object())
+    assert "✅" not in tg[-1] and "ошибкой" in tg[-1]

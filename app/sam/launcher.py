@@ -103,10 +103,13 @@ def idle_and_split_survivors(
     # Положительный шаг гарантирует прогресс к deadline (иначе busy-loop/hang).
     poll_interval = max(poll_interval, 0.1)
     failed: list[int] = []
-    deadline = time.time() + idle_duration
+    # Монотонные часы: настенные time.time() на Windows немонотонны (NTP-ресинк,
+    # возврат из suspend/VM-snapshot). Скачок вперёд > остатка idle иначе рвёт
+    # idle-окно → ложный ранний выход → unknown-выживший ложно помечается done.
+    deadline = time.monotonic() + idle_duration
     checked_once = False
-    while active and (not checked_once or time.time() < deadline):
-        remaining = deadline - time.time()
+    while active and (not checked_once or time.monotonic() < deadline):
+        remaining = deadline - time.monotonic()
         if remaining > 0:
             time.sleep(min(poll_interval, remaining))
         checked_once = True
