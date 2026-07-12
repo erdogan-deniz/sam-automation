@@ -173,3 +173,80 @@ def test_read_api_ids_name_save_failure_keeps_ids(
     # Сбой записи имён не должен ронять список App ID.
     result = scan._read_api_ids("key", _STEAM_ID)
     assert result == [730, 440]
+
+
+# ── (f) floor-guard: граница ровно 50% (гард от регрессии `<`→`<=`) ─────────
+
+
+def test_floor_guard_boundary_exactly_half_is_allowed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prev = "\n".join(str(i) for i in range(1, 11)) + "\n"  # 10 ID
+    all_path = _setup(
+        monkeypatch, tmp_path, vdf=[1, 2, 3, 4, 5], api=[], cm=[], all_txt=prev
+    )
+    scan.main(allow_shrink=False)  # 5 == 0.5*10, строгое `<` → проходит
+    assert all_path.read_text(encoding="utf-8") == "1\n2\n3\n4\n5\n"
+
+
+# ── (g) resolve_steam_id: отказ → чистый exit(1), пустой id → не резолвим ───
+
+
+def test_resolve_runtimeerror_exits_without_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    all_path = _setup(monkeypatch, tmp_path, vdf=[10], api=[], cm=[])
+
+    def _boom(key: str, sid: str) -> str:
+        raise RuntimeError("vanity resolve failed")
+
+    monkeypatch.setattr(scan, "resolve_steam_id", _boom)
+    with pytest.raises(SystemExit) as exc:
+        scan.main()
+    assert exc.value.code == 1
+    assert not all_path.exists()
+
+
+def test_resolve_keyerror_exits_cleanly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # resolve_vanity_url делает resp["steamid"]; аномальный ответ Steam
+    # (success==1 без steamid) → KeyError. Должен дать чистый exit(1), не трейс.
+    all_path = _setup(monkeypatch, tmp_path, vdf=[10], api=[], cm=[])
+
+    def _boom(key: str, sid: str) -> str:
+        raise KeyError("steamid")
+
+    monkeypatch.setattr(scan, "resolve_steam_id", _boom)
+    with pytest.raises(SystemExit) as exc:
+        scan.main()
+    assert exc.value.code == 1
+    assert not all_path.exists()
+
+
+def test_empty_steam_id_does_not_call_resolve(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Пустой steam_id НЕ резолвим (иначе лишний сетевой вызов вместо локальной
+    # ошибки validate «steam_id is missing»).
+    _setup(monkeypatch, tmp_path, vdf=[10], api=[], cm=[])
+    monkeypatch.setattr(
+        scan, "load_config", lambda: Config(steam_api_key="key", steam_id="")
+    )
+    called = {"resolve": False}
+
+    def _track(key: str, sid: str) -> str:
+        called["resolve"] = True
+        return sid
+
+    monkeypatch.setattr(scan, "resolve_steam_id", _track)
+    scan.main()  # validate замокан no-op → main завершится
+    assert called["resolve"] is False
+
+
+# ── (h) CLI: разбор --allow-shrink ─────────────────────────────────────────
+
+
+def test_parse_args_allow_shrink_flag() -> None:
+    assert scan._parse_args([]).allow_shrink is False
+    assert scan._parse_args(["--allow-shrink"]).allow_shrink is True
