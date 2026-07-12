@@ -202,13 +202,6 @@ def _valid_cfg() -> Config:
     return Config(steam_api_key="key", steam_id="76561198000000000")
 
 
-def _steam_running() -> AbstractContextManager:
-    """Патч psutil.process_iter, имитирующий запущенный steam.exe."""
-    proc = MagicMock()
-    proc.name.return_value = "steam.exe"
-    return patch("psutil.process_iter", return_value=[proc])
-
-
 def _api_ok() -> AbstractContextManager:
     """Патч urllib.request.urlopen с успешным ответом Steam API."""
     body = b'{"response":{"players":[{"steamid":"76561198000000000"}]}}'
@@ -217,7 +210,7 @@ def _api_ok() -> AbstractContextManager:
 
 def test_validate_passes_with_valid_config() -> None:
     cfg = _valid_cfg()
-    with _steam_running(), _api_ok():
+    with _api_ok():
         validate(cfg)  # must not raise or exit
 
 
@@ -236,31 +229,17 @@ def test_validate_exits_on_missing_steam_id() -> None:
 def test_validate_phase2_skipped_when_phase1_fails() -> None:
     cfg = Config()
     with (
-        patch("psutil.process_iter") as mock_psutil,
         patch("urllib.request.urlopen") as mock_urlopen,
         pytest.raises(SystemExit),
     ):
         validate(cfg)
-    mock_psutil.assert_not_called()
     mock_urlopen.assert_not_called()
-
-
-def test_validate_exits_when_steam_not_running() -> None:
-    cfg = _valid_cfg()
-    proc = MagicMock()
-    proc.name.return_value = "explorer.exe"
-    with (
-        patch("psutil.process_iter", return_value=[proc]),
-        pytest.raises(SystemExit),
-    ):
-        validate(cfg)
 
 
 def test_validate_exits_on_invalid_api_key() -> None:
     cfg = _valid_cfg()
     body = b'{"response":{"players":[]}}'
     with (
-        _steam_running(),
         patch("urllib.request.urlopen", return_value=_make_response(body)),
         pytest.raises(SystemExit),
     ):
