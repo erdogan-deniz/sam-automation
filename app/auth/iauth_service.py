@@ -55,7 +55,11 @@ def _guard_action(confirmation_type: int) -> str:
 
 
 def _jwt_web_cookies(
-    username: str, password: str, *, for_steam_client: bool = False
+    username: str,
+    password: str,
+    *,
+    for_steam_client: bool = False,
+    _outcome: list[Any] | None = None,
 ) -> dict | None:
     """Получает JWT-токен через IAuthenticationService (CM unified messages).
 
@@ -184,6 +188,10 @@ def _jwt_web_cookies(
             return None
 
         if begin.header.eresult != EResult.OK:
+            if _outcome is not None:
+                # Authoritative-вердикт сервера (в т.ч. InvalidPassword): даёт
+                # вызывающему отличить достоверный отказ пароля от None-сбоя.
+                _outcome.append(begin.header.eresult)
             log.warning(
                 "IAuthService: BeginAuthSessionViaCredentials ошибка: %s (%s)",
                 begin.header.eresult,
@@ -332,12 +340,23 @@ def _rsa_jwt_login(
     access_token CM отвергает с AccessDenied).
 
     Returns:
-        EResult входа в CM (OK при успехе) либо None, если RSA-этап не дал
-        токена (неверный пароль/2FA/сетевая ошибка — см. логи _jwt_web_cookies).
+        EResult входа в CM (OK при успехе); EResult.InvalidPassword, если
+        СОВРЕМЕННЫЙ Begin-путь достоверно отверг пароль (сигнал вызывающему
+        стереть сессию); либо None, если RSA-этап не дал токена по
+        неопределённой причине (2FA/сетевая ошибка — см. логи _jwt_web_cookies).
     """
     # for_steam_client=True: токен SteamClient-scope, иначе CM даёт AccessDenied.
-    cookies = _jwt_web_cookies(username, password, for_steam_client=True)
+    # _outcome ловит authoritative-вердикт Begin: достоверный InvalidPassword
+    # отличаем от None-сбоя (сеть/таймаут) — только он оправдывает удаление кред.
+    outcome: list[Any] = []
+    cookies = _jwt_web_cookies(
+        username, password, for_steam_client=True, _outcome=outcome
+    )
     if not cookies:
+        if outcome and getattr(outcome[-1], "name", None) == "InvalidPassword":
+            from steam.enums import EResult
+
+            return EResult.InvalidPassword
         return None
     refresh_token = cookies.get("refresh_token")
     if not refresh_token:
