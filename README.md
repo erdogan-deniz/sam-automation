@@ -150,10 +150,8 @@ sam-automation/
 │   │   └── farm.py         # Idle games to collect card drops
 │   ├── playtime/
 │   │   └── boost.py        # Boost low-playtime games via short SAM sessions
-│   ├── ci/
-│   │   └── check_version.py  # Release version-invariant gate (run by CI)
-│   └── diag/
-│       └── dump_sam_window.py  # UIA window dump for SAM debugging
+│   └── ci/
+│       └── check_version.py  # Release version-invariant gate (run by CI)
 ├── data/                   # Runtime state (gitignored)
 │   └── games/
 │       ├── names.json      # AppID → game name cache
