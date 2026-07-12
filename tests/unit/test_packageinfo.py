@@ -65,3 +65,24 @@ def test_first_broken_package_does_not_abort(tmp_path, monkeypatch):
     result = pkgmod.expand_packages_to_apps(str(steam_path), {1, 2})
 
     assert result == [20]
+
+
+def test_stream_level_corruption_returns_partial(tmp_path, monkeypatch):
+    # Повреждение на уровне ПОТОКА (генератор рушится в середине итерации), а не
+    # отдельного пакета: уже распарсенное возвращается, а не теряются ВСЕ CM-игры
+    # (иначе исключение всплывает мимо per-package try/except).
+    steam_path = _mk_pkginfo(tmp_path)
+    good = {"packageid": 1, "data": {"1": {"appids": {"0": 10}}}}
+
+    def _bad_gen():
+        yield good
+        raise ValueError("corrupt binary stream")
+
+    def fake_parse(_f):
+        return ({}, _bad_gen())
+
+    monkeypatch.setattr("steam.utils.appcache.parse_packageinfo", fake_parse)
+
+    result = pkgmod.expand_packages_to_apps(str(steam_path), {1})
+
+    assert result == [10]
