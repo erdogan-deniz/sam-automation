@@ -22,6 +22,13 @@ def test_base_value_converts_to_zero() -> None:
     assert steamid64_to_id3(str(STEAM_ID64_BASE)) == 0
 
 
+def test_unicode_digit_raises_samerror_not_valueerror() -> None:
+    # '²'.isdigit()==True, но int('²') бросает ValueError → раньше сырой краш
+    # читателя всей библиотеки. Гвард должен дать SAMError (isdecimal, не isdigit).
+    with pytest.raises(SAMError):
+        steamid64_to_id3("²")
+
+
 def test_known_conversion() -> None:
     # 76561198000000000 — просто известное значение
     steam_id64 = 76561198000000000

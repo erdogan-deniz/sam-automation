@@ -151,3 +151,29 @@ def test_yes_russian_da_retries(monkeypatch):
 
     assert result == EResult.OK
     assert len(client.login_calls) == 2
+
+
+# ── rsa_tried сбрасывается на новом пароле (опечатка → исправление) ─────────
+
+
+def test_rsa_retried_after_password_reprompt(monkeypatch):
+    # Modern-auth: legacy login ВСЕГДА InvalidPassword. Опечатка на попытке 1
+    # тратит единственную RSA-попытку; исправленный пароль на попытке 2 ДОЛЖЕН
+    # снова получить RSA (иначе ложный InvalidPassword — legacy отвергнет верный
+    # пароль modern-аккаунта). rsa_tried сбрасывается на новом вводе пароля.
+    rsa_calls = {"n": 0}
+
+    def _fake_rsa(client, user, pw, timeout):
+        rsa_calls["n"] += 1
+        return EResult.OK if rsa_calls["n"] >= 2 else EResult.InvalidPassword
+
+    monkeypatch.setattr(interactive, "_rsa_jwt_login", _fake_rsa)
+    pw_iter = iter(["typo", "correct"])
+    monkeypatch.setattr(interactive, "_getpass_stars", lambda _p: next(pw_iter))
+    client = _FakeClient([EResult.InvalidPassword])
+
+    result, _user, pw = interactive._do_interactive_login(client, "user")
+
+    assert result == EResult.OK
+    assert rsa_calls["n"] == 2  # RSA повторён на исправленном пароле
+    assert pw == "correct"
