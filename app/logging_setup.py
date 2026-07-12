@@ -38,7 +38,8 @@ def setup_logging(
 ) -> logging.Logger:
     """Настраивает корневой логгер с выводом в консоль и файл.
 
-    Файл создаётся в logs/<category>/<name>_TIMESTAMP.log.
+    Файл создаётся в logs/<category>/TIMESTAMP.log (или logs/<name>/, если
+    category пуст — name задаёт каталог, в имя файла он не входит).
     """
     log_dir = LOG_DIR / category if category else LOG_DIR / name
     log_dir.mkdir(parents=True, exist_ok=True)

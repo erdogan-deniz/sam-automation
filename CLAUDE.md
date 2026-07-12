@@ -73,7 +73,8 @@ pytest tests/unit -q       # только tests/unit; интеграционны
 
 - Логи: `app/logging_setup.py` — `SEPARATOR = ═×80`; заголовки `centered()`
   центрируются по **width=70** (не 80); формат `[%H:%M:%S] LEVEL msg`; файлы
-  `logs/<category>/<name>_TIMESTAMP.log`, UTF-8; логгер идемпотентный `sam_automation`.
+  `logs/<category>/TIMESTAMP.log` (или `logs/<name>/`, если category пуст —
+  `name` в имя файла НЕ входит), UTF-8; логгер идемпотентный `sam_automation`.
 - id-файлы всегда численно отсортированы (`app/id_file.py::_append_id`).
 - Исключения: всё наследует `SAMError` (`app/exceptions.py`).
 - Уведомления (`app/notify.py`): `toast()` — локальный Windows-toast;
