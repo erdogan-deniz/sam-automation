@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 import os
 import urllib.request
+from collections.abc import Callable
+from typing import Any
 
 # steam использует protobuf 3.x API; при наличии protobuf 4.x нужен python-режим
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
@@ -123,6 +125,48 @@ def _should_clear_session_after_rsa(rsa_result) -> bool:
     сохранить креды и пропустить CM (скан идёт по localconfig + Steam API).
     """
     return False
+
+
+def _login_saved_with_2fa(
+    do_login: Callable[[str], Any],
+    auto_code: str | None,
+    prompt_code: Callable[[], str],
+    ok_result: Any,
+) -> Any:
+    """2FA-логин по сохранённым кредам: авто-TOTP, при отказе — ручной ретрай.
+
+    Раньше при наличии shared_secret неверный авто-код (перекос часов) сразу
+    давал провал без ручного fallback. Здесь до 2 попыток: первая — авто-код
+    (если есть), иначе ручной ввод; при отклонении откат на ручной ввод.
+
+    Args:
+        do_login:    выполняет вход с переданным 2FA-кодом → EResult | None
+                     (None = таймаут подключения).
+        auto_code:   авто-TOTP из shared_secret (None если секрета нет).
+        prompt_code: запрашивает код у пользователя (ручной ввод).
+        ok_result:   значение EResult.OK для сравнения.
+
+    Returns:
+        ok_result при успехе; None при таймауте (прокидывается наружу);
+        последний неуспешный EResult, если все попытки отклонены.
+    """
+    code = auto_code
+    if auto_code is not None:
+        log.info("Steam CM: 2FA код сгенерирован автоматически")
+
+    result: Any = None
+    for _try in range(2):
+        if code is None:
+            code = prompt_code()
+        result = do_login(code)
+        if result is None or result == ok_result:
+            return result
+        log.warning(
+            "Steam CM: 2FA код отклонён (%s)",
+            getattr(result, "name", result),
+        )
+        code = None  # следующая попытка — только ручной ввод
+    return result
 
 
 # Публичный API модуля
@@ -272,20 +316,23 @@ def read_steam_cm_app_ids(
             # Mobile Authenticator: пароль принят, Steam требует 2FA
             if result == EResult.AccountLoginDeniedNeedTwoFactor:
                 shared = _load_shared_secret(saved_username)
-                two_factor_code = (
-                    _compute_steam_totp(shared) if shared else None
-                )
-                if two_factor_code:
-                    log.info("Steam CM: 2FA код сгенерирован автоматически")
-                else:
+                auto_code = _compute_steam_totp(shared) if shared else None
+
+                def _do_2fa_login(code: str) -> Any:
+                    return _login_with_timeout(
+                        saved_username, saved_password, two_factor_code=code
+                    )
+
+                def _prompt_2fa() -> str:
                     print()
-                    two_factor_code = input(
-                        "[Steam Client Master] Введите 2FA код учётной записи Steam: "
+                    return input(
+                        "[Steam Client Master] Введите 2FA код учётной записи "
+                        "Steam: "
                     ).strip()
-                result = _login_with_timeout(
-                    saved_username,
-                    saved_password,
-                    two_factor_code=two_factor_code,
+
+                # Неверный авто-код (перекос часов) → откат на ручной ввод.
+                result = _login_saved_with_2fa(
+                    _do_2fa_login, auto_code, _prompt_2fa, EResult.OK
                 )
 
                 if result is None:

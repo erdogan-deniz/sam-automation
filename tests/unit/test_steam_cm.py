@@ -166,3 +166,84 @@ def test_read_cm_disconnects_on_exception(monkeypatch):
         steam_cm.read_steam_cm_app_ids("C:/steam", "user", interactive=True)
 
     assert created["client"].disconnect_calls >= 1
+
+
+# ── _login_saved_with_2fa: авто-TOTP с откатом на ручной ввод ──────────────
+
+
+def test_2fa_auto_ok_no_manual():
+    # Верный авто-код → OK, ручной ввод не запрашивается.
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return EResult.OK
+
+    def prompt():
+        raise AssertionError("ручной ввод не должен вызываться")
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, "AUTO", prompt, EResult.OK
+    )
+    assert result == EResult.OK
+    assert calls == ["AUTO"]
+
+
+def test_2fa_auto_wrong_falls_back_to_manual():
+    # Неверный авто-код (перекос часов) → откат на ручной ввод, затем OK.
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return EResult.OK if code == "MANUAL" else EResult.TwoFactorCodeMismatch
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, "AUTO", lambda: "MANUAL", EResult.OK
+    )
+    assert result == EResult.OK
+    assert calls == ["AUTO", "MANUAL"]  # авто первым, потом ручной
+
+
+def test_2fa_no_shared_uses_manual():
+    # Нет shared_secret (auto_code None) → сразу ручной ввод.
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return EResult.OK
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, None, lambda: "TYPED", EResult.OK
+    )
+    assert result == EResult.OK
+    assert calls == ["TYPED"]
+
+
+def test_2fa_timeout_returns_none_immediately():
+    # do_login вернул None (таймаут) → возврат None сразу, без ретрая.
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return None
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, "AUTO", lambda: "MANUAL", EResult.OK
+    )
+    assert result is None
+    assert calls == ["AUTO"]
+
+
+def test_2fa_all_wrong_returns_last_result():
+    # Все попытки неверны → возврат последнего неуспеха (не виснем).
+    calls: list[str] = []
+
+    def do_login(code):
+        calls.append(code)
+        return EResult.TwoFactorCodeMismatch
+
+    result = steam_cm._login_saved_with_2fa(
+        do_login, "AUTO", lambda: "MANUAL", EResult.OK
+    )
+    assert result == EResult.TwoFactorCodeMismatch
+    assert calls == ["AUTO", "MANUAL"]
