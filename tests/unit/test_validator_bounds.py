@@ -42,6 +42,22 @@ def test_playtime_concurrent_zero_is_error() -> None:
     assert validator._check_numeric_bounds(_cfg(playtime_concurrent_games=0))
 
 
+def test_launch_stagger_negative_is_error() -> None:
+    # time.sleep(negative) → ValueError крашит батч.
+    assert validator._check_numeric_bounds(_cfg(launch_stagger=-1.0))
+
+
+def test_launch_stagger_nan_is_error() -> None:
+    # RA-6: nan < 0 == False → проскакивал guard >= 0 → time.sleep(nan)
+    # ValueError крашит батч. Отбраковываем не-конечные явно.
+    assert validator._check_numeric_bounds(_cfg(launch_stagger=float("nan")))
+
+
+def test_launch_stagger_inf_is_error() -> None:
+    # RA-6: inf проходит guard и уводит time.sleep(inf) в вечный сон.
+    assert validator._check_numeric_bounds(_cfg(launch_stagger=float("inf")))
+
+
 def test_valid_bounds_no_error() -> None:
     errs = validator._check_numeric_bounds(
         _cfg(
