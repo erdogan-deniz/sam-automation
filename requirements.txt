@@ -15,7 +15,7 @@ psutil>=5.9             # Process enumeration (check if Steam is running)
 # ── Security ─────────────────────────────────────────────────────────────────
 keyring>=23.0           # Windows Credential Manager (store Steam password)
 protobuf>=3.19,<4      # Protocol Buffers (used by steam library)
-pycryptodome>=3.18      # RSA encryption for Steam IAuthenticationService login
+pycryptodomex>=3.18     # RSA encryption for Steam IAuthenticationService login (Cryptodome namespace)
 
 # ── Browser Automation ────────────────────────────────────────
 playwright>=1.40        # CDP cookie extraction (bypasses v20 Chrome encryption)
