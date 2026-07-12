@@ -67,6 +67,24 @@ def test_first_broken_package_does_not_abort(tmp_path, monkeypatch):
     assert result == [20]
 
 
+def test_broken_owned_package_counted_as_missing(tmp_path, monkeypatch, caplog):
+    # Битый ВЛАДЕЕМЫЙ пакет должен считаться «пропущенным» в логе (раньше
+    # found_pkgs++ шёл ДО разбора → пакет ложно числился найденным, missing=0).
+    import logging
+
+    steam_path = _mk_pkginfo(tmp_path)
+    good = {"packageid": 1, "data": {"1": {"appids": {"0": 10}}}}
+    broken = {"packageid": 2, "data": None}  # owned, но .get на None → ошибка
+    _patch_parse(monkeypatch, [good, broken])
+
+    with caplog.at_level(logging.INFO, logger="sam_automation"):
+        result = pkgmod.expand_packages_to_apps(str(steam_path), {1, 2})
+
+    assert result == [10]
+    # owned={1,2}, успешно разобран только good → пропущен 1.
+    assert "пропущено пакетов: 1" in caplog.text
+
+
 def test_stream_level_corruption_returns_partial(tmp_path, monkeypatch):
     # Повреждение на уровне ПОТОКА (генератор рушится в середине итерации), а не
     # отдельного пакета: уже распарсенное возвращается, а не теряются ВСЕ CM-игры
