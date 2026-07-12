@@ -26,7 +26,7 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 - C (весь блок): оркестрация в толстых scripts/* (scan 162 / achievements/farm 303 / playtime/boost 281 / cards/farm 245) → вынести в app; дублирование get_web_cookies; cross-subpackage приватные импорты; гибридный фасад app/cookies/__init__.py; app.steam не листовой. РИСК money-path → сначала дизайн, правки по TDD.
 - D: сверить config-таблицу README с app/config.py; ручное дерево структуры диффать против реальных app/scripts.
 - E (весь блок): пробелы в тестах — app/cookies/* (весь, крупнейший), app/steam (steam_api/steam_id/packageinfo), app/auth (credentials/interactive), app/cards (card_cache/card_checker), app/sam/picker_session. Закрывать написанием тестов по TDD.
-- F: дубли имён (scan.py×2, farm.py×2, stats×2) — информационно.
+- F: дубли имён (farm.py×2: scripts/achievements/ и scripts/cards/) — информационно. (scan.py×2 и stats×2 больше нет — cards/scan.py, stats.py, app/stats.py удалены в v1.9.x.)
 
 # ЗАДАЧА
 Провести аудит <<область / весь проект / перед релизом>> репозитория sam-automation на предмет мусора и структурных неточностей. Составить ранжированный по severity отчёт с доказательствами (файл:строка) и предложениями. НЕ удалять и НЕ рефакторить ничего до подтверждения находки и согласия. Дефолт — репортить, а не резать с ходу. Помни урок v1.3.0: перед релизом сверяй VERSION ↔ последний тег vX.Y.Z ↔ верхнюю секцию CHANGELOG (однажды VERSION забыли бампнуть, тег ушёл на старую версию).
@@ -36,14 +36,14 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 A) МУСОР / CRUFT
 - Диаг-скрипты: dump_boost_batch_detect.py и dump_sam_game_launch.py удалены (69e2621). scripts/diag/dump_sam_window.py тоже удалён в v1.10.x — его техника UIA-дампа перенесена в docs/debug-sam-uia.md (ссылки из app/sam/sam_status.py и farm-промпта ведут туда). Каталога scripts/diag/ больше нет.
 - Их дампы: data/diag/sam_game_launch_2021390.txt, sam_game_launch_466160.txt, boost_batch_detect.txt. ВНИМАНИЕ: вся data/ gitignored (.gitignore: data/*, кроме data/.gitkeep) — эти дампы НЕ закоммичены, это локальные файлы рабочей копии. Удаление безопасно, но severity низкий (репозиторий они не засоряют).
-- Осиротевший advisory-кэш откатанной фичи: data/games/ids/cards/has_cards.txt и no_cards.txt (их пишет только мёртвый card_store.py — это НЕ farming-прогресс, в отличие от cards/done.txt). Тоже gitignored/локальные.
+- [УСТАРЕЛО] Осиротевший advisory-кэш data/games/ids/cards/has_cards.txt и no_cards.txt: их писал card_store.py, удалённый в 29a8b22. Локальные (gitignored), НЕ прогресс — ручная чистка безопасна (в отличие от cards/done.txt).
 - Стрелой проверь стрэй-файлы, не покрытые .gitignore: build/dist/*.egg-info, .pytest_cache/, .ruff_cache/ (в .gitignore из кэш-дир перечислены только .mypy_cache/ и .cache/), .coverage/htmlcov, .idea/, *.orig (есть), .html-дампы (есть, *.html). Проверь, что в data/*/logs/* не просочились реальные state-файлы вопреки .gitignore.
 
 B) DEAD / DEPRECATED КОД
-- Полностью мёртвый модуль app/cards/card_store.py: единственная публичная get_games_with_cards (card_store.py:45) реэкспортируется в app/cards/__init__.py:5,13, но НЕ вызывается нигде (ни scripts/, ни gui/, ни tests/ — grep подтверждает только определение+реэкспорт). Откат каталога trading-cards через Store API категория-29 в v1.1.1.
+- [УСТРАНЕНО] app/cards/card_store.py удалён целиком (коммит 29a8b22) вместе с get_games_with_cards и реэкспортом из app/cards/__init__.py — откат trading-cards-каталога (Store API категория-29) v1.1.1 завершён.
 - [УСТРАНЕНО] Транзитивно мёртвое в store_api.py: весь app/steam/store_api.py удалён в v1.9.x вместе с advisory-каталогом (categorize.py + app/catalog.py).
-- Мёртвые константы: app/cards/card_cache.py:13 CARD_HAS_CARDS_FILE, :14 CARD_NO_CARDS_FILE — определены, но нигде не читаются (has_cards.txt/no_cards.txt пишет card_store.py через свои приватные _HAS_CARDS_FILE/_NO_CARDS_FILE).
-- Лишний реэкспорт: app/auth/__init__.py:19,44 держит _LEGACY_SESSION_FILE в импорте и __all__, но через фасад его никто не берёт (credentials.py импортирует относительно из ._constants:16 и использует в :76-90). Сам фасад app.auth используется — это лишь один неиспользуемый символ, НЕ мёртвый фасад.
+- [УСТРАНЕНО] Мёртвые константы CARD_HAS_CARDS_FILE/CARD_NO_CARDS_FILE удалены вместе с card_store; app/cards/card_cache.py теперь только CARD_DONE_FILE + mark_card_done.
+- [УСТРАНЕНО] Лишний реэкспорт _LEGACY_SESSION_FILE убран из app/auth/__init__.py в чистке legacy; константа осталась в app/auth/_constants.py и используется credentials.py для однократной миграции plaintext-JSON.
 - ВНИМАНИЕ (ложные срабатывания): маркеров TODO/FIXME/HACK/deprecated в коде фактически НЕТ. «XXXX» в app/cookies/cdp.py:15,19 — плейсхолдер порта (--remote-debugging-port=XXXX), не маркер XXX. Все «legacy» (app/auth/interactive.py, iauth_service.py, jwt.py, steam_cm.py, _constants.py, credentials.py; тест test_logging_setup.py) — доменная терминология live-кода Steam-auth, НЕ долг. gevent-eventemitter и protobuf<4 — транзитивные зависимости steam[client], НЕ unused.
 
 C) СТРУКТУРНЫЕ НЕТОЧНОСТИ / НАРУШЕНИЯ АРХИТЕКТУРЫ
@@ -67,7 +67,7 @@ E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)
 - app/cookies/* — ВЕСЬ подпакет без юнит-тестов (cdp, chrome, firefox, dpapi, playwright, storage, web_refresh, get_web_cookies в __init__). Крупнейший пробел.
 - app/steam без тестов: steam_api.py (fetch_owned_games/fetch_all_game_ids/fetch_badge_app_ids), steam_id.py (resolve_steam_id), packageinfo.py. Покрыты steam_cm, steam_local, steam_registry. (store_api.py удалён в v1.9.x вместе с advisory-каталогом.)
 - app/auth без тестов: credentials.py, interactive.py (покрыты totp, jwt через test_jwt_cache, iauth через test_iauth_2fa/test_iauth_rsa_login).
-- app/cards частично: тест только у card_parsers.py; card_cache/card_checker/card_store без прямых тестов.
+- app/cards частично: тест только у card_parsers.py; card_cache/card_checker без прямых тестов.
 - app/sam: picker_session.py без теста; win32_utils.py частично (test_win32_error_window.py — только _has_error_window).
 - Скрипт-тесты (test_farm, test_cards_farm, test_boost_loop, test_boost_targets) грузят цель через importlib.util.spec_from_file_location — хрупко к рефакторингу путей и sys.path. pytest без testpaths/markers (в pyproject нет [tool.pytest.ini_options]): CI гоняет только tests/unit — тесты вне неё молча не запускаются.
 - app/exceptions.py, app/unlock_result.py — без тестов, но тривиальны (низкий риск).
@@ -78,7 +78,7 @@ F) РАСКЛАДКА / ДУБЛИ
 
 # ЭТАЛОННАЯ СТРУКТУРА (от неё ищешь отклонения)
 Двухслойная архитектура (app-ядро + scripts-CLI; GUI удалён):
-- app/ — ядро-библиотека, чистая логика, БЕЗ argparse. 13 top-level модулей (cache, config, catalog, stats, logging_setup, id_file, safety, notify, validator, run_lock, game_list, exceptions, unlock_result) + 5 подпакетов (auth, cards, cookies, sam, steam). app/__init__.py — только docstring, НЕ фасад; top-level модули импортируются напрямую.
+- app/ — ядро-библиотека, чистая логика, БЕЗ argparse. 11 top-level модулей (cache, config, logging_setup, id_file, safety, notify, validator, run_lock, game_list, exceptions, unlock_result) + 5 подпакетов (auth, cards, cookies, sam, steam). (catalog и stats удалены в v1.9.x.) app/__init__.py — только docstring, НЕ фасад; top-level модули импортируются напрямую.
 - Подпакеты auth/cards/sam/steam имеют __init__.py-фасады (только from .module import ... + __all__; вызывающий импортирует из пакета, не из модулей). app/cookies/__init__.py — исключение (гибрид, содержит логику).
 - Направление зависимостей: scripts → app; внутри app слой не плоский: auth ← cookies ← steam (steam НЕ листовой). Граф ацикличен, циклов нет.
 - scripts/ — ТОНКИЕ CLI-энтрипоинты: в начале sys.path.insert(0, scripts-parent), затем импорты app.* с noqa: E402; os.environ.setdefault('PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION','python') до импорта steam для CM-скриптов; порядок main(): setup_logging → validate(cfg) → работа. Оркестрация должна жить в app, а не тут.
@@ -105,7 +105,7 @@ F) РАСКЛАДКА / ДУБЛИ
   - data/games/names.json (кэш AppID→имя; регенерируется, но дорого — Steam API).
 - app/auth/__init__.py re-export приватных «for backward compat» — сознательный публичный контракт; не удалять без миграции вызывающих.
 - gevent-eventemitter, protobuf<4 — транзитивные зависимости steam[client], не «unused».
-Исключение: has_cards.txt/no_cards.txt в data/games/ids/cards/ — НЕ прогресс (вывод мёртвого card_store), их удаление безопасно (в отличие от done.txt).
+Исключение: has_cards.txt/no_cards.txt в data/games/ids/cards/ — НЕ прогресс (вывод УДАЛЁННОГО card_store, коммит 29a8b22), их локальная ручная чистка безопасна (в отличие от done.txt).
 
 # МЕТОД (аудит-сначала, адверсариально)
 1. Собери находки по таксономии A–F, каждая с точной привязкой файл:строка.
