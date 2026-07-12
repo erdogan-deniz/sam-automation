@@ -500,3 +500,43 @@ def test_boost_loop_all_failed_report_no_success_mark(monkeypatch):
     boost._boost_loop(games, _cfg())
 
     assert tg and "✅" not in tg[-1]  # провал всех — не success
+
+
+# ── RA-10: прямая матрица _report_result (все 4 ветки status × failed) ────────
+
+
+def _capture_report(monkeypatch):  # type: ignore[no-untyped-def]
+    tg: list[str] = []
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost, "send_telegram", lambda text, cfg: tg.append(text)
+    )
+    return tg
+
+
+def test_report_result_ok_clean_is_success(monkeypatch):
+    tg = _capture_report(monkeypatch)
+    boost._report_result("ok", boosted=5, failed=0, total=5, cfg=object())
+    assert "✅" in tg[-1] and "готово" in tg[-1]
+
+
+def test_report_result_ok_with_failures_is_warning(monkeypatch):
+    tg = _capture_report(monkeypatch)
+    boost._report_result("ok", boosted=3, failed=2, total=5, cfg=object())
+    assert "✅" not in tg[-1] and "оговорками" in tg[-1]
+
+
+def test_report_result_interrupted_is_warning(monkeypatch):
+    tg = _capture_report(monkeypatch)
+    boost._report_result(
+        "interrupted", boosted=1, failed=0, total=5, cfg=object()
+    )
+    assert "✅" not in tg[-1] and "Ctrl+C" in tg[-1]
+
+
+def test_report_result_error_is_warning(monkeypatch):
+    # RA-10: ветка error раньше не пиннилась прямым ассертом честности —
+    # регрессия ok=True на error-пути прошла бы весь сьют.
+    tg = _capture_report(monkeypatch)
+    boost._report_result("error", boosted=0, failed=0, total=5, cfg=object())
+    assert "✅" not in tg[-1] and "ошибкой" in tg[-1]
