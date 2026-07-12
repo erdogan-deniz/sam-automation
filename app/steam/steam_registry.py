@@ -61,7 +61,9 @@ def steamid64_to_id3(steam_id64: str) -> int:
             уводящий read_library_app_ids в несуществующую папку userdata).
     """
     raw = (steam_id64 or "").strip()
-    if not raw.isdigit():
+    # isdecimal (не isdigit): int() принимает ровно десятичные цифры; isdigit
+    # True и для юникод-«цифр» (², ①), на которых int() бросает сырой ValueError.
+    if not raw.isdecimal():
         raise SAMError(
             f"Некорректный Steam ID64: {steam_id64!r} — ожидались только цифры"
         )

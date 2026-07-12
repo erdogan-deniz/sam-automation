@@ -24,33 +24,43 @@ def expand_packages_to_apps(
     found_pkgs = 0
 
     with open(pkginfo_path, "rb") as f:
-        _header, pkgs_iter = parse_packageinfo(f)
-        for pkg in pkgs_iter:
-            # Один структурно битый пакет не должен ронять ВЕСЬ разбор
-            # (иначе 0 CM-игр) — пропускаем только его.
-            try:
-                pkg_id = pkg.get("packageid")
-                if pkg_id not in owned_packages:
-                    continue
-                found_pkgs += 1
-                inner = pkg.get("data", {}).get(str(pkg_id), {})
-                for app_id in inner.get("appids", {}).values():
-                    if not isinstance(app_id, int):
-                        log.debug(
-                            "packageinfo: не-int appid %r в пакете %s — пропуск",
-                            app_id,
-                            pkg_id,
-                        )
+        # Внешний try — повреждение на уровне ПОТОКА/парсера (не отдельного
+        # пакета): возвращаем уже распарсенное, а не теряем ВСЕ CM-игры
+        # (иначе исключение генератора всплыло бы мимо per-package try).
+        try:
+            _header, pkgs_iter = parse_packageinfo(f)
+            for pkg in pkgs_iter:
+                # Один структурно битый пакет не должен ронять ВЕСЬ разбор
+                # (иначе 0 CM-игр) — пропускаем только его.
+                try:
+                    pkg_id = pkg.get("packageid")
+                    if pkg_id not in owned_packages:
                         continue
-                    if app_id not in seen:
-                        seen.add(app_id)
-                        app_ids.append(app_id)
-            except Exception as e:
-                pkg_id = pkg.get("packageid") if isinstance(pkg, dict) else "?"
-                log.warning(
-                    "packageinfo: пропущен битый пакет %s: %s", pkg_id, e
-                )
-                continue
+                    found_pkgs += 1
+                    inner = pkg.get("data", {}).get(str(pkg_id), {})
+                    for app_id in inner.get("appids", {}).values():
+                        if not isinstance(app_id, int):
+                            log.debug(
+                                "packageinfo: не-int appid %r в пакете %s — пропуск",
+                                app_id,
+                                pkg_id,
+                            )
+                            continue
+                        if app_id not in seen:
+                            seen.add(app_id)
+                            app_ids.append(app_id)
+                except Exception as e:
+                    pkg_id = (
+                        pkg.get("packageid") if isinstance(pkg, dict) else "?"
+                    )
+                    log.warning(
+                        "packageinfo: пропущен битый пакет %s: %s", pkg_id, e
+                    )
+                    continue
+        except Exception as e:
+            log.warning(
+                "packageinfo: разбор прерван (повреждение потока): %s", e
+            )
 
     missing = len(owned_packages) - found_pkgs
     log.info(
