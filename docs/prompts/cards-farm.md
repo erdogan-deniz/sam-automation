@@ -92,7 +92,7 @@ write-only, очередь строится из живого скрейпа bad
 4. git-flow: feature/* от develop (merge --no-ff); release/X.Y.Z → main через PR (gh); тег vX.Y.Z; back-merge в develop.
 
 # ОГРАНИЧЕНИЯ
-- Не выдумывай флаги/ключи/функции: у farm.py только `--reset`; функции `drop_failed_launches` НЕТ; farm.py НЕ читает `cfg.launch_stagger`.
+- Не выдумывай флаги/ключи/функции: у farm.py НЕТ CLI-флагов (argparse снят в v1.9.x); функции `drop_failed_launches` НЕТ; farm.py НЕ читает `cfg.launch_stagger`.
 - Терминально пометить «без карт» может только факт farm (0 дропов в живом HTML), НЕ advisory-догадка.
 - farm / boost / cards нельзя запускать параллельно (общий run-lock).
 - Источник истины — живой HTML Steam Community; `-1` из `check_cards_remaining` — это «неизвестно», не «0».

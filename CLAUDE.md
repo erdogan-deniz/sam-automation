@@ -45,8 +45,8 @@ pytest tests/unit -q       # только tests/unit; интеграционны
   параллельно — все спавнят `SAM.Game.exe` и дерутся за Steam global user.
   Защита реальна и выпущена: `app/run_lock.py` (единый `data/.sam_run.lock`,
   PID-liveness → `RuntimeError`), подключена во все три скрипта + `atexit`,
-  покрыта `tests/unit/test_run_lock.py`. (`scan.py`/`categorize.py` лок не берут —
-  они не спавнят SAM.)
+  покрыта `tests/unit/test_run_lock.py`. (`scan.py` лок не берёт —
+  не спавнит SAM.)
 - **`data/` не трогать**: id/state-файлы (`data/games/ids/...`) — рабочее
   состояние прогонов, в `.gitignore`. `done.txt` — write-only: игра, потерянная
   в одном прогоне, переоткроется следующим скрейпом. Не помечать done то, что не
