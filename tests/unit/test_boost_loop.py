@@ -87,6 +87,57 @@ def test_boost_loop_marks_done_skip_and_spares_known(monkeypatch):
     assert seen["idle"] == 7
 
 
+def test_boost_loop_blind_run_does_not_persist_done(monkeypatch):
+    # RA-A: persist_done=False (слепой прогон, пустой owned-games) → выжившие
+    # НЕ пишутся в done.txt. Транзиентно-пустой GetOwnedGames больше не травит
+    # всю библиотеку (инвариант «unverified → НЕ done»).
+    done: list[int] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", done.append)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg(), persist_done=False)
+
+    assert done == []  # слепой прогон ничего не хоронит в done
+
+
+def test_boost_loop_persist_done_true_marks_unknown(monkeypatch):
+    # Контроль: не-слепой прогон (persist_done=True, дефолт) — unknown-выживший
+    # ПИШЕТСЯ в done как обычно.
+    done: list[int] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", done.append)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "toast", lambda *a, **k: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg(), persist_done=True)
+
+    assert done == [10]
+
+
 def test_boost_loop_known_failure_not_written_to_skip(monkeypatch):
     # H1: провал KNOWN-игры НЕ пишется в skip (истина по Steam API — ретрай на
     # следующем прогоне); в skip уходят только unknown-провалы.
