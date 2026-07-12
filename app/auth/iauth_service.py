@@ -370,4 +370,13 @@ def _rsa_jwt_login(
         client.disconnect()
     except Exception:
         pass
-    return _cm_login_with_jwt(client, username, refresh_token, connect_timeout)
+    cm_result = _cm_login_with_jwt(
+        client, username, refresh_token, connect_timeout
+    )
+    # token-этап (ClientLogon по refresh_token) не несёт вердикта по паролю —
+    # пароля в ClientLogon нет. InvalidPassword отсюда НЕ authoritative: не
+    # пропускаем его в решение о стирании кред (единственный достоверный сигнал
+    # неверного пароля — _outcome от Begin-пути выше).
+    if getattr(cm_result, "name", None) == "InvalidPassword":
+        return None
+    return cm_result

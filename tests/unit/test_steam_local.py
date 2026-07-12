@@ -40,6 +40,20 @@ def test_extract_single_app() -> None:
     assert ids == [730]
 
 
+def test_extract_unicode_digit_key_does_not_crash() -> None:
+    # str.isdigit() True для юникод-«цифр» (², ①), но int() на них бросает
+    # ValueError. Раньше это роняло чтение ВСЕЙ библиотеки — ключ должен
+    # пропускаться, а реальные App ID возвращаться.
+    vdf = (
+        '"UserLocalConfigStore"\n{\n\t"Software"\n\t{\n\t\t"Valve"\n\t\t{\n'
+        '\t\t\t"Steam"\n\t\t\t{\n\t\t\t\t"apps"\n\t\t\t\t{\n'
+        '\t\t\t\t\t"²"\n\t\t\t\t\t{\n\t\t\t\t\t}\n'  # ² — isdigit, не int
+        '\t\t\t\t\t"730"\n\t\t\t\t\t{\n\t\t\t\t\t}\n'
+        "\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n"
+    )
+    assert _extract_app_ids_from_vdf(vdf) == [730]
+
+
 def test_extract_multiple_apps() -> None:
     ids = _extract_app_ids_from_vdf(_make_vdf(10, 440, 730))
     assert set(ids) == {10, 440, 730}
