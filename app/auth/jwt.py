@@ -7,7 +7,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from ._constants import _CRED_DIR, _JWT_REFRESH_FILE
+from ._constants import (
+    _CRED_DIR,
+    _JWT_REFRESH_CLIENT_FILE,
+    _JWT_REFRESH_FILE,
+)
 
 log = logging.getLogger("sam_automation")
 
@@ -204,5 +208,14 @@ def _cm_login_with_jwt(
     if result != EResult.OK:
         log.warning("Steam CM (JWT): логон отклонён: %s", result.name)
         client.disconnect()
+        # Отозванный/протухший client-scope refresh_token: чистим кэш, иначе
+        # тот же битый токен предъявляется каждый раз (вечно-мёртвый CM).
+        # Транзиентные (None/сеть/TryAnotherCM) кэш НЕ трогают.
+        if _refresh_token_dead(result):
+            _JWT_REFRESH_CLIENT_FILE.unlink(missing_ok=True)
+            log.debug(
+                "Steam CM (JWT): протухший refresh_token удалён (%s)",
+                result.name,
+            )
 
     return result
