@@ -44,7 +44,7 @@ B) DEAD / DEPRECATED КОД
 - [УСТРАНЕНО] Транзитивно мёртвое в store_api.py: весь app/steam/store_api.py удалён в v1.9.x вместе с advisory-каталогом (categorize.py + app/catalog.py).
 - [УСТРАНЕНО] Мёртвые константы CARD_HAS_CARDS_FILE/CARD_NO_CARDS_FILE удалены вместе с card_store; app/cards/card_cache.py теперь только CARD_DONE_FILE + mark_card_done.
 - [УСТРАНЕНО] Лишний реэкспорт _LEGACY_SESSION_FILE убран из app/auth/__init__.py в чистке legacy; константа осталась в app/auth/_constants.py и используется credentials.py для однократной миграции plaintext-JSON.
-- ВНИМАНИЕ (ложные срабатывания): маркеров TODO/FIXME/HACK/deprecated в коде фактически НЕТ. «XXXX» в app/cookies/cdp.py:15,19 — плейсхолдер порта (--remote-debugging-port=XXXX), не маркер XXX. Все «legacy» (app/auth/interactive.py, iauth_service.py, jwt.py, steam_cm.py, _constants.py, credentials.py; тест test_logging_setup.py) — доменная терминология live-кода Steam-auth, НЕ долг. gevent-eventemitter и protobuf<4 — транзитивные зависимости steam[client], НЕ unused.
+- ВНИМАНИЕ (ложные срабатывания): маркеров TODO/FIXME/HACK/deprecated в коде фактически НЕТ. Все «legacy» (app/auth/interactive.py, iauth_service.py, jwt.py, steam_cm.py, _constants.py, credentials.py; тест test_logging_setup.py) — доменная терминология live-кода Steam-auth, НЕ долг. gevent-eventemitter и protobuf<4 — транзитивные зависимости steam[client], НЕ unused.
 
 C) СТРУКТУРНЫЕ НЕТОЧНОСТИ / НАРУШЕНИЯ АРХИТЕКТУРЫ
 - Оркестрация «утекла» в scripts (нарушение «scripts тонкие»): scripts/scan.py (162 стр.: _read_vdf_ids/_read_api_ids/_read_cm_ids + слияние 3 источников), scripts/achievements/farm.py (303), scripts/playtime/boost.py (281), scripts/cards/farm.py (245).
@@ -64,8 +64,8 @@ D) ДРЕЙФ ДОКОВ / ВЕРСИЙ
 - ИНВАРИАНТ версии: VERSION-файл == верхняя секция CHANGELOG == последний тег `vX.Y.Z`. Сверяй ПЕРЕД каждым релизом (это инвариант, а не снапшот: пин коммита/PR ре-ротится каждым коммитом). Прецедент: на v1.3.0 забытый бамп дал тег с VERSION=1.2.0 — фикс-форвардом, тег НЕ перемещали.
 
 E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)
-- app/cookies/* — ВЕСЬ подпакет без юнит-тестов (cdp, chrome, firefox, dpapi, playwright, storage, web_refresh, get_web_cookies в __init__). Крупнейший пробел.
-- app/steam без тестов: steam_api.py (fetch_owned_games/fetch_all_game_ids/fetch_badge_app_ids), steam_id.py (resolve_steam_id), packageinfo.py. Покрыты steam_cm, steam_local, steam_registry. (store_api.py удалён в v1.9.x вместе с advisory-каталогом.)
+- app/cookies/* — ВЕСЬ подпакет без юнит-тестов (playwright, storage, web_refresh, get_web_cookies в __init__). Крупнейший пробел. (cdp/chrome/firefox/dpapi удалены в v1.11.0.)
+- app/steam без тестов: steam_api.py (fetch_owned_games), steam_id.py (resolve_steam_id), packageinfo.py. Покрыты steam_cm, steam_local, steam_registry. (store_api.py удалён в v1.9.x вместе с advisory-каталогом; fetch_all_game_ids/fetch_badge_app_ids/read_steam_username удалены в v1.11.0.)
 - app/auth без тестов: credentials.py, interactive.py (покрыты totp, jwt через test_jwt_cache, iauth через test_iauth_2fa/test_iauth_rsa_login).
 - app/cards частично: тест только у card_parsers.py; card_cache/card_checker без прямых тестов.
 - app/sam: picker_session.py без теста; win32_utils.py частично (test_win32_error_window.py — только _has_error_window).
