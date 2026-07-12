@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.client
 import json
 import logging
+import math
 import sys
 import urllib.error
 import urllib.request
@@ -84,8 +85,13 @@ def _check_numeric_bounds(cfg: Config) -> list[str]:
             f"playtime_target_minutes must be >= 1 "
             f"(got {cfg.playtime_target_minutes})"
         )
-    if cfg.launch_stagger < 0:
-        errors.append(f"launch_stagger must be >= 0 (got {cfg.launch_stagger})")
+    # not isfinite → nan/inf: `nan < 0` и `inf < 0` == False проскакивали бы guard
+    # >= 0, а time.sleep(nan) бросает ValueError / time.sleep(inf) спит вечно.
+    if not math.isfinite(cfg.launch_stagger) or cfg.launch_stagger < 0:
+        errors.append(
+            f"launch_stagger must be a finite number >= 0 "
+            f"(got {cfg.launch_stagger})"
+        )
     return errors
 
 
