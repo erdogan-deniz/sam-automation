@@ -72,20 +72,29 @@ def test_add_licenses_rate_limit_retries_then_succeeds(monkeypatch):
     result = licenses.add_licenses(client, [1, 2], batch_size=50)
     assert result.added == [1, 2]
     assert result.hit_cap is False
-    assert sleeps == [licenses._RATE_LIMIT_BASE_DELAY]
+    assert sleeps == [licenses._RATE_LIMIT_RETRY_DELAY]
     assert len(client.calls) == 2  # ретрай на ТОМ ЖЕ батче
 
 
-def test_add_licenses_rate_limit_exhausted_goes_to_error(monkeypatch):
-    monkeypatch.setattr(licenses.time, "sleep", lambda *_a: None)
-    responses = [
-        (EResult.RateLimitExceeded, None, None)
-    ] * licenses._RATE_LIMIT_ATTEMPTS
+def test_add_licenses_rate_limit_retries_indefinitely_until_success(
+    monkeypatch,
+):
+    # Живая находка: точный cooldown Steam нигде не документирован и шторм
+    # держится минутами — RateLimitExceeded ретраится каждые 30с БЕЗ лимита
+    # попыток (в отличие от старого фикс-числа), пока не пройдёт. 50 подряд
+    # неудач — далеко за пределы старого лимита (3) — не должны сдаться.
+    sleeps: list[float] = []
+    monkeypatch.setattr(licenses.time, "sleep", lambda s: sleeps.append(s))
+    responses = [(EResult.RateLimitExceeded, None, None)] * 50 + [
+        (EResult.OK, [1, 2], [])
+    ]
     client = _FakeClient(responses)
     result = licenses.add_licenses(client, [1, 2], batch_size=50)
-    assert result.error == [1, 2]
-    assert result.added == []
+    assert result.added == [1, 2]
+    assert result.error == []
     assert result.hit_cap is False
+    assert sleeps == [licenses._RATE_LIMIT_RETRY_DELAY] * 50
+    assert len(client.calls) == 51
 
 
 def test_add_licenses_exception_goes_to_error():
