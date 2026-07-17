@@ -12,7 +12,9 @@ app.steam.steam_cm.cm_session().
                              СТЕНА, стоп немедленно.
   RateLimitExceeded (84)  — временный (комментарий: "different from
                              k_EResultLimitExceeded which may be permanent")
-                             — экспоненциальный backoff, продолжаем.
+                             — ретрай каждые 30с БЕЗ ограничения по числу
+                             попыток (точный cooldown Steam нигде не
+                             документирован); Ctrl+C прерывает как обычно.
   всё остальное           — granted_appids авторитетен независимо от
                              точного eresult (напр. DuplicateRequest на
                              частично уже выданном батче всё равно granted'ит
@@ -41,18 +43,19 @@ log = logging.getLogger("sam_automation")
 BATCH_SIZE = 20
 
 # Живая находка: RateLimitExceeded под реальной нагрузкой держится штормом
-# на протяжении МИНУТ (наблюдалось ~4.5 минуты подряд), а не секунд — 3
-# попытки (2с+4с=6с суммарного ожидания) сдавались задолго до конца шторма и
-# закидывали весь остаток кандидатов в error, хотя окно всё-таки открывается
-# (один батч посреди того же шторма прошёл успешно). Пользователь хочет
-# запустить скрипт один раз и чтобы он реально добавлял игры, пока работает,
-# а не сдавался за секунды. 15 попыток с тем же экспоненциальным capped-backoff
-# дают ~10 минут терпения на батч (2+4+8+16+32+60×9) — с запасом от
-# наблюдённой длительности шторма, но не бесконечно (переживший вечную блокировку
-# батч всё равно уйдёт в error, восстановим --retry-errors).
-_RATE_LIMIT_ATTEMPTS = 15
-_RATE_LIMIT_BASE_DELAY = 2.0
-_RATE_LIMIT_DELAY_CAP = 60.0
+# на протяжении МИНУТ (наблюдалось ~4.5 минуты подряд), а не секунд — точное
+# время cooldown нигде не документировано (ни в самом protobuf-ответе, ни у
+# Valve, ни в комьюнити ValvePython/steam) и явно варьируется. Экспоненциальный
+# backoff с ограниченным числом попыток гадал бы число вслепую и сдавался
+# ДО конца шторма, хотя окно всё-таки открывается (один батч посреди того же
+# шторма прошёл успешно). RateLimitExceeded — по формулировке самой Valve
+# ("different from k_EResultLimitExceeded which may be permanent") ВСЕГДА
+# временный, поэтому ретраим каждые 30с БЕЗ ограничения по числу попыток —
+# пока не пройдёт или пользователь не прервёт Ctrl+C (INT долетает как
+# KeyboardInterrupt, честный отчёт "прервано" уже обрабатывает это на
+# уровне run()). LimitExceeded (потолок лицензий, МОЖЕТ быть перманентным) —
+# отдельная, не ретраящаяся стена, останавливает батч немедленно.
+_RATE_LIMIT_RETRY_DELAY = 30.0
 _BATCH_PAUSE = 1.0  # пауза между батчами — не долбить CM без нужды
 
 
@@ -81,9 +84,11 @@ def _batches(appids: list[int], size: int) -> list[list[int]]:
 def _request_batch_with_backoff(
     client: Any, batch: list[int], eresult_cls: Any
 ) -> _BatchOutcome:
-    """Один батч с ретраем на RateLimitExceeded (экспоненциальный backoff)."""
-    delay = _RATE_LIMIT_BASE_DELAY
-    for attempt in range(_RATE_LIMIT_ATTEMPTS):
+    """Один батч; RateLimitExceeded ретраится каждые 30с БЕЗ ограничения по
+    числу попыток — точный cooldown Steam нигде не документирован, а
+    RateLimitExceeded по определению временный (в отличие от LimitExceeded).
+    """
+    while True:
         try:
             eresult, granted_appids, _granted_packageids = (
                 client.request_free_license(batch)
@@ -96,17 +101,11 @@ def _request_batch_with_backoff(
             return _BatchOutcome(hit_cap=True)
 
         if eresult == eresult_cls.RateLimitExceeded:
-            if attempt == _RATE_LIMIT_ATTEMPTS - 1:
-                log.warning("Steam CM: rate limit не отступил — батч в error")
-                return _BatchOutcome(error=list(batch))
             log.warning(
-                "Steam CM: rate limit (попытка %d/%d) — жду %.0fс",
-                attempt + 1,
-                _RATE_LIMIT_ATTEMPTS,
-                delay,
+                "Steam CM: rate limit — жду %.0fс и пробую снова",
+                _RATE_LIMIT_RETRY_DELAY,
             )
-            time.sleep(delay)
-            delay = min(delay * 2, _RATE_LIMIT_DELAY_CAP)
+            time.sleep(_RATE_LIMIT_RETRY_DELAY)
             continue
 
         if granted_appids is None:
@@ -132,8 +131,6 @@ def _request_batch_with_backoff(
                 refused,
             )
         return _BatchOutcome(added=sorted(granted), refused=refused)
-
-    return _BatchOutcome(error=list(batch))  # недостижимо — для mypy
 
 
 def add_licenses(
