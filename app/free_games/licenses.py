@@ -91,7 +91,21 @@ def _request_batch_with_backoff(
             delay = min(delay * 2, _RATE_LIMIT_DELAY_CAP)
             continue
 
-        granted = {int(a) for a in (granted_appids or [])}
+        if granted_appids is None:
+            # granted_appids=None означает, что API не сообщил исход (напр.
+            # EResult.Timeout — CM не ответил за 10с; это ЗНАЧЕНИЕ ВОЗВРАТА,
+            # не исключение, поэтому except-ветка выше его не ловит).
+            # Трактовать "неизвестно" как "все отказаны" похоронило бы весь
+            # батч в терминальном refused.txt на транзиентном сбое —
+            # классифицируем как error (восстановим --retry-errors).
+            log.warning(
+                "Steam CM: request_free_license не сообщил исход (%s) — "
+                "батч в error",
+                getattr(eresult, "name", eresult),
+            )
+            return _BatchOutcome(error=list(batch))
+
+        granted = {int(a) for a in granted_appids}
         refused = [a for a in batch if a not in granted]
         if refused:
             log.info(
