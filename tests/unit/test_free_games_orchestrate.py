@@ -301,3 +301,61 @@ def test_run_add_keyboard_interrupt_reports_interrupted(
     )
 
     assert captured["status"] == "interrupted"
+
+
+def test_run_dry_run_discover_keyboard_interrupt_reports_interrupted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+
+    def _boom(**_k):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(orch, "discover", _boom)
+
+    captured = {}
+    monkeypatch.setattr(
+        orch.report, "report_result", lambda **kw: captured.update(kw)
+    )
+
+    orch.run(
+        do_add=False,
+        list_only=False,
+        limit=None,
+        include_demos=True,
+        cfg=SimpleNamespace(),
+    )
+
+    assert captured["status"] == "interrupted"
+
+
+def test_run_add_discover_exception_reports_error_without_calling_add(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+
+    def _boom(**_k):
+        raise RuntimeError("сеть упала")
+
+    monkeypatch.setattr(orch, "discover", _boom)
+
+    def _assert_not_called(**_k):
+        raise AssertionError("add не должен вызываться, если discover упал")
+
+    monkeypatch.setattr(orch, "add", _assert_not_called)
+
+    captured = {}
+    monkeypatch.setattr(
+        orch.report, "report_result", lambda **kw: captured.update(kw)
+    )
+
+    orch.run(
+        do_add=True,
+        list_only=False,
+        limit=None,
+        include_demos=True,
+        cfg=SimpleNamespace(),
+    )
+
+    assert captured["status"] == "error"
+    assert captured["added"] == 0
