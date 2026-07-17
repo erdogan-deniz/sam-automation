@@ -456,18 +456,22 @@ def test_cm_session_yields_none_on_login_failure(monkeypatch):
         assert client is None
 
 
-def test_cm_session_no_double_disconnect_on_login_failure(
+def test_cm_session_completes_cleanly_when_login_returns_none(
     monkeypatch, tmp_path
 ):
-    # _cm_login САМ отключает на неуспехе (как раньше) — cm_session's finally
-    # не должен звать disconnect ВТОРОЙ раз (client is None → guard).
-    # Сценарий "не interactive, нет сохранённых кредов" даёт РОВНО один
-    # disconnect() внутри _cm_login (без ветвления/ретраев) — предсказуемое
-    # число для проверки, что cm_session не добавляет второй вызов поверх.
-    # (Транзиент-ретрай сценарий НЕ годится для этой проверки: у него САМОГО
-    # несколько disconnect() внутри retry-цикла — это его собственная логика,
-    # не связанная с cm_session, и число дизайн-корректно, но нестабильно
-    # проверять именно тут.)
+    # Свойство под проверкой: cm_session НЕ падает и не портит счётчик
+    # disconnect(), когда _cm_login возвращает None (client is None) —
+    # сценарий "не interactive, нет сохранённых кредов" даёт РОВНО один
+    # disconnect() внутри самого _cm_login, и он остаётся ровно 1 после
+    # выхода из cm_session.
+    #
+    # НЕ доказывает работу guard'а `if client is not None:` в finally
+    # cm_session: на None это условие всегда False что с guard'ом, что
+    # без него `None.disconnect()` кинул бы AttributeError, который тут
+    # же глушится соседним `except Exception: pass` — тест не отличит
+    # охраняемую версию от неохраняемой (см. ревью Task 1, finding #1).
+    # Сам guard на уровне _cm_login покрыт
+    # test_cm_login_not_interactive_no_saved_disconnects ниже.
     fake = _FakeCMFlow([])
     monkeypatch.setattr("steam.client.SteamClient", lambda: fake)
     monkeypatch.setattr(steam_cm, "_steam_api_reachable", lambda *a, **k: True)
@@ -479,7 +483,7 @@ def test_cm_session_no_double_disconnect_on_login_failure(
     with steam_cm.cm_session("user", interactive=False):
         pass
 
-    assert fake.disconnect_calls == 1  # ровно один раз (внутри _cm_login), не 2
+    assert fake.disconnect_calls == 1  # не изменилось после cm_session
 
 
 def test_cm_login_not_interactive_no_saved_disconnects(monkeypatch, tmp_path):
