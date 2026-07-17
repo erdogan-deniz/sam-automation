@@ -31,7 +31,14 @@ from typing import Any
 
 log = logging.getLogger("sam_automation")
 
-BATCH_SIZE = 50
+# Живая находка (не поймать юнит-тестом на фейковом клиенте): 50 давало
+# систематический Timeout под реальной нагрузкой CM — 50 лицензий не
+# укладывались в жёсткие 10с send_job_and_wait библиотеки, appid ложно уходил
+# в error, хотя сервер их всё равно грантил (owned рос между прогонами).
+# Контрольный A/B на РЕАЛЬНОМ аккаунте в одну и ту же сессию: batch_size=50 —
+# Timeout за ровно 10.2с; batch_size=20 — успех за 0.3с. 20 — с большим
+# запасом (33x) от границы отказа, не гадание.
+BATCH_SIZE = 20
 _RATE_LIMIT_ATTEMPTS = 3
 _RATE_LIMIT_BASE_DELAY = 2.0
 _RATE_LIMIT_DELAY_CAP = 60.0
