@@ -69,10 +69,10 @@ def _search_page(
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-            appids = [
-                int(m) for m in _APPID_RE.findall(data.get("results_html", ""))
-            ]
-            return appids, int(data.get("total_count", 0))
+            results_html = data.get("results_html") or ""
+            total_count_raw = data.get("total_count") or 0
+            appids = [int(m) for m in _APPID_RE.findall(results_html)]
+            return appids, int(total_count_raw)
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < _RETRY_ATTEMPTS - 1:
                 log.warning(
@@ -88,8 +88,8 @@ def _search_page(
         except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
             log.warning("Store search сетевой сбой: %s", e)
             return [], 0
-        except ValueError as e:
-            log.warning("Store search вернул не-JSON ответ: %s", e)
+        except (ValueError, TypeError) as e:
+            log.warning("Store search вернул неожиданный ответ: %s", e)
             return [], 0
     return [], 0  # недостижимо (цикл всегда return'ит) — для mypy
 

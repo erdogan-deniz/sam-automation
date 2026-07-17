@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from app.free_games import discovery, licenses, report, state
 from app.logging_setup import SEPARATOR
@@ -109,17 +109,35 @@ def run(
     include_demos: bool,
     cfg: Any,
 ) -> None:
-    """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True."""
+    """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True.
+
+    discover() и add() (если do_add) выполняются под общим try/except —
+    Ctrl+C/исключение ВО ВРЕМЯ discover() (включая CM-логин) раньше уходили
+    необработанным трейсбеком мимо честного отчёта; теперь оба случая дают
+    status="interrupted"/"error", как и сбой во время add().
+    """
     if list_only:
-        candidates = state.load_candidates()
-        for appid in candidates:
+        listed_candidates = state.load_candidates()
+        for appid in listed_candidates:
             print(appid)
-        log.info("Кандидатов в candidates.txt: %d", len(candidates))
+        log.info("Кандидатов в candidates.txt: %d", len(listed_candidates))
         return
 
-    candidates = discover(include_demos=include_demos)
+    status: Literal["ok", "interrupted", "error", "dry_run"] = "ok"
+    candidates: list[int] = []
+    result = licenses.AddResult()
+    try:
+        candidates = discover(include_demos=include_demos)
+        if do_add:
+            result = add(limit=limit)
+    except KeyboardInterrupt:
+        status = "interrupted"
+        log.info("Прервано (Ctrl+C).")
+    except Exception:
+        status = "error"
+        log.exception("Прервано ошибкой.")
 
-    if not do_add:
+    if not do_add and status == "ok":
         report.report_result(
             status="dry_run",
             added=len(candidates),
@@ -129,17 +147,6 @@ def run(
             cfg=cfg,
         )
         return
-
-    status = "ok"
-    result = licenses.AddResult()
-    try:
-        result = add(limit=limit)
-    except KeyboardInterrupt:
-        status = "interrupted"
-        log.info("Прервано (Ctrl+C) во время добавления.")
-    except Exception:
-        status = "error"
-        log.exception("Добавление лицензий прервано ошибкой.")
 
     report.report_result(
         status=status,

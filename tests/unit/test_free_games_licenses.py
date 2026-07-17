@@ -98,6 +98,17 @@ def test_add_licenses_exception_goes_to_error():
     assert result.added == []
 
 
+def test_add_licenses_unknown_outcome_none_granted_goes_to_error():
+    # granted_appids=None (напр. EResult.Timeout — CM не ответил) — ЗНАЧЕНИЕ
+    # ВОЗВРАТА, не исключение. Раньше трактовалось как "все appid отказаны"
+    # (granted=set()) → терминальный refused.txt на транзиентном сбое.
+    client = _FakeClient([(EResult.Timeout, None, None)])
+    result = licenses.add_licenses(client, [1, 2], batch_size=50)
+    assert result.error == [1, 2]
+    assert result.refused == []
+    assert result.added == []
+
+
 def test_add_licenses_empty_input_no_calls():
     client = _FakeClient([])
     result = licenses.add_licenses(client, [], batch_size=50)

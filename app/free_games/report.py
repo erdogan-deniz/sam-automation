@@ -8,7 +8,7 @@ status="ok" с hit_cap=True НИКОГДА не даёт ✅ — упор в п�
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from app.logging_setup import SEPARATOR
 from app.notify import send_telegram, toast
@@ -18,7 +18,7 @@ log = logging.getLogger("sam_automation")
 
 def report_result(
     *,
-    status: str,
+    status: Literal["ok", "interrupted", "error", "dry_run"],
     added: int,
     refused: int,
     error: int,

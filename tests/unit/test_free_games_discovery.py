@@ -172,6 +172,26 @@ def test_search_page_network_error_returns_empty(monkeypatch):
     assert total == 0
 
 
+def test_search_page_null_fields_return_empty_not_crash(monkeypatch):
+    monkeypatch.setattr(
+        discovery.urllib.request,
+        "urlopen",
+        lambda req, timeout=15: _FakeResp(
+            {
+                "success": 1,
+                "results_html": None,
+                "total_count": None,
+                "start": 0,
+            }
+        ),
+    )
+    appids, total = discovery._search_page(
+        category1=998, start=0, count=100, maxprice_free=True
+    )
+    assert appids == []
+    assert total == 0
+
+
 def test_discover_candidates_merges_and_dedups_across_sources(monkeypatch):
     call_order = []
 
