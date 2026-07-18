@@ -11,9 +11,16 @@ app.steam.steam_cm.cm_session().
                              перманентным (комментарий в самой библиотеке) —
                              СТЕНА, стоп немедленно.
   RateLimitExceeded (84)  — временный (комментарий: "different from
-                             k_EResultLimitExceeded which may be permanent")
-                             — ретрай каждые 30с БЕЗ ограничения по числу
-                             попыток (точный cooldown Steam нигде не
+                             k_EResultLimitExceeded which may be permanent").
+  granted_appids is None  — API не сообщил исход (напр. EResult.Timeout — CM
+                             не ответил за 10с; ЗНАЧЕНИЕ ВОЗВРАТА, не
+                             исключение). Живая находка: appid с таким
+                             исходом потом реально появлялись owned — сервер
+                             их всё равно обрабатывал, просто не уложился в
+                             ответ.
+  оба выше                — не окончательный отказ ("неизвестно"/"позже", не
+                             "нет") — ретрай каждые 30с БЕЗ ограничения по
+                             числу попыток (точный cooldown Steam нигде не
                              документирован); Ctrl+C прерывает как обычно.
   всё остальное           — granted_appids авторитетен независимо от
                              точного eresult (напр. DuplicateRequest на
@@ -42,20 +49,23 @@ log = logging.getLogger("sam_automation")
 # запасом (33x) от границы отказа, не гадание.
 BATCH_SIZE = 20
 
-# Живая находка: RateLimitExceeded под реальной нагрузкой держится штормом
-# на протяжении МИНУТ (наблюдалось ~4.5 минуты подряд), а не секунд — точное
-# время cooldown нигде не документировано (ни в самом protobuf-ответе, ни у
-# Valve, ни в комьюнити ValvePython/steam) и явно варьируется. Экспоненциальный
-# backoff с ограниченным числом попыток гадал бы число вслепую и сдавался
-# ДО конца шторма, хотя окно всё-таки открывается (один батч посреди того же
-# шторма прошёл успешно). RateLimitExceeded — по формулировке самой Valve
+# Живая находка: RateLimitExceeded и Timeout (granted_appids=None) под
+# реальной нагрузкой держатся штормом на протяжении МИНУТ (наблюдалось ~4.5
+# минуты подряд), а не секунд — точное время cooldown нигде не
+# документировано (ни в самом protobuf-ответе, ни у Valve, ни в комьюнити
+# ValvePython/steam) и явно варьируется. Ни один из двух исходов — НЕ
+# окончательный отказ: RateLimitExceeded по формулировке самой Valve
 # ("different from k_EResultLimitExceeded which may be permanent") ВСЕГДА
-# временный, поэтому ретраим каждые 30с БЕЗ ограничения по числу попыток —
-# пока не пройдёт или пользователь не прервёт Ctrl+C (INT долетает как
-# KeyboardInterrupt, честный отчёт "прервано" уже обрабатывает это на
-# уровне run()). LimitExceeded (потолок лицензий, МОЖЕТ быть перманентным) —
-# отдельная, не ретраящаяся стена, останавливает батч немедленно.
-_RATE_LIMIT_RETRY_DELAY = 30.0
+# временный; appid с Timeout потом реально появлялись owned (сервер их
+# всё равно обрабатывал, просто не уложился в 10с ответа). Экспоненциальный
+# backoff с ограниченным числом попыток гадал бы число вслепую и сдавался
+# ДО конца шторма — поэтому ретраим ОБА исхода каждые 30с БЕЗ ограничения по
+# числу попыток, пока не пройдёт или пользователь не прервёт Ctrl+C (INT
+# долетает как KeyboardInterrupt, честный отчёт "прервано" уже обрабатывает
+# это на уровне run()). LimitExceeded (потолок лицензий, МОЖЕТ быть
+# перманентным) — отдельная, не ретраящаяся стена, останавливает батч
+# немедленно.
+_TRANSIENT_RETRY_DELAY = 30.0
 _BATCH_PAUSE = 1.0  # пауза между батчами — не долбить CM без нужды
 
 
@@ -84,9 +94,10 @@ def _batches(appids: list[int], size: int) -> list[list[int]]:
 def _request_batch_with_backoff(
     client: Any, batch: list[int], eresult_cls: Any
 ) -> _BatchOutcome:
-    """Один батч; RateLimitExceeded ретраится каждые 30с БЕЗ ограничения по
-    числу попыток — точный cooldown Steam нигде не документирован, а
-    RateLimitExceeded по определению временный (в отличие от LimitExceeded).
+    """Один батч; RateLimitExceeded и Timeout (granted_appids=None) ретраятся
+    каждые 30с БЕЗ ограничения по числу попыток — ни один не окончательный
+    отказ ("неизвестно"/"позже", не "нет"), в отличие от LimitExceeded
+    (потолок, МОЖЕТ быть перманентным — стена немедленно).
     """
     while True:
         try:
@@ -100,27 +111,20 @@ def _request_batch_with_backoff(
         if eresult == eresult_cls.LimitExceeded:
             return _BatchOutcome(hit_cap=True)
 
-        if eresult == eresult_cls.RateLimitExceeded:
+        if eresult == eresult_cls.RateLimitExceeded or granted_appids is None:
+            # RateLimitExceeded — временный (комментарий Valve: "different
+            # from k_EResultLimitExceeded which may be permanent").
+            # granted_appids=None — API не сообщил исход (напр. Timeout: CM
+            # не ответил за 10с — ЗНАЧЕНИЕ ВОЗВРАТА, не исключение); appid с
+            # таким исходом потом реально появлялись owned. Ни то ни другое
+            # не повод сдаваться — ретраим одинаково.
             log.warning(
-                "Steam CM: rate limit — жду %.0fс и пробую снова",
-                _RATE_LIMIT_RETRY_DELAY,
-            )
-            time.sleep(_RATE_LIMIT_RETRY_DELAY)
-            continue
-
-        if granted_appids is None:
-            # granted_appids=None означает, что API не сообщил исход (напр.
-            # EResult.Timeout — CM не ответил за 10с; это ЗНАЧЕНИЕ ВОЗВРАТА,
-            # не исключение, поэтому except-ветка выше его не ловит).
-            # Трактовать "неизвестно" как "все отказаны" похоронило бы весь
-            # батч в терминальном refused.txt на транзиентном сбое —
-            # классифицируем как error (восстановим --retry-errors).
-            log.warning(
-                "Steam CM: request_free_license не сообщил исход (%s) — "
-                "батч в error",
+                "Steam CM: %s — жду %.0fс и пробую снова",
                 getattr(eresult, "name", eresult),
+                _TRANSIENT_RETRY_DELAY,
             )
-            return _BatchOutcome(error=list(batch))
+            time.sleep(_TRANSIENT_RETRY_DELAY)
+            continue
 
         granted = {int(a) for a in granted_appids}
         refused = [a for a in batch if a not in granted]
@@ -139,10 +143,11 @@ def add_licenses(
     """Запрашивает бесплатные лицензии батчами на живом CM-клиенте.
 
     Останавливается немедленно при EResult.LimitExceeded (потолок аккаунта —
-    hit_cap=True, оставшиеся батчи НЕ запрашиваются). RateLimitExceeded —
-    backoff, продолжает после восстановления. Прочие неуспехи — refused
-    (appid из батча, которого нет в granted_appids). Исключение при вызове —
-    error (appid из батча, транзиент — восстановим --retry-errors).
+    hit_cap=True, оставшиеся батчи НЕ запрашиваются). RateLimitExceeded и
+    Timeout (granted_appids=None) — ретрай каждые 30с без ограничения по
+    числу попыток. Прочие неуспехи — refused (appid из батча, которого нет
+    в granted_appids). Исключение при вызове — error (appid из батча,
+    транзиент — восстановим --retry-errors).
     """
     from steam.enums import EResult
 
