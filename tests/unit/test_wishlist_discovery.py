@@ -135,3 +135,100 @@ def test_discover_universe_respects_max_pages_on_stuck_cursor(
     )
     out = discovery.discover_universe("key", max_pages=3)
     assert out == [1, 1, 1]  # 3 страницы, затем max_pages останавливает
+
+
+# ── fetch_wishlist_ids: keyless GetWishlist, весь список одним ответом ──────
+
+
+def test_fetch_wishlist_ids_parses_items(monkeypatch) -> None:
+    monkeypatch.setattr(
+        discovery,
+        "_api_get",
+        lambda url: {
+            "response": {
+                "items": [
+                    {"appid": 1200, "priority": 0, "date_added": 111},
+                    {"appid": 730, "priority": 1, "date_added": 222},
+                ]
+            }
+        },
+    )
+    assert discovery.fetch_wishlist_ids("76561198190468628") == {1200, 730}
+
+
+def test_fetch_wishlist_ids_empty_response(monkeypatch) -> None:
+    monkeypatch.setattr(discovery, "_api_get", lambda url: {"response": {}})
+    assert discovery.fetch_wishlist_ids("76561198190468628") == set()
+
+
+# ── discover_candidates: universe − owned − wishlisted, устойчиво к сбоям ──
+
+
+def test_discover_candidates_subtracts_owned_and_wishlisted(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        discovery, "discover_universe", lambda _key, **_kw: [1, 2, 3, 4, 5]
+    )
+    monkeypatch.setattr(
+        discovery,
+        "fetch_owned_games",
+        lambda _key, _sid: [{"appid": 2, "name": "owned"}],
+    )
+    monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: {3})
+
+    out = discovery.discover_candidates(
+        api_key="key", steam_id="76561198190468628"
+    )
+    assert out == [1, 4, 5]
+
+
+def test_discover_candidates_universe_failure_returns_empty(
+    monkeypatch,
+) -> None:
+    def _boom(_key, **_kw):
+        raise RuntimeError("Steam API вернул 500")
+
+    monkeypatch.setattr(discovery, "discover_universe", _boom)
+    out = discovery.discover_candidates(
+        api_key="key", steam_id="76561198190468628"
+    )
+    assert out == []
+
+
+def test_discover_candidates_owned_failure_still_returns_candidates(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        discovery, "discover_universe", lambda _key, **_kw: [1, 2]
+    )
+
+    def _boom(_key, _sid):
+        raise RuntimeError("GetOwnedGames упал")
+
+    monkeypatch.setattr(discovery, "fetch_owned_games", _boom)
+    monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: set())
+
+    out = discovery.discover_candidates(
+        api_key="key", steam_id="76561198190468628"
+    )
+    assert out == [1, 2]  # owned не вычтен, но прогон не падает
+
+
+def test_discover_candidates_wishlist_failure_still_returns_candidates(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        discovery, "discover_universe", lambda _key, **_kw: [1, 2]
+    )
+    monkeypatch.setattr(discovery, "fetch_owned_games", lambda _key, _sid: [])
+
+    def _boom(_sid):
+        raise RuntimeError("GetWishlist упал")
+
+    monkeypatch.setattr(discovery, "fetch_wishlist_ids", _boom)
+
+    out = discovery.discover_candidates(
+        api_key="key", steam_id="76561198190468628"
+    )
+    assert out == [1, 2]  # wishlisted не вычтен, но прогон не падает
