@@ -222,6 +222,92 @@ def test_add_auth_fail_retry_also_fails_leaves_pending_unmarked(
     assert state_mod.load_error_ids() == set()
 
 
+def test_add_auth_fail_retry_merges_partial_results(
+    monkeypatch, tmp_path
+) -> None:
+    """Проверяет, что результаты первой и retry-попытки сливаются (не заменяются).
+
+    Первая попытка добавляет appid=1 но потом получает auth_fail. Retry добавляет
+    appid=2,3. Финальный result должен содержать ВСЕ три [1,2,3], а не только
+    результат retry.
+    """
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2, 3])
+
+    def fake_get_web_cookies(*_a, **_k):
+        return {"steamLoginSecure": "id||freshtoken"}
+
+    add_calls = {"n": 0}
+
+    def fake_add_pending(access_token, appids, **_k):
+        add_calls["n"] += 1
+        if add_calls["n"] == 1:
+            # Первая попытка: добавлено appid=1, потом auth_fail
+            # remaining будет [2,3]
+            return orch.wishlist_api.AddResult(
+                added=[1], refused=[], error=[], auth_fail=True, hit_wall=False
+            )
+        # Retry: добавлено [2,3]
+        return orch.wishlist_api.AddResult(
+            added=list(appids),
+            refused=[],
+            error=[],
+            auth_fail=False,
+            hit_wall=False,
+        )
+
+    monkeypatch.setattr(orch, "get_web_cookies", fake_get_web_cookies)
+    monkeypatch.setattr(orch.wishlist_api, "add_pending", fake_add_pending)
+
+    result = orch.add()
+
+    # Финальный result должен содержать все три: [1, 2, 3]
+    assert sorted(result.added) == [1, 2, 3]
+    assert result.refused == []
+    assert result.auth_fail is False
+
+
+def test_add_auth_fail_retry_merges_hit_wall_with_or_logic(
+    monkeypatch, tmp_path
+) -> None:
+    """hit_wall должно слиться с OR: если первая попытка hit_wall=True, финальный
+    результат тоже hit_wall=True, даже если retry не вернул hit_wall.
+    """
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2, 3])
+
+    def fake_get_web_cookies(*_a, **_k):
+        return {"steamLoginSecure": "id||freshtoken"}
+
+    add_calls = {"n": 0}
+
+    def fake_add_pending(access_token, appids, **_k):
+        add_calls["n"] += 1
+        if add_calls["n"] == 1:
+            # Первая попытка: hit_wall=True и auth_fail=True
+            return orch.wishlist_api.AddResult(
+                added=[1],
+                refused=[],
+                error=[],
+                auth_fail=True,
+                hit_wall=True,
+            )
+        # Retry: добавилось ещё, но hit_wall=False
+        return orch.wishlist_api.AddResult(
+            added=[2, 3], refused=[], error=[], auth_fail=False, hit_wall=False
+        )
+
+    monkeypatch.setattr(orch, "get_web_cookies", fake_get_web_cookies)
+    monkeypatch.setattr(orch.wishlist_api, "add_pending", fake_add_pending)
+
+    result = orch.add()
+
+    # hit_wall должно остаться True (OR логика: True | False = True)
+    assert result.hit_wall is True
+    assert sorted(result.added) == [1, 2, 3]
+    assert result.auth_fail is False
+
+
 # ── run() ─────────────────────────────────────────────────────────────────
 
 
