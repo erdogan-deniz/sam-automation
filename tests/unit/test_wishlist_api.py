@@ -217,14 +217,15 @@ def test_add_pending_streak_resets_after_success_between_appids(
         "add_to_wishlist",
         _sequence(
             ["rate_limit", "rate_limit", "added"]
-            + ["rate_limit"] * 5  # appid=2 не наследует streak от appid=1
+            + ["rate_limit"] * 4  # appid=2 не наследует streak от appid=1
+            + ["added"]
         ),
     )
     result = wishlist_api.add_pending(
         "tok", [1, 2], interval=1.0, sleep=lambda *_a: None
     )
-    assert result.added == [1]
-    assert result.hit_wall is True
+    assert result.added == [1, 2]  # Оба добавились
+    assert result.hit_wall is False  # Стена НЕ сработала (4 < 5)
 
 
 def test_add_pending_auth_fail_stops_immediately(monkeypatch) -> None:
@@ -262,3 +263,37 @@ def test_add_pending_empty_input_no_calls(monkeypatch) -> None:
     monkeypatch.setattr(wishlist_api, "add_to_wishlist", _boom)
     result = wishlist_api.add_pending("tok", [], interval=1.0)
     assert result == wishlist_api.AddResult()
+
+
+def test_add_pending_exception_resets_streak(monkeypatch) -> None:
+    """Exception на appid должна сбросить streak перед переходом на следующий appid."""
+    call_counts: dict[int, int] = {}
+
+    def _fake(appid: int, access_token: str) -> str:
+        call_counts[appid] = call_counts.get(appid, 0) + 1
+        if appid == 1:
+            if call_counts[appid] <= 2:
+                return "rate_limit"  # Два rate_limit для appid=1
+            else:
+                raise ConnectionResetError("сеть сломана")  # Затем исключение
+        elif appid == 2:
+            # appid=2 получает 4 rate_limit, затем успех
+            if call_counts[appid] <= 4:
+                return "rate_limit"
+            else:
+                return "added"
+        raise StopIteration()
+
+    monkeypatch.setattr(wishlist_api, "add_to_wishlist", _fake)
+    result = wishlist_api.add_pending(
+        "tok", [1, 2], interval=1.0, sleep=lambda *_a: None
+    )
+    # Если streak СБРОШЕН при исключении (правильно):
+    #   appid=2 начинает с streak=0, получает 4 rate_limit → streak=[1,2,3,4]
+    #   затем added → успех, результат: added=[2], hit_wall=False
+    # Если streak НЕ сброшен (баг):
+    #   appid=2 наследует streak=2 от appid=1, добавляет 4 → streak=[2,3,4,5]
+    #   на 5-м стена срабатывает раньше → hit_wall=True, added=[]
+    assert result.error == [1]
+    assert result.added == [2]
+    assert result.hit_wall is False
