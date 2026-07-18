@@ -308,6 +308,61 @@ def test_add_auth_fail_retry_merges_hit_wall_with_or_logic(
     assert result.auth_fail is False
 
 
+def test_add_auth_fail_retry_excludes_error_appids(
+    monkeypatch, tmp_path
+) -> None:
+    """Appid из result.error должен быть исключён из remaining и не ретраиться.
+
+    Первая попытка: appid=1 добавлено, appid=2 словил ошибку (error),
+    appid=3 нет в результате (ещё не обработана). Потом auth_fail. Retry
+    должен получить только [3], а не [2,3]. Финально: added не содержит 2,
+    error содержит 2, пересечение пусто.
+    """
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2, 3])
+
+    def fake_get_web_cookies(*_a, **_k):
+        return {"steamLoginSecure": "id||freshtoken"}
+
+    add_calls = {"n": 0}
+
+    def fake_add_pending(access_token, appids, **_k):
+        add_calls["n"] += 1
+        if add_calls["n"] == 1:
+            # Первая попытка: appid=1 успех, appid=2 ошибка, потом auth_fail
+            return orch.wishlist_api.AddResult(
+                added=[1],
+                refused=[],
+                error=[2],
+                auth_fail=True,
+                hit_wall=False,
+            )
+        # Retry должен получить только [3], успешно добавляет его
+        # Проверяем, что 2 не передан (исключён из remaining)
+        assert 2 not in appids, (
+            f"appid=2 из error должен быть исключён, но передан: {appids}"
+        )
+        return orch.wishlist_api.AddResult(
+            added=list(appids),
+            refused=[],
+            error=[],
+            auth_fail=False,
+            hit_wall=False,
+        )
+
+    monkeypatch.setattr(orch, "get_web_cookies", fake_get_web_cookies)
+    monkeypatch.setattr(orch.wishlist_api, "add_pending", fake_add_pending)
+
+    result = orch.add()
+
+    # Финально: [1, 3] в added, [2] в error, пересечение пустое
+    assert sorted(result.added) == [1, 3]
+    assert result.error == [2]
+    # Главное: added и error не должны пересекаться (no double-accounting)
+    assert not (set(result.added) & set(result.error))
+    assert result.auth_fail is False
+
+
 # ── run() ─────────────────────────────────────────────────────────────────
 
 
