@@ -11,6 +11,7 @@ from __future__ import annotations
 import email.message
 import json
 import urllib.error
+from collections.abc import Callable
 
 import app.wishlist.wishlist_api as wishlist_api
 
@@ -149,3 +150,115 @@ def test_add_to_wishlist_rate_limit(monkeypatch) -> None:
 def test_add_to_wishlist_auth_fail(monkeypatch) -> None:
     monkeypatch.setattr(wishlist_api, "_call", lambda *_a: (401, None, {}))
     assert wishlist_api.add_to_wishlist(730, "tok") == "auth_fail"
+
+
+# ── add_pending: адаптивный backoff + стена (K=5 подряд rate_limit) ─────────
+
+
+def _sequence(outcomes: list[str]) -> Callable[[int, str], str]:
+    """Возвращает фейковый add_to_wishlist, отдающий outcomes по порядку."""
+    it = iter(outcomes)
+
+    def _fake(appid: int, access_token: str) -> str:
+        return next(it)
+
+    return _fake
+
+
+def test_add_pending_added_then_refused(monkeypatch) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        wishlist_api, "add_to_wishlist", _sequence(["added", "refused"])
+    )
+    result = wishlist_api.add_pending(
+        "tok", [1, 2], interval=0.5, sleep=sleeps.append
+    )
+    assert result.added == [1]
+    assert result.refused == [2]
+    assert sleeps == [0.5, 0.5]
+
+
+def test_add_pending_rate_limit_then_success_retries_same_appid(
+    monkeypatch,
+) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        wishlist_api, "add_to_wishlist", _sequence(["rate_limit", "added"])
+    )
+    result = wishlist_api.add_pending(
+        "tok", [1], interval=1.0, sleep=sleeps.append
+    )
+    assert result.added == [1]
+    # backoff(streak=1)=60, затем вежливая пауза 1.0 после успеха
+    assert sleeps == [60.0, 1.0]
+
+
+def test_add_pending_hits_wall_after_five_consecutive_rate_limits(
+    monkeypatch,
+) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        wishlist_api, "add_to_wishlist", _sequence(["rate_limit"] * 5)
+    )
+    result = wishlist_api.add_pending(
+        "tok", [1, 2, 3], interval=1.0, sleep=sleeps.append
+    )
+    assert result.hit_wall is True
+    assert result.added == []
+    # 4 backoff-ожидания (streak 1..4), на 5-м — стена без ожидания
+    assert sleeps == [60.0, 120.0, 240.0, 300.0]
+
+
+def test_add_pending_streak_resets_after_success_between_appids(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        wishlist_api,
+        "add_to_wishlist",
+        _sequence(
+            ["rate_limit", "rate_limit", "added"]
+            + ["rate_limit"] * 5  # appid=2 не наследует streak от appid=1
+        ),
+    )
+    result = wishlist_api.add_pending(
+        "tok", [1, 2], interval=1.0, sleep=lambda *_a: None
+    )
+    assert result.added == [1]
+    assert result.hit_wall is True
+
+
+def test_add_pending_auth_fail_stops_immediately(monkeypatch) -> None:
+    monkeypatch.setattr(
+        wishlist_api, "add_to_wishlist", _sequence(["auth_fail"])
+    )
+    result = wishlist_api.add_pending(
+        "tok", [1, 2, 3], interval=1.0, sleep=lambda *_a: None
+    )
+    assert result.auth_fail is True
+    assert result.added == []
+    assert result.refused == []
+
+
+def test_add_pending_network_exception_marks_error_and_continues(
+    monkeypatch,
+) -> None:
+    def _fake(appid: int, access_token: str) -> str:
+        if appid == 1:
+            raise ConnectionResetError("нет связи")
+        return "added"
+
+    monkeypatch.setattr(wishlist_api, "add_to_wishlist", _fake)
+    result = wishlist_api.add_pending(
+        "tok", [1, 2], interval=0, sleep=lambda *_a: None
+    )
+    assert result.error == [1]
+    assert result.added == [2]
+
+
+def test_add_pending_empty_input_no_calls(monkeypatch) -> None:
+    def _boom(appid: int, access_token: str) -> str:
+        raise AssertionError("add_to_wishlist не должен вызываться")
+
+    monkeypatch.setattr(wishlist_api, "add_to_wishlist", _boom)
+    result = wishlist_api.add_pending("tok", [], interval=1.0)
+    assert result == wishlist_api.AddResult()
