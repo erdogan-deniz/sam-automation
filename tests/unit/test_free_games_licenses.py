@@ -72,7 +72,7 @@ def test_add_licenses_rate_limit_retries_then_succeeds(monkeypatch):
     result = licenses.add_licenses(client, [1, 2], batch_size=50)
     assert result.added == [1, 2]
     assert result.hit_cap is False
-    assert sleeps == [licenses._RATE_LIMIT_RETRY_DELAY]
+    assert sleeps == [licenses._TRANSIENT_RETRY_DELAY]
     assert len(client.calls) == 2  # ретрай на ТОМ ЖЕ батче
 
 
@@ -93,7 +93,7 @@ def test_add_licenses_rate_limit_retries_indefinitely_until_success(
     assert result.added == [1, 2]
     assert result.error == []
     assert result.hit_cap is False
-    assert sleeps == [licenses._RATE_LIMIT_RETRY_DELAY] * 50
+    assert sleeps == [licenses._TRANSIENT_RETRY_DELAY] * 50
     assert len(client.calls) == 51
 
 
@@ -107,15 +107,23 @@ def test_add_licenses_exception_goes_to_error():
     assert result.added == []
 
 
-def test_add_licenses_unknown_outcome_none_granted_goes_to_error():
-    # granted_appids=None (напр. EResult.Timeout — CM не ответил) — ЗНАЧЕНИЕ
-    # ВОЗВРАТА, не исключение. Раньше трактовалось как "все appid отказаны"
-    # (granted=set()) → терминальный refused.txt на транзиентном сбое.
-    client = _FakeClient([(EResult.Timeout, None, None)])
+def test_add_licenses_timeout_none_granted_retries_then_succeeds(monkeypatch):
+    # granted_appids=None (напр. EResult.Timeout — CM не ответил за 10с) —
+    # ЗНАЧЕНИЕ ВОЗВРАТА, не исключение. Живая находка: appid с Timeout потом
+    # реально появлялись owned — сервер их всё равно обрабатывал, просто не
+    # уложился в ответ. Не окончательный отказ — ретраим как RateLimitExceeded,
+    # не сразу в error.
+    sleeps: list[float] = []
+    monkeypatch.setattr(licenses.time, "sleep", lambda s: sleeps.append(s))
+    client = _FakeClient(
+        [(EResult.Timeout, None, None), (EResult.OK, [1, 2], [])]
+    )
     result = licenses.add_licenses(client, [1, 2], batch_size=50)
-    assert result.error == [1, 2]
+    assert result.added == [1, 2]
+    assert result.error == []
     assert result.refused == []
-    assert result.added == []
+    assert sleeps == [licenses._TRANSIENT_RETRY_DELAY]
+    assert len(client.calls) == 2  # ретрай на ТОМ ЖЕ батче
 
 
 def test_add_licenses_empty_input_no_calls():
