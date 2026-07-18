@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -111,3 +113,80 @@ def add_to_wishlist(appid: int, access_token: str) -> Classification:
             body.get("response", {}).get("wishlist_count"),
         )
     return classification
+
+
+# Экспоненциальный backoff на rate-limit. Индекс = streak-1, капается на
+# последнем элементе. Живая мера 2026-07-18: 40 добавлений подряд без пауз —
+# ноль троттла (~2/сек) — устойчивый предел за тысячи adds НЕ измерен (не
+# долбили ради IP soft-ban). Поэтому governor адаптивный, не хардкод: идём
+# быстро, отступаем ТОЛЬКО когда Steam реально сигналит rate_limit.
+_BACKOFF_SCHEDULE: tuple[float, ...] = (60.0, 120.0, 240.0, 300.0)
+# 5-й подряд rate_limit — стена; долбить дальше опасно (soft-ban ~6ч,
+# продлевается при долбёжке) — отличие от app/free_games/licenses.py, которая
+# ретраит RateLimitExceeded бесконечно (там единственная стена — license-cap).
+_WALL_STREAK = 5
+
+
+def add_pending(
+    access_token: str,
+    appids: list[int],
+    *,
+    interval: float = 1.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> AddResult:
+    """Добавляет appids по одному (batch-эндпоинта нет).
+
+    Rate-limit (429/eresult=84) ретраит ТОТ ЖЕ appid с растущим backoff;
+    streak подряд идущих rate-limit сбрасывается любым иным исходом. 5 подряд
+    → hit_wall=True, стоп, оставшийся pending не трогаем. auth_fail (401) —
+    немедленный стоп (caller решает, обновлять ли токен). Сетевое исключение
+    на appid → error, переходим к следующему (не ретраим бесконечно).
+    """
+    result = AddResult()
+    streak = 0
+    i = 0
+    while i < len(appids):
+        appid = appids[i]
+        try:
+            classification = add_to_wishlist(appid, access_token)
+        except Exception as e:  # noqa: BLE001 — любой сетевой сбой → error appid
+            log.warning("Wishlist: сетевой сбой на appid=%d: %s", appid, e)
+            result.error.append(appid)
+            i += 1
+            continue
+
+        if classification == "added":
+            result.added.append(appid)
+            streak = 0
+            i += 1
+            sleep(interval)
+        elif classification == "refused":
+            result.refused.append(appid)
+            streak = 0
+            i += 1
+            sleep(interval)
+        elif classification == "auth_fail":
+            result.auth_fail = True
+            break
+        else:  # "rate_limit"
+            streak += 1
+            if streak >= _WALL_STREAK:
+                result.hit_wall = True
+                log.warning(
+                    "Wishlist: %d подряд rate-limit — стена. Добавлено: %d",
+                    streak,
+                    len(result.added),
+                )
+                break
+            delay = _BACKOFF_SCHEDULE[
+                min(streak - 1, len(_BACKOFF_SCHEDULE) - 1)
+            ]
+            log.warning(
+                "Wishlist: rate-limit (streak %d/%d) — жду %.0fс",
+                streak,
+                _WALL_STREAK,
+                delay,
+            )
+            sleep(delay)
+            # retry ТОТ ЖЕ appid — i не увеличиваем
+    return result
