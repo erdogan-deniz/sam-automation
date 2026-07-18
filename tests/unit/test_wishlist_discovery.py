@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.wishlist import discovery
 
 
@@ -183,17 +185,21 @@ def test_discover_candidates_subtracts_owned_and_wishlisted(
     assert out == [1, 4, 5]
 
 
-def test_discover_candidates_universe_failure_returns_empty(
+def test_discover_candidates_universe_failure_propagates(
     monkeypatch,
 ) -> None:
+    # Живая находка 2026-07-19: транзиентный SSL-обрыв GetAppList не должен
+    # тихо глотаться в "0 кандидатов" — orchestrate.discover() перезаписал бы
+    # им честный (но реальный) candidates.txt пустым списком. Universe-сбой
+    # пробрасывается, чтобы вызывающий НЕ вызвал save_candidates().
     def _boom(_key, **_kw):
         raise RuntimeError("Steam API вернул 500")
 
     monkeypatch.setattr(discovery, "discover_universe", _boom)
-    out = discovery.discover_candidates(
-        api_key="key", steam_id="76561198190468628"
-    )
-    assert out == []
+    with pytest.raises(RuntimeError, match="Steam API вернул 500"):
+        discovery.discover_candidates(
+            api_key="key", steam_id="76561198190468628"
+        )
 
 
 def test_discover_candidates_owned_failure_still_returns_candidates(
