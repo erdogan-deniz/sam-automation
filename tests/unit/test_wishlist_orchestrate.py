@@ -55,6 +55,27 @@ def test_discover_passes_api_key_and_steam_id_through(
     assert captured == {"api_key": "mykey", "steam_id": "76561198190468628"}
 
 
+def test_discover_failure_propagates_without_overwriting_candidates(
+    monkeypatch, tmp_path
+) -> None:
+    # Живая находка 2026-07-19: transient GetAppList-сбой не должен затирать
+    # уже сохранённый candidates.txt пустым списком — discovery.discover_candidates
+    # теперь пробрасывает исключение (не глотает в []), и discover() должно
+    # упасть ДО вызова state.save_candidates().
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([100, 200, 300])
+
+    def _boom(**_k):
+        raise RuntimeError("Steam API вернул 500")
+
+    monkeypatch.setattr(orch.discovery, "discover_candidates", _boom)
+
+    with pytest.raises(RuntimeError, match="Steam API вернул 500"):
+        orch.discover(api_key="key", steam_id="76561198190468628")
+
+    assert state_mod.load_candidates() == [100, 200, 300]
+
+
 # ── add() ─────────────────────────────────────────────────────────────────
 
 

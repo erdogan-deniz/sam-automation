@@ -73,16 +73,17 @@ def fetch_wishlist_ids(steam_id: str) -> set[int]:
 def discover_candidates(*, api_key: str, steam_id: str) -> list[int]:
     """Вселенная минус owned минус wishlisted.
 
-    Устойчив к сбою отдельного источника: owned/wishlisted недоступны →
-    просто не вычитаются (WARNING в лог, лишнее появление появится как
-    refused при add — самозалечивание); universe недоступна → 0 кандидатов
-    честно (без неё строить список нечего).
+    Устойчив к сбою owned/wishlisted: недоступны → просто не вычитаются
+    (WARNING в лог, лишнее появление отсеется как refused при add —
+    самозалечивание). Сбой universe (GetAppList) НЕ проглатывается —
+    пробрасывается как исключение. Живая находка 2026-07-19: транзиентный
+    SSL-обрыв GetAppList, тихо превращённый в "0 кандидатов", заставлял
+    orchestrate.discover() перезаписать честный, но реальный candidates.txt
+    (211032 записи) пустым списком — единственный сбой пагинации стирал весь
+    накопленный прогресс. Пробрасывая исключение, caller (run()) ловит его
+    честным status="error" и НЕ вызывает save_candidates() вовсе.
     """
-    try:
-        universe = discover_universe(api_key)
-    except Exception as e:
-        log.warning("Wishlist: GetAppList не удался — 0 кандидатов: %s", e)
-        return []
+    universe = discover_universe(api_key)
     log.info(
         "Wishlist: вселенная кандидатов (GetAppList, все типы): %d",
         len(universe),
