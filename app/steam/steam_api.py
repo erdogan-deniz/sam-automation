@@ -15,9 +15,17 @@ BASE_URL = "https://api.steampowered.com"
 
 # Ретрай на HTTP 429: ограниченное число попыток, чтобы 1-2 rate-limit не роняли
 # весь scan/boost-прогон, но и не крутились вечно по «злому» Retry-After.
+# Тот же бюджет попыток делят транзиентные сетевые сбои (см. ниже).
 _RATE_LIMIT_ATTEMPTS = 3  # всего попыток (1 исходная + 2 ретрая)
 _RATE_LIMIT_DELAY = 2.0  # дефолтная пауза, если Retry-After не пришёл
 _RATE_LIMIT_DELAY_CAP = 10.0  # потолок паузы (не ждём часами по заголовку)
+
+# Ретрай на транзиентный сетевой сбой (SSL-обрыв/сброс соединения — НЕ
+# HTTP-код от сервера). Живая находка 2026-07-19: одиночный SSL EOF на любой
+# из ~5 страниц GetAppList ронял всю пагинацию каталога вишлиста без единого
+# повтора. Retry-After здесь взять неоткуда (это не HTTP-ответ) — фиксированная
+# короткая пауза, в отличие от 429 (тот уважает заголовок).
+_NETWORK_RETRY_DELAY = 2.0
 
 
 class _RateLimitError(RuntimeError):
@@ -26,6 +34,10 @@ class _RateLimitError(RuntimeError):
     def __init__(self, msg: str, retry_after: float | None = None) -> None:
         super().__init__(msg)
         self.retry_after = retry_after
+
+
+class _TransientNetworkError(RuntimeError):
+    """Транзиентный сетевой сбой (SSL/обрыв соединения) — стоит повторить."""
 
 
 def _parse_retry_after(e: urllib.error.HTTPError) -> float | None:
@@ -37,7 +49,12 @@ def _parse_retry_after(e: urllib.error.HTTPError) -> float | None:
 
 
 def _api_get_once(url: str) -> dict:
-    """Одна GET-попытка к Steam API. HTTP 429 → _RateLimitError (для ретрая)."""
+    """Одна GET-попытка к Steam API.
+
+    HTTP 429 → _RateLimitError; URLError/OSError/HTTPException (SSL-обрыв,
+    сброс соединения — транспортный сбой, не ответ сервера) →
+    _TransientNetworkError. Оба ретраятся в _api_get.
+    """
     req = urllib.request.Request(url)
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -49,11 +66,13 @@ def _api_get_once(url: str) -> dict:
             ) from e
         raise RuntimeError(f"Steam API вернул {e.code}: {e.reason}") from e
     except urllib.error.URLError as e:
-        raise RuntimeError(f"Ошибка подключения к Steam API: {e.reason}") from e
+        raise _TransientNetworkError(
+            f"Ошибка подключения к Steam API: {e.reason}"
+        ) from e
     except (OSError, http.client.HTTPException) as e:
         # RemoteDisconnected/ConnectionReset/IncompleteRead не оборачиваются в
         # URLError → без этого сырое исключение роняло весь scan/farm-прогон.
-        raise RuntimeError(f"Сетевой сбой Steam API: {e}") from e
+        raise _TransientNetworkError(f"Сетевой сбой Steam API: {e}") from e
     except ValueError as e:
         # HTTP 200 с не-JSON телом (Cloudflare/капча) → JSONDecodeError/
         # UnicodeDecodeError (подклассы ValueError), не сетевой сбой.
@@ -61,11 +80,13 @@ def _api_get_once(url: str) -> dict:
 
 
 def _api_get(url: str) -> dict:
-    """GET к Steam API с ограниченным ретраем на HTTP 429.
+    """GET к Steam API с ограниченным ретраем на HTTP 429 и на транзиентные
+    сетевые сбои (SSL/обрыв соединения).
 
-    Только 429 ретраится (сетевые сбои/не-JSON от _api_get_once пробрасываются
-    сразу — их лечит caller/верхний ретрай, не пауза). После исчерпания попыток
-    отдаёт _RateLimitError, как раньше делал прямой путь.
+    Оба класса ошибок делят один бюджет попыток (_RATE_LIMIT_ATTEMPTS).
+    Сетевой сбой ждёт фиксированную _NETWORK_RETRY_DELAY (Retry-After здесь
+    взять неоткуда, в отличие от 429). Не-JSON и прочие HTTP-коды (кроме 429)
+    — это реальный ответ сервера, не транспортный сбой, поэтому НЕ ретраятся.
     """
     for attempt in range(_RATE_LIMIT_ATTEMPTS):
         try:
@@ -86,6 +107,18 @@ def _api_get(url: str) -> dict:
                 wait,
             )
             time.sleep(wait)
+        except _TransientNetworkError as e:
+            if attempt == _RATE_LIMIT_ATTEMPTS - 1:
+                raise
+            log.warning(
+                "Steam API: транзиентный сетевой сбой (попытка %d/%d) — "
+                "жду %.0fс: %s",
+                attempt + 1,
+                _RATE_LIMIT_ATTEMPTS,
+                _NETWORK_RETRY_DELAY,
+                e,
+            )
+            time.sleep(_NETWORK_RETRY_DELAY)
     raise RuntimeError("unreachable")  # для mypy: цикл всегда вернёт/кинет
 
 
