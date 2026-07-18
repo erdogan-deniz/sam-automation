@@ -152,6 +152,7 @@ def add_pending(
         except Exception as e:  # noqa: BLE001 — любой сетевой сбой → error appid
             log.warning("Wishlist: сетевой сбой на appid=%d: %s", appid, e)
             result.error.append(appid)
+            streak = 0
             i += 1
             continue
 
