@@ -83,7 +83,9 @@ def add(
         remaining = [
             a
             for a in pending
-            if a not in result.added and a not in result.refused
+            if a not in result.added
+            and a not in result.refused
+            and a not in result.error
         ]
         log.warning(
             "Wishlist: сессия истекла (401) — одна попытка обновить токен"
