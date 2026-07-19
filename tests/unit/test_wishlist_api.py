@@ -13,6 +13,8 @@ import json
 import urllib.error
 from collections.abc import Callable
 
+import pytest
+
 import app.wishlist.wishlist_api as wishlist_api
 
 
@@ -108,6 +110,74 @@ def test_call_http_error_without_eresult_header(monkeypatch) -> None:
     status, eresult, body = wishlist_api._call("AddToWishlist", 730, "tok")
     assert status == 401
     assert eresult is None
+
+
+# ── _call: ретрай на транзиентный сетевой сбой (SSL-обрыв, не HTTP-ответ) ───
+# Живая находка 2026-07-19 (10k-прогон): единичные SSL-таймауты/EOF на
+# AddToWishlist уходили прямиком в error.txt без единой попытки повтора —
+# в отличие от app/steam/steam_api._api_get, у _call ретрая не было вовсе.
+
+
+def test_call_retries_transient_network_error_then_succeeds(
+    monkeypatch,
+) -> None:
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=15):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.URLError("EOF occurred in violation of protocol")
+        return _FakeResp(200, "1", {"response": {"wishlist_count": 5}})
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(wishlist_api.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    status, eresult, body = wishlist_api._call("AddToWishlist", 730, "tok")
+
+    assert status == 200
+    assert eresult == "1"
+    assert calls["n"] == 2
+    assert sleeps == [wishlist_api._NETWORK_RETRY_DELAY]
+
+
+def test_call_retries_on_remote_disconnected_then_succeeds(
+    monkeypatch,
+) -> None:
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=15):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionResetError("reset")
+        return _FakeResp(200, "1", {"response": {}})
+
+    monkeypatch.setattr(wishlist_api.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    status, eresult, _body = wishlist_api._call("AddToWishlist", 730, "tok")
+    assert status == 200
+    assert calls["n"] == 2
+
+
+def test_call_network_error_bounded_retry_then_raises(monkeypatch) -> None:
+    """Постоянный сетевой сбой — ограниченный ретрай, затем пробрасывается
+    (add_pending ловит его как error для этого appid, как и раньше)."""
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=15):
+        calls["n"] += 1
+        raise urllib.error.URLError("connection reset")
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(wishlist_api.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    with pytest.raises(urllib.error.URLError):
+        wishlist_api._call("AddToWishlist", 730, "tok")
+
+    assert calls["n"] == wishlist_api._NETWORK_RETRY_ATTEMPTS
+    assert len(sleeps) == wishlist_api._NETWORK_RETRY_ATTEMPTS - 1
 
 
 def test_call_posts_appid_and_access_token_in_url(monkeypatch) -> None:

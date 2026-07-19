@@ -19,6 +19,7 @@ RateLimitExceeded=84), но сам enum-класс здесь НЕ импорт�
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import time
@@ -73,14 +74,27 @@ def _classify(http_status: int, eresult: str | None) -> Classification:
     )
 
 
+# Ретрай на транзиентный сетевой сбой (SSL-обрыв/таймаут хендшейка — НЕ
+# HTTP-ответ сервера). Живая находка 2026-07-19 (10k-прогон): единичные SSL
+# EOF/timeout на AddToWishlist уходили прямиком в error.txt без единой
+# попытки повтора — в отличие от app/steam/steam_api._api_get (тот же класс
+# сбоя там уже ретраится), здесь ретрая не было вовсе. Бюджет короткий (1
+# повтор) — add_pending и так не ретраит error бесконечно по design.
+_NETWORK_RETRY_ATTEMPTS = 2  # 1 исходная попытка + 1 ретрай
+_NETWORK_RETRY_DELAY = 1.0
+
+
 def _call(
     action: str, appid: int, access_token: str
 ) -> tuple[int, str | None, dict[str, Any]]:
     """POST IWishlistService/<action>/v1/. Возвращает (http_status, x-eresult, body).
 
-    Сетевые исключения (URLError/OSError/HTTPException — НЕ HTTPError, тот уже
-    несёт валидный http_status) пробрасываются наверх — вызывающий
-    add_pending() ловит их как error-исход для конкретного appid.
+    HTTPError (валидный http_status от сервера) не ретраится — это реальный
+    ответ, не транспортный сбой. URLError/OSError/HTTPException (SSL-обрыв,
+    таймаут хендшейка) ретраятся _NETWORK_RETRY_ATTEMPTS раз с фиксированной
+    паузой; исчерпав бюджет — пробрасываются наверх, add_pending() ловит их
+    как error-исход для конкретного appid (не ретраит дальше, переходит к
+    следующему).
     """
     url = (
         f"{BASE_URL}/IWishlistService/{action}/v1/?access_token={access_token}"
@@ -89,17 +103,34 @@ def _call(
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": _FORM_CONTENT_TYPE}
     )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            eresult = resp.headers.get("x-eresult")
-            try:
-                body: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
-            except (ValueError, UnicodeDecodeError):
-                body = {}
-            return resp.status, eresult, body
-    except urllib.error.HTTPError as e:
-        eresult = e.headers.get("x-eresult") if e.headers else None
-        return e.code, eresult, {}
+    for attempt in range(_NETWORK_RETRY_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                eresult = resp.headers.get("x-eresult")
+                try:
+                    body: dict[str, Any] = json.loads(
+                        resp.read().decode("utf-8")
+                    )
+                except (ValueError, UnicodeDecodeError):
+                    body = {}
+                return resp.status, eresult, body
+        except urllib.error.HTTPError as e:
+            eresult = e.headers.get("x-eresult") if e.headers else None
+            return e.code, eresult, {}
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as e:
+            if attempt == _NETWORK_RETRY_ATTEMPTS - 1:
+                raise
+            log.warning(
+                "Wishlist: транзиентный сетевой сбой на appid=%d "
+                "(попытка %d/%d) — жду %.0fс: %s",
+                appid,
+                attempt + 1,
+                _NETWORK_RETRY_ATTEMPTS,
+                _NETWORK_RETRY_DELAY,
+                e,
+            )
+            time.sleep(_NETWORK_RETRY_DELAY)
+    raise RuntimeError("unreachable")  # для mypy: цикл всегда вернёт/кинет
 
 
 def add_to_wishlist(appid: int, access_token: str) -> Classification:
@@ -140,7 +171,8 @@ def add_pending(
     streak подряд идущих rate-limit сбрасывается любым иным исходом. 5 подряд
     → hit_wall=True, стоп, оставшийся pending не трогаем. auth_fail (401) —
     немедленный стоп (caller решает, обновлять ли токен). Сетевое исключение
-    на appid → error, переходим к следующему (не ретраим бесконечно).
+    на appid (уже пережившее собственный ретрай _call, см. выше) → error,
+    переходим к следующему (здесь повторно не ретраим).
     """
     result = AddResult()
     streak = 0
