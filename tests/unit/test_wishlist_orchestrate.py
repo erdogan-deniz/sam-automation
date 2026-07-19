@@ -106,6 +106,39 @@ def test_add_skips_already_processed_ids(monkeypatch, tmp_path) -> None:
     assert state_mod.load_added_ids() == {1, 4}
 
 
+def test_add_wires_working_persist_callback_to_add_pending(
+    monkeypatch, tmp_path
+) -> None:
+    """Живая находка 2026-07-19: батч-персист ПОСЛЕ add_pending() терял всё
+    накопленное при жёстком килле процесса посреди прогона (Steam-то
+    добавление принял, а added.txt — нет). add_pending теперь зовёт persist
+    инкрементально по каждому appid; здесь проверяем, что orch.add() передаёт
+    ему РАБОЧИЙ callback, реально пишущий в id-файлы, а не заглушку."""
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2, 3])
+    captured = {}
+
+    def fake_add_pending(access_token, appids, **kw):
+        captured["persist"] = kw["persist"]
+        # Симулируем жёсткий килл ДО возврата add_pending: persist уже был
+        # вызван для appid=1, но функция никогда не вернёт AddResult.
+        kw["persist"](1, "added")
+        raise SystemExit("имитация жёсткого килла процесса")
+
+    monkeypatch.setattr(orch.wishlist_api, "add_pending", fake_add_pending)
+    monkeypatch.setattr(
+        orch,
+        "get_web_cookies",
+        lambda *_a, **_k: {"steamLoginSecure": "id||tok"},
+    )
+
+    with pytest.raises(SystemExit):
+        orch.add()
+
+    # appid=1 пережил "килл" — persist успел записать его ДО исключения.
+    assert state_mod.load_added_ids() == {1}
+
+
 def test_add_respects_limit(monkeypatch, tmp_path) -> None:
     _patch_state(monkeypatch, tmp_path)
     state_mod.save_candidates([1, 2, 3])

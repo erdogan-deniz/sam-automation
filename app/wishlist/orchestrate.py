@@ -76,8 +76,20 @@ def add(
         log.error("Steam: нет действующей веб-сессии — добавление невозможно")
         return wishlist_api.AddResult(auth_fail=True)
 
+    def _persist(appid: int, outcome: str) -> None:
+        # Инкрементально, по мере решения каждого appid — переживает жёсткий
+        # килл процесса посреди прогона (см. add_pending.persist).
+        if outcome == "added":
+            state.mark_added(appid)
+        elif outcome == "refused":
+            state.mark_refused(appid)
+        else:
+            state.mark_error(appid)
+
     access_token = cookies["steamLoginSecure"].split("||", 1)[1]
-    result = wishlist_api.add_pending(access_token, pending, interval=interval)
+    result = wishlist_api.add_pending(
+        access_token, pending, interval=interval, persist=_persist
+    )
 
     if result.auth_fail:
         remaining = [
@@ -94,7 +106,7 @@ def add(
         if cookies is not None:
             access_token = cookies["steamLoginSecure"].split("||", 1)[1]
             retry = wishlist_api.add_pending(
-                access_token, remaining, interval=interval
+                access_token, remaining, interval=interval, persist=_persist
             )
             result.added.extend(retry.added)
             result.refused.extend(retry.refused)
