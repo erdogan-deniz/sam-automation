@@ -326,6 +326,58 @@ def test_add_pending_network_exception_marks_error_and_continues(
     assert result.added == [2]
 
 
+# ── add_pending: persist-callback (крэш-safety) ─────────────────────────────
+# Живая находка 2026-07-19: orchestrate.add() персистил added/refused/error
+# ОДНИМ батчем ПОСЛЕ полного возврата add_pending() — жёсткий килл процесса
+# посреди многочасового прогона (harness teardown, не KeyboardInterrupt)
+# терял ВСЕ локальные записи added.txt/refused.txt для уже реально
+# состоявшихся на стороне Steam добавлений (wishlist_count там не откатывался).
+# persist вызывается инкрементально по каждому appid — переживает жёсткий килл.
+
+
+def test_add_pending_calls_persist_for_added_and_refused(monkeypatch) -> None:
+    monkeypatch.setattr(
+        wishlist_api, "add_to_wishlist", _sequence(["added", "refused"])
+    )
+    calls: list[tuple[int, str]] = []
+    wishlist_api.add_pending(
+        "tok",
+        [1, 2],
+        interval=0,
+        sleep=lambda *_a: None,
+        persist=lambda appid, outcome: calls.append((appid, outcome)),
+    )
+    assert calls == [(1, "added"), (2, "refused")]
+
+
+def test_add_pending_calls_persist_for_network_exception(monkeypatch) -> None:
+    def _fake(appid: int, access_token: str) -> str:
+        if appid == 1:
+            raise ConnectionResetError("нет связи")
+        return "added"
+
+    monkeypatch.setattr(wishlist_api, "add_to_wishlist", _fake)
+    calls: list[tuple[int, str]] = []
+    wishlist_api.add_pending(
+        "tok",
+        [1, 2],
+        interval=0,
+        sleep=lambda *_a: None,
+        persist=lambda appid, outcome: calls.append((appid, outcome)),
+    )
+    assert calls == [(1, "error"), (2, "added")]
+
+
+def test_add_pending_without_persist_still_works(monkeypatch) -> None:
+    """persist опционален (default None) — обратная совместимость с caller'ами,
+    не передающими его (напр. существующие тесты orchestrate.add())."""
+    monkeypatch.setattr(wishlist_api, "add_to_wishlist", _sequence(["added"]))
+    result = wishlist_api.add_pending(
+        "tok", [1], interval=0, sleep=lambda *_a: None
+    )
+    assert result.added == [1]
+
+
 def test_add_pending_empty_input_no_calls(monkeypatch) -> None:
     def _boom(appid: int, access_token: str) -> str:
         raise AssertionError("add_to_wishlist не должен вызываться")

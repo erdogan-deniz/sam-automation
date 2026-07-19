@@ -164,6 +164,7 @@ def add_pending(
     *,
     interval: float = 1.0,
     sleep: Callable[[float], None] = time.sleep,
+    persist: Callable[[int, str], None] | None = None,
 ) -> AddResult:
     """Добавляет appids по одному (batch-эндпоинта нет).
 
@@ -173,6 +174,14 @@ def add_pending(
     немедленный стоп (caller решает, обновлять ли токен). Сетевое исключение
     на appid (уже пережившее собственный ретрай _call, см. выше) → error,
     переходим к следующему (здесь повторно не ретраим).
+
+    persist (опционально) вызывается СРАЗУ по каждому решённому appid —
+    ("added"/"refused"/"error"), ДО перехода к следующему. Живая находка
+    2026-07-19: жёсткий килл процесса посреди многочасового прогона терял
+    все накопленные added/refused, если персист делался одним батчем после
+    возврата всей функции — Steam-то добавление уже принял, а локально
+    ничего не осело. persist даёт caller'у (orchestrate.add) писать в
+    id-файлы по ходу, переживая килл без потери прогресса.
     """
     result = AddResult()
     streak = 0
@@ -184,17 +193,23 @@ def add_pending(
         except Exception as e:  # noqa: BLE001 — любой сетевой сбой → error appid
             log.warning("Wishlist: сетевой сбой на appid=%d: %s", appid, e)
             result.error.append(appid)
+            if persist is not None:
+                persist(appid, "error")
             streak = 0
             i += 1
             continue
 
         if classification == "added":
             result.added.append(appid)
+            if persist is not None:
+                persist(appid, "added")
             streak = 0
             i += 1
             sleep(interval)
         elif classification == "refused":
             result.refused.append(appid)
+            if persist is not None:
+                persist(appid, "refused")
             streak = 0
             i += 1
             sleep(interval)
