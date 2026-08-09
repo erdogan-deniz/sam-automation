@@ -162,6 +162,101 @@ def test_api_get_429_without_retry_after_uses_default(
     assert sleeps == [steam_api._RATE_LIMIT_DELAY]
 
 
+# ── C2b: ретрай на транзиентный сетевой сбой (SSL/обрыв соединения) ────────
+# Живая находка 2026-07-19: одиночный SSL EOF на любой из ~5 страниц
+# GetAppList ронял всю пагинацию каталога вишлиста без единого повтора —
+# _api_get ретраил только HTTP 429, не транспортные сбои.
+
+
+def test_api_get_retries_on_transient_network_error_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"n": 0}
+
+    def fake_urlopen(*_a: object, **_k: object) -> _JsonResp:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise urllib.error.URLError("EOF occurred in violation of protocol")
+        return _JsonResp({"ok": True})
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    result = steam_api._api_get("https://api.steampowered.com/x")
+
+    assert result == {"ok": True}
+    assert calls["n"] == 2  # первый сбой, второй успех
+    assert sleeps == [steam_api._NETWORK_RETRY_DELAY]
+
+
+def test_api_get_network_error_bounded_retry_then_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Постоянный сетевой сбой → ограниченное число попыток, затем ошибка."""
+    calls = {"n": 0}
+
+    def fake_urlopen(*_a: object, **_k: object) -> _JsonResp:
+        calls["n"] += 1
+        raise urllib.error.URLError("connection reset")
+
+    sleeps: list[float] = []
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    with pytest.raises(RuntimeError):
+        steam_api._api_get("https://api.steampowered.com/x")
+
+    assert calls["n"] == steam_api._RATE_LIMIT_ATTEMPTS
+    assert len(sleeps) == steam_api._RATE_LIMIT_ATTEMPTS - 1
+
+
+def test_api_get_retries_on_remote_disconnected_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OSError-сбои (RemoteDisconnected и т.п.) тоже ретраятся, не только URLError."""
+    calls = {"n": 0}
+
+    def fake_urlopen(*_a: object, **_k: object) -> _JsonResp:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionResetError("reset")
+        return _JsonResp({"ok": True})
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    result = steam_api._api_get("https://api.steampowered.com/x")
+
+    assert result == {"ok": True}
+    assert calls["n"] == 2
+
+
+def test_api_get_non_429_http_error_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Не-429 HTTP-код — это ответ сервера, не транспортный сбой: без ретрая."""
+    calls = {"n": 0}
+
+    def fake_urlopen(*_a: object, **_k: object) -> _JsonResp:
+        calls["n"] += 1
+        raise urllib.error.HTTPError(
+            "https://api.steampowered.com/x",
+            500,
+            "Internal Server Error",
+            email.message.Message(),
+            None,
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    with pytest.raises(RuntimeError):
+        steam_api._api_get("https://api.steampowered.com/x")
+
+    assert calls["n"] == 1  # без ретрая — сразу отдаём ошибку сервера
+
+
 # ── C3: отсутствие response/games и game_count>0 при пустом games ───────────
 
 
