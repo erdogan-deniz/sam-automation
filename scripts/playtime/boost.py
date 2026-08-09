@@ -255,7 +255,10 @@ def _boost_loop(games: list[dict], cfg: Any, persist_done: bool = True) -> None:
         # known-игры гейтятся по Steam API: разовый (часто транзиентный) провал
         # НЕ хороним в skip навсегда — их перепроверит API на следующем прогоне.
         # skip только для unknown (по ним playtime не проверить).
-        if appid not in known_ids:
+        # В слепом прогоне (persist_done=False) не пишем ВООБЩЕ: known_ids там
+        # пуст, значит каждый провал ушёл бы в skip — а skip, в отличие от done,
+        # жёсткий и не самоисцеляется по API (зеркало RA-A для skip.txt).
+        if persist_done and appid not in known_ids:
             mark_playtime_skip(appid)
 
     log.info(SEPARATOR)
