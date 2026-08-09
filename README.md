@@ -76,6 +76,39 @@ python scripts/playtime/boost.py
 #    --retry-skips   retry games that previously failed to connect (clears skip.txt)
 ```
 
+### Growing the library (CLI)
+
+Both scripts are **dry-run by default** — they only report what they found.
+The account is modified only when you pass `--add`. Both are resumable: state
+lives in `data/games/ids/` and a re-run picks up where it stopped.
+
+```bash
+# Add every free Steam game/app to your library (CM request_free_license)
+python scripts/library/add_free.py            # dry-run: how many candidates
+python scripts/library/add_free.py --add      # actually add
+
+#    --list          show current candidates and exit
+#    --reset         wipe resume state
+#    --retry-errors  retry transient failures (clears error.txt)
+#    --limit N       cap how many are added per run
+#    --no-demos      skip demos during discovery
+
+# Add the Steam catalog to your wishlist (IWishlistService/AddToWishlist)
+python scripts/library/wishlist_add.py         # dry-run: how many candidates
+python scripts/library/wishlist_add.py --add   # actually add
+
+#    --list          show current candidates and exit
+#    --reset         wipe resume state
+#    --retry-errors  retry transient failures (clears error.txt)
+#    --limit N       cap how many are added per run
+#    --interval SEC  pause between adds (default 1.0; 0 = full speed)
+```
+
+Both stop honestly rather than pretending to finish: `add_free.py` stops when
+the account hits its free-license ceiling, and `wishlist_add.py` backs off on
+Steam's rate limit and stops after five consecutive throttles. Neither reports
+success when it stopped early.
+
 ## Configuration (`config.yaml`)
 
 | Parameter | Default | Description |
@@ -129,8 +162,10 @@ sam-automation/
 │   ├── auth/               # Steam authentication (TOTP, JWT, keyring)
 │   ├── cards/              # Card drop tracking and farming logic
 │   ├── cookies/            # Steam web cookie extraction
+│   ├── free_games/         # Free-license discovery and granting (CM)
 │   ├── sam/                # SAM process automation (launcher, UI)
 │   ├── steam/              # Steam data access (API, CM, local files)
+│   ├── wishlist/           # Catalog discovery and wishlist adding (Web API)
 │   ├── cache.py            # State file helpers
 │   ├── config.py           # config.yaml loader
 │   ├── exceptions.py       # Custom exception hierarchy
@@ -148,6 +183,9 @@ sam-automation/
 │   │   └── farm.py         # Main achievement unlock loop
 │   ├── cards/
 │   │   └── farm.py         # Idle games to collect card drops
+│   ├── library/
+│   │   ├── add_free.py     # Add every free Steam game/app to the library
+│   │   └── wishlist_add.py # Add the Steam catalog to the wishlist
 │   ├── playtime/
 │   │   └── boost.py        # Boost low-playtime games via short SAM sessions
 │   └── ci/
@@ -159,7 +197,9 @@ sam-automation/
 │           ├── all.txt             # Master list of App IDs (from scan.py)
 │           ├── achievements/       # unlocked, error, without
 │           ├── cards/              # done.txt
-│           └── playtime/           # done.txt, skip.txt
+│           ├── free/               # candidates, added, refused, error
+│           ├── playtime/           # done.txt, skip.txt
+│           └── wishlist/           # candidates, added, refused, error
 ├── logs/                   # Session logs (gitignored)
 ├── external/
 │   └── SAM/                # SAM binaries (auto-downloaded on first run)
@@ -193,6 +233,16 @@ Delete or edit them manually if needed.
 | --- | --- |
 | `done.txt` | Games with no remaining card drops |
 
+**Free games** (`data/games/ids/free/`) and **Wishlist**
+(`data/games/ids/wishlist/`) share the same four-file layout:
+
+| File | Purpose |
+| --- | --- |
+| `candidates.txt` | Discovered App IDs still to process (minus owned/already-added) |
+| `added.txt` | Successfully added |
+| `refused.txt` | Steam refused permanently (delisted, already owned, not free) — never retried |
+| `error.txt` | Transient failures; cleared and retried with `--retry-errors` |
+
 **Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
 API reports playtime for are gated on the **actual** `playtime_forever`: those at
 or above `playtime_target_minutes` are skipped, and ones still below are re-boosted
@@ -201,7 +251,9 @@ pass). Games the API has no playtime for (free/demo/license apps) can't be verif
 so they are idled once and recorded in `playtime/done.txt` to resume. **Unknown**
 games that fail to connect go to `playtime/skip.txt`; a **known** game that fails
 is *not* buried in skip (a one-off connect glitch shouldn't lose it — the Steam
-API stays its source of truth and re-checks it next run). Use `--reset` to clear
+API stays its source of truth and re-checks it next run). A **blind run** (the
+Steam API returned no owned games at all) persists neither `done.txt` nor
+`skip.txt`: nothing can be verified, so nothing is buried. Use `--reset` to clear
 `done.txt`, or `--retry-skips` to clear `skip.txt` and retry skipped games.
 
 Session logs are written to `logs/` with timestamps (`YYYY-MM-DD_HH-MM-SS.log`).
