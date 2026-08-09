@@ -2,6 +2,73 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.13.0]
+
+Новая фича: авто-добавление каталога Steam в вишлист аккаунта — пакет
+`app/wishlist/` и CLI `scripts/library/wishlist_add.py`. Write-путь снят
+живьём на реальном аккаунте, не по документации. Плюс ретрай транзиентных
+сетевых сбоев в Web API и закрытие E-пробелов покрытия. 108 новых тестов
+(457 → 565).
+
+### Возможности
+
+- **wishlist: авто-добавление каталога Steam в вишлист** — две фазы.
+  *Discover*: вселенная через `IStoreService/GetAppList/v1` с пагинацией по
+  `last_appid` (все типы контента: games/dlc/software/videos/hardware), минус
+  owned (`GetOwnedGames`), минус уже-в-вишлисте (`IWishlistService/GetWishlist/v1`,
+  keyless), минус added/refused из resume-состояния → `candidates.txt`.
+  *Add*: по одному appid (batch-эндпоинта нет) через
+  `POST IWishlistService/AddToWishlist/v1` с community-JWT из
+  `app.cookies.get_web_cookies`. Легаси store-эндпоинт `/api/addtowishlist`
+  отклонён живой проверкой: он требует токен с `aud=web:store`, которого
+  `get_web_cookies` не выдаёт.
+- **wishlist: классификатор ответа по заголовку `x-eresult`** (authoritative
+  WebAPI-сигнал): `1` → added; `2` (owned/уже-в-вишлисте) и `8`
+  (delisted/несуществующий) → refused, терминально; `84` либо голый HTTP 429 →
+  rate-limit; HTTP 401 → auth-fail.
+- **wishlist: адаптивный backoff-then-stop вместо хардкод-троттла** — живая
+  мера показала ~2 добавления/сек без единого троттла, устойчивый предел за
+  тысячи adds не измерялся намеренно (IP soft-ban ~6ч продлевается при
+  долбёжке). Поэтому идём быстро и отступаем ТОЛЬКО по реальному сигналу
+  Steam: 60/120/240/300с на растущий streak, 5 подряд rate-limit → стена и
+  остановка, оставшийся pending не трогаем.
+- **wishlist: resume-состояние** `data/games/ids/wishlist/` — candidates,
+  added, refused (терминал), error (транзиент, чистится `--retry-errors`).
+  Персист инкрементальный, по каждому решённому appid.
+- **wishlist: честный отчёт** — стена по rate-limit, auth-fail и Ctrl+C не
+  дают success-тост; dry-run — режим по умолчанию, аккаунт мутируется только
+  по явному `--add`. Флаги: `--add`, `--list`, `--reset`, `--retry-errors`,
+  `--limit`, `--interval`. Run-lock не берётся: SAM не спавнится (как `scan.py`).
+
+### Исправления
+
+- **steam-api: ретрай транзиентных сетевых сбоев в `_api_get`** — SSL-обрыв и
+  таймаут хендшейка (не HTTP-ответ сервера) роняли вызов с первой попытки.
+- **wishlist: сбой `GetAppList` больше не стирает накопленный
+  `candidates.txt`** — живая находка: транзиентный SSL-обрыв пагинации тихо
+  превращался в «0 кандидатов», и `discover()` перезаписывал реальный файл
+  (211 032 записи) пустым списком. Теперь исключение пробрасывается,
+  `run()` ловит его честным `status="error"` и `save_candidates()` не
+  вызывается вовсе.
+- **wishlist: инкрементальный персист added/refused/error вместо батча** —
+  жёсткий килл процесса посреди многочасового прогона терял весь накопленный
+  прогресс: Steam добавление уже принял, локально не осело ничего.
+- **wishlist: ретрай транзиентного сетевого сбоя в `wishlist_api._call`** —
+  единичные SSL EOF/timeout уходили прямо в `error.txt` без единой повторной
+  попытки, в отличие от `steam_api._api_get`.
+- **wishlist: streak rate-limit сбрасывается на исключении** — сетевой сбой
+  посреди серии не должен доталкивать счётчик до ложной «стены».
+- **wishlist: appid из `error` исключены из auth-fail retry** — иначе один
+  appid мог попасть и в `error`, и в `added` за один прогон.
+
+### Тесты
+
+- 108 новых (457 → 565): 75 на вишлист (классификатор `x-eresult`, backoff и
+  детект стены, resume-состояние, пагинация вселенной, дедуп owned/wishlisted,
+  честный отчёт, оркестрация с auth-fail retry), остальные — закрытие
+  E-пробелов покрытия (`PickerSession.add_and_open_game`, cookie storage,
+  `card_cache`, `web_refresh`) и ретрай в `steam_api`.
+
 ## [1.12.4]
 
 Ремедиация глубокого+широкого аудита фичи `playtime/boost.py` (16 подтверждённых
