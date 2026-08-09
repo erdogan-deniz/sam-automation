@@ -219,6 +219,10 @@ def _teardown(active: dict[int, subprocess.Popen]) -> None:
     срывает остальные и бэкстоп. Повторный Ctrl+C во время уборки не обрывает её:
     KeyboardInterrupt (BaseException, не Exception) проскакивает внутренние
     except Exception к внешнему retry (bounded ×3, чтобы не крутиться вечно).
+    Любой ДРУГОЙ BaseException (SystemExit/GeneratorExit — теоретически, но
+    гарантия «никогда не бросает» иначе не держится) логируется и гасится тут
+    же, а не ретраится и не пробрасывается: это не Ctrl+C, повторные попытки
+    для него бессмысленны.
     """
     for _ in range(3):
         try:
@@ -234,6 +238,9 @@ def _teardown(active: dict[int, subprocess.Popen]) -> None:
             return
         except KeyboardInterrupt:
             continue
+        except BaseException:
+            log.exception("teardown: неожиданный сбой — прекращаю уборку")
+            return
 
 
 def _boost_loop(games: list[dict], cfg: Any, persist_done: bool = True) -> None:
@@ -337,7 +344,15 @@ def _boost_loop(games: list[dict], cfg: Any, persist_done: bool = True) -> None:
         # помечаются только в норме, внутри цикла).
         _teardown(active)
 
-    _report_result(status, boosted_count, failed_count, total, cfg)
+    try:
+        _report_result(status, boosted_count, failed_count, total, cfg)
+    except BaseException:
+        # Отчёт — терминальный шаг: toast/send_telegram уже глушат Exception
+        # сами, но третий Ctrl+C ровно в этот момент (BaseException) не должен
+        # пробрасываться из _boost_loop и крашить main() сырым трейсбеком —
+        # статус уже честно посчитан, крашиться после этого некрасиво и
+        # бесполезно.
+        log.exception("Не удалось сформировать финальный отчёт.")
 
 
 def main() -> None:

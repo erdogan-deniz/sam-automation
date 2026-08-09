@@ -68,6 +68,37 @@ def test_launch_stagger_too_high_is_error() -> None:
     assert validator._check_numeric_bounds(_cfg(launch_stagger=10**9))
 
 
+def test_playtime_idle_duration_exactly_at_ceiling_is_valid() -> None:
+    # Потолок инклюзивен (`>`, не `>=`) — ровно на границе ошибки быть не должно.
+    assert (
+        validator._check_numeric_bounds(
+            _cfg(playtime_idle_duration=validator._MAX_IDLE_DURATION)
+        )
+        == []
+    )
+
+
+def test_playtime_idle_duration_just_above_ceiling_is_error() -> None:
+    assert validator._check_numeric_bounds(
+        _cfg(playtime_idle_duration=validator._MAX_IDLE_DURATION + 1)
+    )
+
+
+def test_launch_stagger_exactly_at_ceiling_is_valid() -> None:
+    assert (
+        validator._check_numeric_bounds(
+            _cfg(launch_stagger=float(validator._MAX_LAUNCH_STAGGER))
+        )
+        == []
+    )
+
+
+def test_launch_stagger_just_above_ceiling_is_error() -> None:
+    assert validator._check_numeric_bounds(
+        _cfg(launch_stagger=validator._MAX_LAUNCH_STAGGER + 0.001)
+    )
+
+
 def test_generous_durations_still_valid() -> None:
     # Потолки щедрые — реальные конфиги не задевают.
     assert (
