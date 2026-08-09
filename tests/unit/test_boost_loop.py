@@ -113,6 +113,36 @@ def test_boost_loop_blind_run_does_not_persist_done(monkeypatch):
     assert done == []  # слепой прогон ничего не хоронит в done
 
 
+def test_boost_loop_blind_run_does_not_persist_skip(monkeypatch):
+    # Зеркало RA-A для skip.txt: в слепом прогоне owned-games пуст, значит ВСЕ
+    # игры unknown и КАЖДЫЙ провал запуска уходил бы в skip.txt. skip — жёсткий
+    # пропуск без самоисцеления (в отличие от done.txt, который перепроверяется
+    # по API), поэтому один слепой прогон с массовым провалом хоронил бы
+    # библиотеку навсегда. Непроверяемый прогон не персистит ничего.
+    skip: list[int] = []
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", skip.append)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+
+    def fake_idle(active, idle, on_failed=None):
+        if on_failed is not None:
+            for appid in active:
+                on_failed(appid)
+        return ([], list(active.keys()))
+
+    monkeypatch.setattr(boost, "idle_and_split_survivors", fake_idle)
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg(), persist_done=False)
+
+    assert skip == []  # слепой прогон ничего не хоронит и в skip
+
+
 def test_boost_loop_persist_done_true_marks_unknown(monkeypatch):
     # Контроль: не-слепой прогон (persist_done=True, дефолт) — unknown-выживший
     # ПИШЕТСЯ в done как обычно.
