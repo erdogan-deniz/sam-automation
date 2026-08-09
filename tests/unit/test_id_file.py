@@ -128,6 +128,60 @@ def test_append_id_write_failure_preserves_existing(
     assert list(tmp_path.glob("*.tmp")) == []  # tmp-мусор убран
 
 
+def test_append_id_replace_transient_permission_error_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Живой краш в проде (add_free.py --add): os.replace дал PermissionError
+    # (WinError 5) — транзиентная Windows sharing-violation (антивирус/
+    # индексатор держат только что созданный tmp-файл миллисекунды). Должен
+    # повторить и в итоге успеть, а не терять прогресс всей пачки.
+    f = tmp_path / "ids.txt"
+    f.write_text("1\n2\n", encoding="utf-8")
+
+    orig_replace = idf.os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src: object, dst: object) -> None:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError(5, "отказано в доступе")
+        orig_replace(src, dst)
+
+    monkeypatch.setattr(idf.os, "replace", flaky_replace)
+    monkeypatch.setattr(idf.time, "sleep", lambda *_a: None)
+
+    _append_id(f, 3)
+
+    assert calls["n"] == 3
+    assert read_ids_ordered(f) == [1, 2, 3]
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_append_id_replace_permission_error_exhausted_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Все попытки исчерпаны транзиентным отказом — не виснем вечно, и старое
+    # содержимое (в отличие от прямого write_text) остаётся целым.
+    f = tmp_path / "ids.txt"
+    f.write_text("1\n2\n3\n", encoding="utf-8")
+
+    calls = {"n": 0}
+
+    def always_denied(*_a: object) -> None:
+        calls["n"] += 1
+        raise PermissionError(5, "отказано в доступе")
+
+    monkeypatch.setattr(idf.os, "replace", always_denied)
+    monkeypatch.setattr(idf.time, "sleep", lambda *_a: None)
+
+    with pytest.raises(PermissionError):
+        _append_id(f, 4)
+
+    assert calls["n"] == idf._REPLACE_RETRY_ATTEMPTS
+    assert f.read_text(encoding="utf-8") == "1\n2\n3\n"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
 def test_append_id_read_failure_preserves_existing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -152,6 +206,21 @@ def test_append_id_read_failure_preserves_existing(
 
     monkeypatch.setattr(Path, "read_text", orig_read_text)
     assert load_ids_file(f) == {10, 20, 30}  # накопленное цело, 40 не дописан
+
+
+def test_append_id_undecodable_file_preserves_existing(tmp_path: Path) -> None:
+    # Файл с невалидным UTF-8 (битый байт от оборванной записи или ручной
+    # правки в другой кодировке): read_text бросает UnicodeDecodeError — это
+    # подкласс ValueError, а НЕ OSError, поэтому он пролетал мимо guard'а в
+    # _append_id и ронял весь прогон сырым трейсбеком. Должен вести себя как
+    # любой сбой чтения: файл не переписан, дозапись пропущена, без исключения.
+    f = tmp_path / "ids.txt"
+    raw = b"10\n20\n\xff\xfe30\n"
+    f.write_bytes(raw)
+
+    _append_id(f, 40)  # не должно бросить
+
+    assert f.read_bytes() == raw  # файл цел, ничего не усечено
 
 
 # ── _remove_id ─────────────────────────────────────────────────────────────
