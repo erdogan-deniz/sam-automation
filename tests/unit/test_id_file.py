@@ -208,6 +208,21 @@ def test_append_id_read_failure_preserves_existing(
     assert load_ids_file(f) == {10, 20, 30}  # накопленное цело, 40 не дописан
 
 
+def test_append_id_undecodable_file_preserves_existing(tmp_path: Path) -> None:
+    # Файл с невалидным UTF-8 (битый байт от оборванной записи или ручной
+    # правки в другой кодировке): read_text бросает UnicodeDecodeError — это
+    # подкласс ValueError, а НЕ OSError, поэтому он пролетал мимо guard'а в
+    # _append_id и ронял весь прогон сырым трейсбеком. Должен вести себя как
+    # любой сбой чтения: файл не переписан, дозапись пропущена, без исключения.
+    f = tmp_path / "ids.txt"
+    raw = b"10\n20\n\xff\xfe30\n"
+    f.write_bytes(raw)
+
+    _append_id(f, 40)  # не должно бросить
+
+    assert f.read_bytes() == raw  # файл цел, ничего не усечено
+
+
 # ── _remove_id ─────────────────────────────────────────────────────────────
 
 
