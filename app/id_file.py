@@ -9,10 +9,19 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
 log = logging.getLogger("sam_automation")
+
+# Ретрай os.replace на транзиентный Windows sharing-violation/access-denied —
+# антивирус/индексатор миллисекунды держат только что созданный tmp-файл.
+# Симметрично _read_ids_strict, которая уже переживает тот же класс сбоя на
+# чтении; здесь — защита на записи (живой краш: PermissionError WinError 5 на
+# os.replace в проде во время batch-записи error.txt при активном --add).
+_REPLACE_RETRY_ATTEMPTS = 5
+_REPLACE_RETRY_DELAY = 0.1  # секунд между попытками
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
@@ -32,7 +41,21 @@ def _atomic_write_text(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
-        os.replace(tmp, path)
+        for attempt in range(_REPLACE_RETRY_ATTEMPTS):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == _REPLACE_RETRY_ATTEMPTS - 1:
+                    raise
+                log.debug(
+                    "os.replace(%s): транзиентный PermissionError, "
+                    "повтор %d/%d",
+                    path,
+                    attempt + 1,
+                    _REPLACE_RETRY_ATTEMPTS,
+                )
+                time.sleep(_REPLACE_RETRY_DELAY)
     except BaseException:
         # Сбой на любом шаге: исходный path не тронут, tmp-мусор убираем.
         try:
