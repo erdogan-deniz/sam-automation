@@ -157,6 +157,25 @@ def test_acquire_retries_past_transient_removal_failure(tmp_path, monkeypatch):
     assert calls["n"] >= 4  # ретраил дольше старого жёсткого range(2)
 
 
+def test_acquire_raises_on_persistent_stale_removal_race(tmp_path, monkeypatch):
+    # Зеркало test_acquire_retries_past_transient_removal_failure: снятие
+    # мёртвого лока НИКОГДА не срабатывает (устойчивая, не транзиентная,
+    # гонка). Ретрай обязан сдаться по дедлайну честным RuntimeError, а не
+    # крутиться вечно (тест-пробел, отмеченный в аудите RA-7).
+    lock = tmp_path / "run.lock"
+    monkeypatch.setattr(rl, "LOCK_FILE", lock)
+    monkeypatch.setattr(rl, "_ACQUIRE_TIMEOUT", 0.05)
+    lock.write_text("99999:dead:boost", encoding="utf-8")
+    monkeypatch.setattr(
+        rl, "_proc_create_time", lambda pid: None if pid == 99999 else "me"
+    )
+    # Владелец мёртв, но снятие ни разу не срабатывает — устойчивая гонка.
+    monkeypatch.setattr(rl, "_remove_stale_lock", lambda expected: None)
+
+    with pytest.raises(RuntimeError, match="устойчивая гонка"):
+        rl.acquire_run_lock("farm")
+
+
 def test_release_removes_own_lock(tmp_path, monkeypatch):
     lock = tmp_path / "run.lock"
     monkeypatch.setattr(rl, "LOCK_FILE", lock)
