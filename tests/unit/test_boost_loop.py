@@ -415,6 +415,68 @@ def test_boost_loop_second_ctrl_c_during_teardown_retries_sweep(monkeypatch):
     assert calls["sweep"] >= 2  # свип повторён после прерывания
 
 
+def test_teardown_survives_non_ki_base_exception(monkeypatch):
+    # Докстринг обещает «НИКОГДА не бросает» (RA-C), но старый код особо
+    # обрабатывал только KeyboardInterrupt (retry) — любой ДРУГОЙ BaseException
+    # (SystemExit/GeneratorExit) из kill_all_sam_games не ловился ни внутренним
+    # `except Exception`, ни внешним `except KeyboardInterrupt`, и пролетал
+    # наружу из _teardown, ломая гарантию, на которую полагается вызывающий
+    # finally-блок (репорт после него мог не выполниться вовсе).
+    monkeypatch.setattr(
+        boost,
+        "kill_all_sam_games",
+        lambda: (_ for _ in ()).throw(SystemExit()),
+    )
+    boost._teardown({})  # не должно пробросить SystemExit
+
+
+def test_teardown_gives_up_after_three_ctrl_c(monkeypatch):
+    # Уборка, на которую отвечают Ctrl+C раз за разом, не должна крутиться
+    # вечно и не должна пробросить исключение — bounded retry (×3) исчерпался,
+    # функция просто возвращается (см. C5).
+    calls = {"n": 0}
+
+    def always_interrupted():
+        calls["n"] += 1
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(boost, "kill_all_sam_games", always_interrupted)
+    boost._teardown(
+        {}
+    )  # не должно пробросить, даже если КАЖДАЯ попытка прервана
+    assert calls["n"] == 3
+
+
+def test_boost_loop_report_failure_does_not_crash_run(monkeypatch):
+    # _report_result стоял ПОСЛЕ finally, ничем не защищённый: сбой внутри него
+    # (toast/send_telegram уже глушат Exception сами, но третий Ctrl+C ровно в
+    # этот момент — BaseException) пробрасывался бы из _boost_loop наружу в
+    # main(), давая сырой краш вместо уже посчитанного честного статуса.
+    monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
+    monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
+    monkeypatch.setattr(boost, "kill_process", lambda p: None)
+    monkeypatch.setattr(boost, "kill_all_sam_games", lambda: None)
+    monkeypatch.setattr(boost.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        boost,
+        "launch_games_staggered",
+        lambda exe, games, stagger: {appid: object() for appid, _ in games},
+    )
+    monkeypatch.setattr(
+        boost,
+        "idle_and_split_survivors",
+        lambda active, idle, on_failed=None: (list(active.keys()), []),
+    )
+
+    def boom_report(*a, **k):
+        raise KeyboardInterrupt  # третий Ctrl+C ровно во время отчёта
+
+    monkeypatch.setattr(boost, "_report_result", boom_report)
+
+    games = [{"appid": 10, "name": "A", "playtime_forever": 0, "known": False}]
+    boost._boost_loop(games, _cfg())  # не должно пробросить
+
+
 def test_boost_loop_multi_batch_pauses_between_not_after(monkeypatch):
     monkeypatch.setattr(boost, "mark_playtime_done", lambda a: None)
     monkeypatch.setattr(boost, "mark_playtime_skip", lambda a: None)
