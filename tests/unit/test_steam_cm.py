@@ -412,3 +412,108 @@ def test_flow_saved_2fa_auto_code_success(monkeypatch):
     monkeypatch.setattr(steam_cm, "_compute_steam_totp", lambda _s: "12345")
     assert steam_cm.read_steam_cm_app_ids("C:/steam", "user") == [10, 20]
     assert cleared["n"] == 0
+
+
+# ── cm_session / _cm_login: живой клиент переживает успешный вход ──────────
+
+
+def test_cm_login_success_returns_live_client_without_disconnect(monkeypatch):
+    # _cm_login должен вернуть КЛИЕНТА, а не отключить его — иначе
+    # request_free_license (потребитель из app/free_games) не сможет им
+    # воспользоваться.
+    fake = _FakeCMFlow([EResult.OK])
+    _patch_cm_flow(monkeypatch, fake, refresh="RT")
+    monkeypatch.setattr(
+        steam_cm, "_cm_login_with_jwt", lambda *a, **k: EResult.OK
+    )
+
+    client = steam_cm._cm_login("user")
+
+    assert client is fake
+    assert fake.disconnect_calls == 0
+
+
+def test_cm_session_disconnects_after_with_block(monkeypatch):
+    fake = _FakeCMFlow([EResult.OK])
+    _patch_cm_flow(monkeypatch, fake, refresh="RT")
+    monkeypatch.setattr(
+        steam_cm, "_cm_login_with_jwt", lambda *a, **k: EResult.OK
+    )
+
+    with steam_cm.cm_session("user") as client:
+        assert client is fake
+        assert fake.disconnect_calls == 0
+
+    assert fake.disconnect_calls == 1
+
+
+def test_cm_session_yields_none_on_login_failure(monkeypatch):
+    # Транзиент (TryAnotherCM) на всех попытках → login не удался.
+    fake = _FakeCMFlow([EResult.TryAnotherCM])
+    _patch_cm_flow(monkeypatch, fake, refresh=None)
+
+    with steam_cm.cm_session("user") as client:
+        assert client is None
+
+
+def test_cm_session_completes_cleanly_when_login_returns_none(
+    monkeypatch, tmp_path
+):
+    # Свойство под проверкой: cm_session НЕ падает и не портит счётчик
+    # disconnect(), когда _cm_login возвращает None (client is None) —
+    # сценарий "не interactive, нет сохранённых кредов" даёт РОВНО один
+    # disconnect() внутри самого _cm_login, и он остаётся ровно 1 после
+    # выхода из cm_session.
+    #
+    # НЕ доказывает работу guard'а `if client is not None:` в finally
+    # cm_session: на None это условие всегда False что с guard'ом, что
+    # без него `None.disconnect()` кинул бы AttributeError, который тут
+    # же глушится соседним `except Exception: pass` — тест не отличит
+    # охраняемую версию от неохраняемой (см. ревью Task 1, finding #1).
+    # Сам guard на уровне _cm_login покрыт
+    # test_cm_login_not_interactive_no_saved_disconnects ниже.
+    fake = _FakeCMFlow([])
+    monkeypatch.setattr("steam.client.SteamClient", lambda: fake)
+    monkeypatch.setattr(steam_cm, "_steam_api_reachable", lambda *a, **k: True)
+    monkeypatch.setattr(steam_cm, "_load_session", lambda: None)
+    monkeypatch.setattr(
+        steam_cm, "_USERNAME_FILE", tmp_path / "no_such_username.txt"
+    )
+
+    with steam_cm.cm_session("user", interactive=False):
+        pass
+
+    assert fake.disconnect_calls == 1  # не изменилось после cm_session
+
+
+def test_cm_login_not_interactive_no_saved_disconnects(monkeypatch, tmp_path):
+    # FIX: путь "interactive=False, нет сохранённых кредов" раньше полагался
+    # ТОЛЬКО на удаляемый blanket finally для disconnect — теперь явный вызов.
+    fake = _FakeCMFlow([])
+    monkeypatch.setattr("steam.client.SteamClient", lambda: fake)
+    monkeypatch.setattr(steam_cm, "_steam_api_reachable", lambda *a, **k: True)
+    monkeypatch.setattr(steam_cm, "_load_session", lambda: None)
+    monkeypatch.setattr(
+        steam_cm, "_USERNAME_FILE", tmp_path / "no_such_username.txt"
+    )
+
+    client = steam_cm._cm_login("user", interactive=False)
+
+    assert client is None
+    assert fake.disconnect_calls == 1
+
+
+# ── read_steam_cm_app_ids поверх cm_session: поведение не изменилось ───────
+
+
+def test_read_cm_app_ids_still_works_via_cm_session(monkeypatch):
+    # Регрессия по сути дублирует test_flow_jwt_first_success_returns_apps,
+    # но явно фиксирует, что публичная функция пережила рефакторинг на
+    # cm_session — оставлена рядом как явный regression-маркер задачи.
+    fake = _FakeCMFlow([EResult.OK])
+    _patch_cm_flow(monkeypatch, fake, refresh="RT")
+    monkeypatch.setattr(
+        steam_cm, "_cm_login_with_jwt", lambda *a, **k: EResult.OK
+    )
+    assert steam_cm.read_steam_cm_app_ids("C:/steam", "user") == [10, 20]
+    assert fake.disconnect_calls == 1
