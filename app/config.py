@@ -111,8 +111,11 @@ def load_config(config_path: str = "config.yaml") -> Config:
     if "sam_game_exe_path" in raw:
         cfg.sam_game_exe_path = raw["sam_game_exe_path"]
 
-    cfg.steam_api_key = raw.get("steam_api_key", "")
-    cfg.steam_id = str(raw.get("steam_id", ""))
+    # strip: скопированные из браузера ключ/ID часто несут хвостовой пробел или
+    # перевод строки — они уезжают прямо в URL Web API и ломают КАЖДЫЙ запрос
+    # ложной «невалидной» ошибкой на верных значениях.
+    cfg.steam_api_key = str(raw.get("steam_api_key", "")).strip()
+    cfg.steam_id = str(raw.get("steam_id", "")).strip()
     cfg.steam_path = raw.get("steam_path", "")
 
     if "game_ids" in raw:
