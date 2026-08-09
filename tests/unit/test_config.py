@@ -22,6 +22,27 @@ def test_load_config_missing_file_returns_defaults(tmp_path: Path) -> None:
     assert cfg.launch_stagger == 3.0
 
 
+def test_load_config_strips_steam_id_whitespace(
+    write_config: Callable[..., str],
+) -> None:
+    # Пробел/перевод строки от копипаста ID в config.yaml уезжал в
+    # GetPlayerSummaries как часть значения — validate падал ложным «Steam ID
+    # не найден» на верном ID.
+    path = write_config(steam_id="  76561198000000000\n")
+    cfg = load_config(path)
+    assert cfg.steam_id == "76561198000000000"
+
+
+def test_load_config_strips_steam_api_key_whitespace(
+    write_config: Callable[..., str],
+) -> None:
+    # Тот же класс: ключ, скопированный со страницы Valve с хвостовым
+    # пробелом, ломал КАЖДЫЙ Web API-запрос (уходит прямо в URL).
+    path = write_config(steam_api_key=" ABC123DEF456 ")
+    cfg = load_config(path)
+    assert cfg.steam_api_key == "ABC123DEF456"
+
+
 def test_load_config_launch_stagger(write_config: Callable[..., str]) -> None:
     path = write_config(launch_stagger=1.5)
     cfg = load_config(path)
