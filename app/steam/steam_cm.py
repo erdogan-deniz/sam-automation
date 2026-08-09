@@ -18,10 +18,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 # steam использует protobuf 3.x API; при наличии protobuf 4.x нужен python-режим
@@ -192,22 +193,21 @@ from app.cookies import get_web_cookies  # noqa: F401, E402
 from .packageinfo import expand_packages_to_apps  # noqa: E402
 
 
-def read_steam_cm_app_ids(
-    steam_path: str,
-    username: str,
-    *,
-    interactive: bool = True,
-) -> list[int]:
-    """Получает App ID всех лицензий аккаунта через Steam CM протокол.
+def _cm_login(username: str, *, interactive: bool = True) -> Any:
+    """Логинится в Steam CM (JWT → сохранённый пароль → RSA → интерактив).
+
+    Возвращает живой ПОДКЛЮЧЁННЫЙ SteamClient с заполненным `.licenses` при
+    успехе (caller сам обязан отключить — см. `cm_session`), либо None при
+    любом неуспехе (причина уже залогирована, соединение уже закрыто здесь).
+    На исключении (напр. EOFError из input() в cron без stdin) — соединение
+    закрывается и исключение пробрасывается дальше.
 
     Args:
-        steam_path: путь к папке Steam
-        username:   логин Steam аккаунта (из конфига или реестра)
+        username:    логин Steam аккаунта (используется только при первом
+                      интерактивном входе без сохранённых данных — сам вход
+                      всё равно переспрашивает).
         interactive: разрешить интерактивный ввод пароля/2FA.
-                     При False возвращает [] если нет сохранённых данных.
-
-    Returns:
-        Список всех App ID которые Steam считает принадлежащими аккаунту.
+                     При False возвращает None если нет сохранённых данных.
     """
     try:
         import gevent
@@ -217,7 +217,7 @@ def read_steam_cm_app_ids(
         from steam.enums.emsg import EMsg
     except ImportError:
         log.warning("Библиотека steam не установлена: pip install steam")
-        return []
+        return None
 
     # Пре-чек ДО запроса логина/пароля/2FA: если Steam WebAPI недоступен —
     # вход в CM всё равно зависнет. Пропускаем CM (ID уже собраны из
@@ -227,12 +227,10 @@ def read_steam_cm_app_ids(
             "Steam WebAPI недоступен — пропускаю Steam CM. ID собраны из "
             "localconfig + Steam API; повтори scan позже для лицензий CM."
         )
-        return []
+        return None
 
     client = SteamClient()
     client.set_credential_location(str(_CRED_DIR))
-    # try/finally: любой выход (в т.ч. EOFError из input()/getwch() в cron без
-    # stdin) обязан закрыть gevent-соединение — иначе лик клиента.
     try:
         # Регистрируем слушатель ДО login — иначе race condition
         licenses_event = GEvent()
@@ -310,7 +308,7 @@ def read_steam_cm_app_ids(
                     _CONNECT_TIMEOUT,
                 )
                 client.disconnect()
-                return []
+                return None
 
             # Mobile Authenticator: пароль принят, Steam требует 2FA
             if result == EResult.AccountLoginDeniedNeedTwoFactor:
@@ -340,13 +338,13 @@ def read_steam_cm_app_ids(
                         _CONNECT_TIMEOUT,
                     )
                     client.disconnect()
-                    return []
+                    return None
 
                 # Пароль был верным (иначе 2FA не запросили бы) — не удаляем сессию
                 if result != EResult.OK:
                     log.warning("Steam CM: неверный 2FA код (%s)", result)
                     client.disconnect()
-                    return []
+                    return None
 
             elif result != EResult.OK:
                 if _password_failure_action(result) == "try_rsa":
@@ -377,7 +375,7 @@ def read_steam_cm_app_ids(
                             getattr(result, "name", result),
                         )
                         client.disconnect()
-                        return []
+                        return None
                 else:
                     # Сетевая (transient) или ошибка аккаунта (не пароль): креды
                     # сохраняем, в интерактив НЕ падаем, CM пропускаем — скан идёт
@@ -388,14 +386,17 @@ def read_steam_cm_app_ids(
                         getattr(result, "name", result),
                     )
                     client.disconnect()
-                    return []
+                    return None
 
         if not saved and result != EResult.OK:
             if not interactive:
                 log.info(
                     "Steam CM: нет сохранённых данных, интерактивный режим отключён"
                 )
-                return []
+                # FIX: раньше полагался только на blanket finally (см. разбор
+                # рефакторинга в плане) — теперь явно, как и другие пути.
+                client.disconnect()
+                return None
 
             first_login = True
             # Спрашиваем ДО логина — чтобы не блокировать event loop после него
@@ -413,7 +414,9 @@ def read_steam_cm_app_ids(
                         "Steam CM: таймаут подключения к CM-серверу (%ds)",
                         _CONNECT_TIMEOUT,
                     )
-                    return []
+                    # FIX: та же дыра, что и веткой выше — явный disconnect.
+                    client.disconnect()
+                    return None
 
             # _do_interactive_login сам пробует RSA-путь на InvalidPassword
             # (legacy ClientLogon отвергает верный пароль для modern-auth аккаунтов).
@@ -426,13 +429,12 @@ def read_steam_cm_app_ids(
                 "Steam CM: вход не удался: %s", getattr(result, "name", result)
             )
             client.disconnect()
-            return []
+            return None
 
         # Ждём лицензии
         if not licenses_event.wait(timeout=15):
             log.warning("Steam CM: timeout ожидания списка лицензий")
 
-        owned_packages = set(client.licenses.keys())
         print()
 
         # Даём event loop время обработать ClientUpdateMachineAuth (sentry)
@@ -446,20 +448,84 @@ def read_steam_cm_app_ids(
             )
             log.info("═" * 80)
 
-        log.info(
-            "Получение ID приложений библиотеки Steam через Steam Client Master"
-        )
-
-        client.disconnect()
-
-        if not owned_packages:
-            log.warning("Steam CM: список лицензий пуст")
-            return []
-
-        return expand_packages_to_apps(steam_path, owned_packages)
-    finally:
-        # Идемпотентно: на нормальных путях disconnect уже вызван выше.
+        return client
+    except BaseException:
+        # Любой выход исключением (в т.ч. EOFError из input()/getwch() в cron
+        # без stdin) обязан закрыть gevent-соединение — иначе лик клиента.
+        # НЕ finally: каждый нормальный (non-exception) путь выше уже
+        # отключается сам явно (см. FIX-комментарии) — finally здесь закрывал
+        # бы клиента и на успешном `return client`, убивая соединение раньше,
+        # чем вызывающий код (cm_session) успеет им воспользоваться.
         try:
             client.disconnect()
         except Exception:
             pass
+        raise
+
+
+@contextlib.contextmanager
+def cm_session(
+    username: str = "", *, interactive: bool = True
+) -> Iterator[Any]:
+    """Контекст-менеджер живой сессии Steam CM.
+
+    Логинится через `_cm_login` (JWT → сохранённый пароль → RSA → интерактив)
+    и ГАРАНТИРОВАННО отключает клиента на выходе — успех, неуспех логина или
+    исключение внутри `with`-блока. Переиспользуемый примитив: раньше вход был
+    заперт внутри `read_steam_cm_app_ids`, которая отключалась сразу после
+    получения лицензий — новым потребителям (запрос бесплатных лицензий, см.
+    app/free_games) нужен ЖИВОЙ клиент для дальнейших вызовов.
+
+    Пример:
+        with cm_session() as client:
+            if client is None:
+                return  # логин не удался — причина уже залогирована
+            owned = set(client.licenses.keys())
+
+    Yields:
+        SteamClient с заполненным `.licenses` при успехе; None при неуспехе
+        логина (все причины уже залогированы `_cm_login` — просто проверь
+        `if client is None`).
+    """
+    client = _cm_login(username, interactive=interactive)
+    try:
+        yield client
+    finally:
+        if client is not None:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+
+
+def read_steam_cm_app_ids(
+    steam_path: str,
+    username: str,
+    *,
+    interactive: bool = True,
+) -> list[int]:
+    """Получает App ID всех лицензий аккаунта через Steam CM протокол.
+
+    Args:
+        steam_path: путь к папке Steam (нужен для expand_packages_to_apps —
+                    чтение локального appcache/packageinfo.vdf)
+        username:   логин Steam аккаунта (из конфига или реестра)
+        interactive: разрешить интерактивный ввод пароля/2FA.
+                     При False возвращает [] если нет сохранённых данных.
+
+    Returns:
+        Список всех App ID которые Steam считает принадлежащими аккаунту.
+    """
+    with cm_session(username, interactive=interactive) as client:
+        if client is None:
+            return []
+
+        owned_packages = set(client.licenses.keys())
+        if not owned_packages:
+            log.warning("Steam CM: список лицензий пуст")
+            return []
+
+        log.info(
+            "Получение ID приложений библиотеки Steam через Steam Client Master"
+        )
+        return expand_packages_to_apps(steam_path, owned_packages)
