@@ -35,10 +35,15 @@ class _ReadBoomResp:
 
 
 def test_api_get_wraps_incomplete_read(monkeypatch: pytest.MonkeyPatch) -> None:
-    """IncompleteRead при resp.read() → RuntimeError (ловится ретраем/caller)."""
+    """IncompleteRead при resp.read() → RuntimeError (ловится ретраем/caller).
+
+    Постоянный сбой исчерпывает весь ретрай-бюджет на транзиентные сетевые
+    ошибки (добавлен 2026-07-19) — мокаем time.sleep, иначе тест реально спит.
+    """
     monkeypatch.setattr(
         "urllib.request.urlopen", lambda *a, **k: _ReadBoomResp()
     )
+    monkeypatch.setattr("time.sleep", lambda s: None)
     with pytest.raises(RuntimeError):
         steam_api._api_get("https://api.steampowered.com/x")
 
@@ -52,6 +57,7 @@ def test_api_get_wraps_remote_disconnected(
         raise http.client.RemoteDisconnected("closed")
 
     monkeypatch.setattr("urllib.request.urlopen", boom)
+    monkeypatch.setattr("time.sleep", lambda s: None)
     with pytest.raises(RuntimeError):
         steam_api._api_get("https://api.steampowered.com/x")
 
