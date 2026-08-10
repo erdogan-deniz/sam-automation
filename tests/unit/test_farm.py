@@ -313,3 +313,92 @@ def test_process_one_game_no_achievements_not_error(
     assert tracker.total_errors == 0
     # SAM «нет достижений» не трогает without-пометку (она как раз и ставится).
     assert calls["unmark_no_ach"] == []
+
+
+# ── персист переживает SAMTooManyErrors из record_error (F1, аудит 2026-08-10) ─
+# tracker.record_error бросает SAMTooManyErrors на N-й подряд ошибке. Раньше
+# он вызывался ПЕРВЫМ в каждой error-ветке — бросок пропускал mark_error_id/
+# results.append того же блока, и игра, добившая лимит, не попадала ни в
+# error.txt, ни в results (молча ретраится следующим прогоном без следа).
+
+
+def test_soft_error_abort_still_marks_error_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker = ErrorTracker(max_consecutive=1)
+    result = UnlockResult(game_id=730, skipped=True, skip_reason="error")
+    calls: dict[str, list[int]] = {"error": []}
+    monkeypatch.setattr(farm, "process_game", lambda *a, **k: result)
+    monkeypatch.setattr(
+        farm, "mark_error_id", lambda g: calls["error"].append(g)
+    )
+    monkeypatch.setattr(farm, "close_game", lambda app: None)
+
+    with pytest.raises(SAMTooManyErrors):
+        farm._process_one_game(_FakeSession(), 730, _Cfg(), tracker, [])
+
+    assert calls["error"] == [730]
+
+
+def test_samerror_abort_still_persists(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.exceptions import SAMError
+
+    tracker = ErrorTracker(max_consecutive=1)
+    calls: dict[str, list[int]] = {"error": []}
+    monkeypatch.setattr(
+        farm,
+        "process_game",
+        lambda *a, **k: (_ for _ in ()).throw(SAMError("boom")),
+    )
+    monkeypatch.setattr(
+        farm, "mark_error_id", lambda g: calls["error"].append(g)
+    )
+    monkeypatch.setattr(farm, "close_game", lambda app: None)
+    results: list[UnlockResult] = []
+
+    with pytest.raises(SAMTooManyErrors):
+        farm._process_one_game(_FakeSession(), 730, _Cfg(), tracker, results)
+
+    assert calls["error"] == [730]
+    assert results and results[0].game_id == 730
+
+
+def test_generic_exception_abort_still_persists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracker = ErrorTracker(max_consecutive=1)
+    calls: dict[str, list[int]] = {"error": []}
+    monkeypatch.setattr(
+        farm,
+        "process_game",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    monkeypatch.setattr(
+        farm, "mark_error_id", lambda g: calls["error"].append(g)
+    )
+    monkeypatch.setattr(farm, "close_game", lambda app: None)
+    results: list[UnlockResult] = []
+
+    with pytest.raises(SAMTooManyErrors):
+        farm._process_one_game(_FakeSession(), 730, _Cfg(), tracker, results)
+
+    assert calls["error"] == [730]
+    assert results and results[0].game_id == 730
+
+
+# ── _teardown_picker переживает сбой kill_process (F3, аудит 2026-08-10) ──────
+# kill_process(proc) в finally main() не имел собственной защиты (в отличие
+# от close_game в _process_one_game) — сбой (напр. PermissionError в гонке
+# терминации уже выходящего процесса) пропустил бы честный
+# _log_summary/_report_result, идущие следом.
+
+
+def test_teardown_picker_survives_kill_process_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(proc):
+        raise PermissionError("процесс уже завершается")
+
+    monkeypatch.setattr(farm, "kill_process", _boom)
+
+    farm._teardown_picker(object())  # не должно бросить
