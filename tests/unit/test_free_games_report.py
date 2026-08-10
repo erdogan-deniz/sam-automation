@@ -47,6 +47,24 @@ def test_report_hit_cap_never_says_all_added(monkeypatch):
     assert "⚠️" in calls["tg"]  # НЕ ✅ — упор в лимит не чистый успех
 
 
+def test_report_session_dead_never_marks_success(monkeypatch):
+    # Слепая зона аудита 2026-08-10: мёртвая CM-сессия посреди прогона
+    # (add_licenses абортит вместо бесконечного ретрая) — отчёт обязан честно
+    # отличать это от чистого "готово", а не молча показывать ✅.
+    calls = _capture(monkeypatch)
+    report_mod.report_result(
+        status="ok",
+        added=5,
+        refused=0,
+        error=0,
+        hit_cap=False,
+        session_dead=True,
+        cfg=_cfg(),
+    )
+    assert "сессия" in calls["toast"][1].lower()
+    assert "⚠️" in calls["tg"]  # НЕ ✅
+
+
 def test_report_interrupted_never_marks_success(monkeypatch):
     calls = _capture(monkeypatch)
     report_mod.report_result(
