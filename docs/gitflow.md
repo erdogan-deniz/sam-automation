@@ -32,8 +32,8 @@ git checkout -b release/1.0.0 develop
 #  ... финальные правки: версия, changelog, доки ...
 #  PR release/1.0.0 -> main, смёрджить на GitHub
 git tag v1.0.0                                    # на main
-git branch -d release/1.0.0                       # ветка уже смёрджена в main, больше не нужна
-git checkout develop && git merge --no-ff origin/main   # вернуть релиз в develop (ветки уже нет — мёржим main)
+git checkout develop && git merge --no-ff origin/main   # вернуть релиз в develop
+git branch -d release/1.0.0                       # backmerge сделан — ветка больше не нужна
 ```
 
 ### Hotfix (срочный баг в проде)
@@ -42,8 +42,8 @@ git checkout develop && git merge --no-ff origin/main   # вернуть рел�
 git checkout -b hotfix/1.0.1 main
 #  ... фикс ...
 #  PR hotfix/1.0.1 -> main, смёрджить + тег v1.0.1
+git checkout develop && git merge --no-ff origin/main   # вернуть фикс в develop
 git branch -d hotfix/1.0.1
-git checkout develop && git merge --no-ff origin/main   # ветки уже нет — мёржим main
 ```
 
 ## Версии (semver)

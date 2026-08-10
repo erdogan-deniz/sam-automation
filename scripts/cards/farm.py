@@ -26,6 +26,7 @@ from typing import Any
 
 from app.cache import load_game_names
 from app.cards import (
+    AuthError,
     check_cards_remaining,
     fetch_games_with_card_drops,
     mark_card_done,
@@ -332,7 +333,30 @@ def main() -> None:
         )
         sys.exit(1)
 
-    games_with_drops = fetch_games_with_card_drops(cookies, steam_id)
+    try:
+        games_with_drops = fetch_games_with_card_drops(cookies, steam_id)
+    except AuthError:
+        # Протухшие куки — НЕ то же самое, что "пагинация честно закончилась
+        # пустым результатом". Обновляем один раз неинтерактивно и повторяем,
+        # иначе ложно доложим "всё уже собрано" на самом деле мёртвой сессии.
+        log.warning("Сессия истекла при поиске игр с дропами — обновляю куки")
+        fresh = get_web_cookies(cfg.steam_id, interactive=False)
+        if not fresh:
+            log.error(
+                "Не удалось обновить Steam-куки — сессия протухла, нужен "
+                "интерактивный вход:\n"
+                "  python scripts/cards/farm.py"
+            )
+            sys.exit(1)
+        cookies = fresh
+        try:
+            games_with_drops = fetch_games_with_card_drops(cookies, steam_id)
+        except AuthError as e:
+            log.error(
+                "Сессия всё ещё недействительна после обновления куки: %s", e
+            )
+            sys.exit(1)
+
     if not games_with_drops:
         log.info("Нет игр с оставшимися card drops — всё уже получено!")
         sys.exit(0)
