@@ -198,3 +198,26 @@ def test_release_keeps_foreign_lock(tmp_path, monkeypatch):
 def test_release_no_lock_file_is_noop(tmp_path, monkeypatch):
     monkeypatch.setattr(rl, "LOCK_FILE", tmp_path / "absent.lock")
     rl.release_run_lock()  # не должно бросить
+
+
+def test_own_token_raises_if_own_create_time_unavailable(monkeypatch):
+    # _proc_create_time(СВОЙ pid) не должен вернуть None в норме (процесс
+    # точно жив — это мы), но если психика/AV/сэндбокс не дали его
+    # определить, писать в лок литеральную строку "None" вместо реального
+    # create_time — хуже отказа: другой инстанс сравнит НАШ реальный (живой)
+    # ctime с чужим "None" → mismatch → сочтёт нас мёртвыми и снесёт лок.
+    monkeypatch.setattr(rl, "_proc_create_time", lambda pid: None)
+    with pytest.raises(RuntimeError):
+        rl._own_token("farm")
+
+
+def test_acquire_is_idempotent_for_same_process(tmp_path, monkeypatch):
+    # Повторный acquire_run_lock из ТОГО ЖЕ процесса не должен считаться
+    # «уже запущен кем-то другим» — это буквально мы. Ничего сегодня так не
+    # вызывает, но нет и защиты от будущего рефактора, который бы это сделал.
+    lock = tmp_path / "run.lock"
+    monkeypatch.setattr(rl, "LOCK_FILE", lock)
+    monkeypatch.setattr(rl, "_proc_create_time", lambda pid: "me")
+    rl.acquire_run_lock("farm")
+    rl.acquire_run_lock("farm")  # не должно бросить
+    assert str(os.getpid()) in lock.read_text(encoding="utf-8")
