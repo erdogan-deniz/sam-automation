@@ -2,6 +2,20 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.15.3]
+
+### Утечка Telegram-токена в логи (слепая зона аудита)
+
+Расследование слепой зоны «редакция секретов в логах» из full-project-
+аудита 2026-08-10 нашло конкретный воспроизводимый лик: `telegram_bot_token`
+грузился без `.strip()`. Хвостовой пробел/перевод строки от копипаста
+токена уезжал в URL `send_telegram()` (`bot{token}/sendMessage`) и роняет
+`urllib` с `http.client.InvalidURL` ДО сетевого запроса — `__str__` этого
+исключения включает URL целиком, токен в cleartext уходит в `log.warning`
+(логи хранятся вечно plaintext). Добавлен `.strip()` для
+`telegram_bot_token`/`telegram_chat_id`, как уже было у `steam_api_key`/
+`steam_id`.
+
 ## [1.15.2]
 
 ### Дозакрытие 3 MEDIUM-находок full-project-аудита 2026-08-10
