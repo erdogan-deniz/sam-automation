@@ -35,9 +35,15 @@ def load_candidates() -> list[int]:
 
 
 def save_candidates(appids: list[int]) -> None:
-    """Атомарно перезаписывает candidates.txt (числовая сортировка, дедуп)."""
+    """Атомарно перезаписывает candidates.txt, сохраняя порядок (дедуп первых
+    вхождений) — как read_ids_ordered, которым load_candidates читает этот же
+    файл. Числовая сортировка здесь стёрла бы приоритет games>software>demos
+    из discovery.discover_candidates, на который полагается orchestrate.add()
+    --limit (срез pending[:limit] по этому порядку, не по appid).
+    """
     _atomic_write_text(
-        CANDIDATES_FILE, "\n".join(str(i) for i in sorted(set(appids))) + "\n"
+        CANDIDATES_FILE,
+        "\n".join(str(i) for i in dict.fromkeys(appids)) + "\n",
     )
 
 
