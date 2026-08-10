@@ -40,7 +40,7 @@ class _RateLimitError(RuntimeError):
         self.retry_after = retry_after
 
 
-class _AuthError(RuntimeError):
+class AuthError(RuntimeError):
     """HTTP 401/403 — истекли куки / нет доступа. НЕ транзиент (ретрай не лечит)."""
 
 
@@ -85,7 +85,7 @@ def _fetch_page(opener: urllib.request.OpenerDirector, url: str) -> str:
                 _parse_retry_after(e),
             ) from e
         if e.code in (401, 403):
-            raise _AuthError(
+            raise AuthError(
                 f"HTTP {e.code} (истекли куки / нет доступа): {url}"
             ) from e
         raise RuntimeError(f"HTTP {e.code} при запросе {url}") from e
@@ -107,7 +107,7 @@ def _fetch_page_with_retry(
     for attempt in range(retries):
         try:
             return _fetch_page(opener, url)
-        except _AuthError:
+        except AuthError:
             # Истёкшие куки / нет доступа — ретрай не поможет, пробрасываем сразу
             # (иначе 3 бессмысленные попытки маскируют auth-проблему под «связь»).
             raise
@@ -179,6 +179,12 @@ def fetch_games_with_card_drops(
         log.debug("Получаю страницу значков: %s", url)
         try:
             html = _fetch_page_with_retry(opener, url)
+        except AuthError:
+            # Протухшие куки — НЕ транзиент страницы, ретраить бессмысленно.
+            # Пробрасываем целиком, а не копим в consec_failures: иначе 3
+            # подряд 401/403 молча дают частичный/пустой результат, который
+            # main() докладывает как "всё уже собрано" вместо честной ошибки.
+            raise
         except RuntimeError as e:
             consec_failures += 1
             log.warning(
