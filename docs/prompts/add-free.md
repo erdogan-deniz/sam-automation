@@ -131,8 +131,9 @@ limit, include_demos, cfg)`.
 - Персист `add()` — БАТЧЕМ после полного возврата `add_licenses()`, НЕ
   инкрементально по appid (сравни с `app/wishlist/orchestrate.add()`, где
   инкрементальный персист был добавлен именно из-за живой находки о потере
-  прогресса при жёстком килле). Здесь тот же риск теоретически есть, но НЕ
-  проверялся живым многочасовым прогоном с убийством процесса.
+  прогресса при жёстком килле). **ПОДТВЕРЖДЕНО аудитом 2026-08-10** (было
+  теоретическим риском, теперь CONFIRMED статическим анализом — см. находку
+  №1 ниже): это реальный, воспроизводимый баг, не гипотеза.
 - `BATCH_SIZE=20` и `_TRANSIENT_RETRY_DELAY=30.0` — живые, не гаданные
   константы (см. licenses.py docstring), но снятые на ОДНОМ конкретном
   аккаунте в ОДНОЙ сессии — не исключено, что для другого аккаунта/момента
@@ -154,6 +155,45 @@ limit, include_demos, cfg)`.
   скорее всего есть и тот же баг).
 - Реальный сетевой путь (store-search HTML-парсинг, CM `request_free_license`)
   не тестируется — ожидаемо, фейки покрывают только логику.
+
+# НАЙДЕНО АУДИТОМ 2026-08-10 (открытые баги, TDD-фикс)
+> Полный проектный аудит (46 агентов), первый формальный проход. Все
+> CONFIRMED адверсариальной верификацией по коду. Полные evidence — память
+> `project_full_audit_2026_08_10`.
+
+1. **[High] `app/free_games/orchestrate.py:92` — data-loss на interrupt.**
+   `result = licenses.add_licenses(client, pending)` персистит в state
+   (`mark_added`/`refused`/`error`) только ПОСЛЕ полного возврата.
+   `add_licenses` копит `AddResult` в памяти через многоминутные retry-штормы
+   (`_TRANSIENT_RETRY_DELAY=30s`, unbounded — наблюдалось ~4.5 мин подряд).
+   KeyboardInterrupt/исключение ВО ВРЕМЯ шторма теряет уже выданные Steam
+   лицензии из `added.txt` НАСОВСЕМ (appid реально получен, но нигде не
+   записан). `cm_session()`'s finally только disconnect'ит клиента, исключение
+   не глотает. Фикс: тот же паттерн, что уже в `app/wishlist/wishlist_api.py`
+   — прокинуть `persist: Callable[[int, str], None] | None` в
+   `add_licenses`/`_request_batch_with_backoff`, звать `state.mark_added/
+   refused/error` сразу по каждому решённому appid (или хотя бы по батчу),
+   не одним махом в конце.
+2. **[Medium] `app/free_games/state.py:37` — `save_candidates` теряет
+   приоритет.** Пишет `sorted(set(appids))` (числовой порядок), а
+   `discovery.discover_candidates` специально строит порядок
+   games→software→demos (демо — в конец, едят потолок лицензий). После
+   круглого рейс через save/load приоритет стирается: `--limit N` режет по
+   числовому appid, а не по намеренному приоритету — обесценивает саму цель
+   упорядочивания. Фикс: сохранять порядок (dict.fromkeys для дедупа вместо
+   sorted(set(...))), либо явно задокументировать, что порядок не сохраняется
+   (и убрать ложное утверждение из докстринга `load_candidates`).
+3. **[Medium] `app/free_games/orchestrate.py:151` — финальный
+   `report.report_result(...)` не переживает BaseException.** В отличие от
+   `scripts/playtime/boost.py` (полиш v1.14.1: `try: _report_result(...)
+   except BaseException: log.exception(...)`), здесь вызов — голый
+   top-level statement. Ctrl+C ровно на этапе отчёта (напр. внутри
+   `toast()`/`send_telegram()`) даёт сырой трейсбек вместо уже честно
+   посчитанного статуса. Фикс: обернуть тем же `try/except BaseException`.
+
+Скрипт использует `cm_session()` (полный интерактивный CM-логин) — 2 High
+находки по самому логину (credentials.py данные, playwright.py неверный
+файл токена) см. в `docs/prompts/core-auth-cookies.md`.
 
 # МЕТОД
 1. По симптому воспроизведи, сними лог, сверь 4 файла state ДО/ПОСЛЕ.
