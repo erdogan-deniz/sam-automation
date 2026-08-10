@@ -77,6 +77,7 @@ class AddResult:
     refused: list[int] = field(default_factory=list)
     error: list[int] = field(default_factory=list)
     hit_cap: bool = False
+    session_dead: bool = False
 
 
 @dataclass
@@ -85,6 +86,7 @@ class _BatchOutcome:
     refused: list[int] = field(default_factory=list)
     error: list[int] = field(default_factory=list)
     hit_cap: bool = False
+    session_dead: bool = False
 
 
 def _batches(appids: list[int], size: int) -> list[list[int]]:
@@ -118,6 +120,19 @@ def _request_batch_with_backoff(
             # не ответил за 10с — ЗНАЧЕНИЕ ВОЗВРАТА, не исключение); appid с
             # таким исходом потом реально появлялись owned. Ни то ни другое
             # не повод сдаваться — ретраим одинаково.
+            #
+            # ИСКЛЮЧЕНИЕ: если сама CM-сессия умерла (сон ноутбука, роуминг
+            # WiFi, вход с другого устройства), client.send() тихо отбрасывает
+            # сообщение — КАЖДЫЙ следующий вызов даст тот же Timeout, неотличимый
+            # по EResult от штатного шторма. "Ретрай без ограничения по числу
+            # попыток" на мёртвой сессии — навсегда, а не временно. Честный
+            # abort вместо бесконечного hang.
+            if not getattr(client, "connected", True):
+                log.error(
+                    "Steam CM: сессия умерла (client.connected=False) — "
+                    "дальнейшие попытки бессмысленны, стоп"
+                )
+                return _BatchOutcome(session_dead=True)
             log.warning(
                 "Steam CM: %s — жду %.0fс и пробую снова",
                 getattr(eresult, "name", eresult),
@@ -143,9 +158,11 @@ def add_licenses(
     """Запрашивает бесплатные лицензии батчами на живом CM-клиенте.
 
     Останавливается немедленно при EResult.LimitExceeded (потолок аккаунта —
-    hit_cap=True, оставшиеся батчи НЕ запрашиваются). RateLimitExceeded и
-    Timeout (granted_appids=None) — ретрай каждые 30с без ограничения по
-    числу попыток. Прочие неуспехи — refused (appid из батча, которого нет
+    hit_cap=True, оставшиеся батчи НЕ запрашиваются) и при обнаруженной
+    мёртвой CM-сессии (session_dead=True, тот же немедленный стоп — см.
+    _request_batch_with_backoff). RateLimitExceeded и Timeout
+    (granted_appids=None) на ЖИВОЙ сессии — ретрай каждые 30с без ограничения
+    по числу попыток. Прочие неуспехи — refused (appid из батча, которого нет
     в granted_appids). Исключение при вызове — error (appid из батча,
     транзиент — восстановим --retry-errors).
     """
@@ -161,6 +178,14 @@ def add_licenses(
             log.warning(
                 "Steam CM: потолок free-лицензий аккаунта (LimitExceeded) — "
                 "стоп. Добавлено в этом прогоне: %d",
+                len(result.added),
+            )
+            break
+        if outcome.session_dead:
+            result.session_dead = True
+            log.error(
+                "Steam CM: сессия умерла посреди прогона — стоп. "
+                "Добавлено в этом прогоне: %d",
                 len(result.added),
             )
             break
