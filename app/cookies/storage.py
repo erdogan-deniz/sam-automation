@@ -8,6 +8,7 @@ import logging
 import time
 
 from app.auth._constants import _CRED_DIR
+from app.id_file import _atomic_write_text
 
 log = logging.getLogger("sam_automation")
 
@@ -60,13 +61,11 @@ def _save_manual_cookie(val: str) -> None:
     from urllib.parse import unquote
 
     val = unquote(val.strip())
-    _CRED_DIR.mkdir(parents=True, exist_ok=True)
-    _MANUAL_COOKIE_FILE.write_text(val.strip(), encoding="utf-8")
+    _atomic_write_text(_MANUAL_COOKIE_FILE, val.strip())
     log.info("Cookie сохранён в %s", _MANUAL_COOKIE_FILE)
 
 
 def _save_remember_login(val: str) -> None:
     """Сохраняет steamRememberLogin токен в файл для web-обновления сессии."""
-    _CRED_DIR.mkdir(parents=True, exist_ok=True)
-    _REMEMBER_LOGIN_FILE.write_text(val.strip(), encoding="utf-8")
+    _atomic_write_text(_REMEMBER_LOGIN_FILE, val.strip())
     log.debug("steamRememberLogin сохранён")
