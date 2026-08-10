@@ -29,11 +29,20 @@ LOCK_FILE = _PROJECT_ROOT / "data" / ".sam_run.lock"
 _ACQUIRE_TIMEOUT = 2.0  # сек
 _ACQUIRE_BACKOFF = 0.02  # пауза между попытками (без busy-spin)
 
+_INACCESSIBLE = "inaccessible"  # sentinel: PID жив, но create_time не прочитать
+
 
 def _proc_create_time(pid: int) -> str | None:
-    """create_time процесса как стабильная строка; None если PID мёртв/недоступен."""
+    """create_time процесса как стабильная строка; None если PID точно мёртв.
+
+    psutil.AccessDenied (elevation-mismatch: владелец лока запущен админом,
+    опрашивающий — нет) означает, что процесс СУЩЕСТВУЕТ, но недоступен —
+    это не то же самое, что "мёртв", и не должно трактоваться как таковое.
+    """
     try:
         return f"{psutil.Process(pid).create_time():.3f}"
+    except psutil.AccessDenied:
+        return _INACCESSIBLE
     except (psutil.Error, ValueError):
         return None
 
@@ -64,6 +73,11 @@ def _is_live_owner(pid_str: str, ctime_str: str) -> bool:
     except ValueError:
         return False
     ctime = _proc_create_time(pid)
+    if ctime == _INACCESSIBLE:
+        # Не можем подтвердить ни жив, ни мёртв — консервативно считаем
+        # живым: ложный "жив" стоит отказа в запуске, ложный "мёртв" стоит
+        # параллельного farm+boost на общем Steam global user.
+        return True
     return ctime is not None and ctime == ctime_str
 
 
