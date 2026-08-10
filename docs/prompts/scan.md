@@ -102,6 +102,11 @@ floor-guard усадки all.txt, см. РИСКИ); иначе `python scripts/
   удалять, в интерактив НЕ падать.
 - Пре-чек Steam WebAPI ПЕРЕД входом в CM: недоступен → CM пропускается (иначе
   вход виснет уже после запроса пароля/2FA).
+- Скрипт использует `cm_session()`/интерактивный логин — 2 High находки
+  аудита 2026-08-10 по самому логину (credentials.py теряет пароль при
+  неудачной миграции в keyring, playwright.py кэширует CM-токен не в тот
+  файл) лежат в `docs/prompts/core-auth-cookies.md`, не здесь. Сам scan.py
+  этим прогоном чист (sanity-реверификация регрессий не нашла).
 - protobuf: os.environ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python выставляется
   ДО импорта steam — не переносить импорты выше этой строки.
 - Логи: logs/achievements/scan/<TIMESTAMP>.log (UTF-8).

@@ -48,6 +48,7 @@ def _web_refresh() -> dict | None:
 
     import http.cookiejar
     import urllib.request
+    from urllib.parse import unquote
 
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(
@@ -62,8 +63,12 @@ def _web_refresh() -> dict | None:
     try:
         opener.open("https://steamcommunity.com/login/home/?goto=", timeout=10)
         for c in jar:
-            if c.name == "steamLoginSecure" and c.value and "||" in c.value:
-                val = c.value
+            if c.name == "steamLoginSecure" and c.value:
+                # http.cookiejar (в отличие от Playwright) может отдать
+                # значение URL-encoded (%7C%7C вместо ||).
+                val = unquote(c.value)
+                if "||" not in val:
+                    continue
                 _save_manual_cookie(val)
                 log.info("Сессия обновлена через steamRememberLogin")
                 return {"steamLoginSecure": val}

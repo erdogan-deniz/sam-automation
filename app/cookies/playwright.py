@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 import time
 
-from app.auth import _JWT_REFRESH_FILE, _jwt_web_cookies, _load_session
+from app.auth import (
+    _JWT_REFRESH_CLIENT_FILE,
+    _jwt_web_cookies,
+    _load_session,
+)
 
 from .storage import _save_manual_cookie, _save_remember_login
 
@@ -14,7 +18,7 @@ log = logging.getLogger("sam_automation")
 
 def _try_save_cm_refresh_token() -> None:
     """После браузерного входа сохраняет CM JWT refresh_token для автоматизации scan.py."""
-    if _JWT_REFRESH_FILE.exists():
+    if _JWT_REFRESH_CLIENT_FILE.exists():
         return
 
     saved = _load_session()
@@ -35,7 +39,7 @@ def _try_save_cm_refresh_token() -> None:
         return
 
     log.info("Получаю CM JWT refresh_token для автоматизации scan.py...")
-    _jwt_web_cookies(username, password)
+    _jwt_web_cookies(username, password, for_steam_client=True)
 
 
 def _playwright_login() -> dict | None:
@@ -73,10 +77,17 @@ def _playwright_login() -> dict | None:
                 )
 
                 deadline = time.time() + 300
+                connection_lost = False
                 while time.time() < deadline:
                     try:
                         raw = ctx.cookies("https://steamcommunity.com")
-                    except Exception:
+                    except Exception as e:
+                        log.warning(
+                            "Соединение с браузером потеряно во время "
+                            "ожидания входа: %s",
+                            e,
+                        )
+                        connection_lost = True
                         break
                     val = next(
                         (
@@ -87,9 +98,9 @@ def _playwright_login() -> dict | None:
                         "",
                     )
                     if val:
-                        # Закрываем ДО интерактивного CM-промпта, чтобы окно
-                        # не висело; finally повторно закроет (идемпотентно).
-                        browser.close()
+                        # Сохраняем ДО close(): если close() бросит (окно
+                        # закрыто пользователем/CDP-обрыв), уже добытый
+                        # cookie не должен потеряться.
                         _save_manual_cookie(val)
                         remember = next(
                             (
@@ -102,11 +113,25 @@ def _playwright_login() -> dict | None:
                         if remember:
                             _save_remember_login(remember)
                         log.info("Вход выполнен, cookie сохранён")
-                        _try_save_cm_refresh_token()
+                        # Закрываем ДО интерактивного CM-промпта, чтобы окно
+                        # не висело; finally повторно закроет (идемпотентно).
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                        try:
+                            _try_save_cm_refresh_token()
+                        except Exception:
+                            log.warning(
+                                "Не удалось настроить CM refresh token "
+                                "(не критично)",
+                                exc_info=True,
+                            )
                         return {c["name"]: c["value"] for c in raw}
                     time.sleep(2)
 
-                log.warning("Время ожидания входа истекло (5 мин)")
+                if not connection_lost:
+                    log.warning("Время ожидания входа истекло (5 мин)")
             finally:
                 try:
                     browser.close()
