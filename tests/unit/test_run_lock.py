@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 
+import psutil
 import pytest
 
 import app.run_lock as rl
@@ -209,6 +210,45 @@ def test_own_token_raises_if_own_create_time_unavailable(monkeypatch):
     monkeypatch.setattr(rl, "_proc_create_time", lambda pid: None)
     with pytest.raises(RuntimeError):
         rl._own_token("farm")
+
+
+def test_proc_create_time_returns_inaccessible_sentinel_on_access_denied(
+    monkeypatch,
+):
+    # Живой владелец, недоступный для опроса (elevation-mismatch: один
+    # SAM-скрипт запущен админом, другой нет) — psutil.AccessDenied, а НЕ
+    # NoSuchProcess/ZombieProcess. Не должен трактоваться как "мёртв" (None).
+    class _Inaccessible:
+        def create_time(self):
+            raise psutil.AccessDenied()
+
+    monkeypatch.setattr(rl.psutil, "Process", lambda pid: _Inaccessible())
+    assert rl._proc_create_time(12345) == rl._INACCESSIBLE
+
+
+def test_is_live_owner_treats_access_denied_as_alive(monkeypatch):
+    # _is_live_owner не должен сносить лок живого-но-недоступного владельца
+    # только из-за того, что его create_time не совпал (мы его и не смогли
+    # прочитать) — иначе второй SAM-спавнящий скрипт крадёт лок и запускается
+    # параллельно, прямое нарушение run-lock инварианта.
+    monkeypatch.setattr(rl, "_proc_create_time", lambda pid: rl._INACCESSIBLE)
+    assert rl._is_live_owner("99999", "111.000") is True
+
+
+def test_acquire_refuses_to_steal_lock_from_inaccessible_owner(
+    tmp_path, monkeypatch
+):
+    lock = tmp_path / "run.lock"
+    monkeypatch.setattr(rl, "LOCK_FILE", lock)
+    lock.write_text("99999:111.000:boost", encoding="utf-8")
+    monkeypatch.setattr(
+        rl,
+        "_proc_create_time",
+        lambda pid: rl._INACCESSIBLE if pid == 99999 else "me",
+    )
+    with pytest.raises(RuntimeError, match="boost"):
+        rl.acquire_run_lock("farm")
+    assert lock.read_text(encoding="utf-8") == "99999:111.000:boost"
 
 
 def test_acquire_is_idempotent_for_same_process(tmp_path, monkeypatch):
