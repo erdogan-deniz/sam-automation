@@ -249,6 +249,36 @@ def test_run_add_reports_ok(
     assert captured["added"] == 2
 
 
+def test_run_add_session_dead_propagates_to_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Слепая зона аудита 2026-08-10: add_licenses абортит на мёртвой
+    # CM-сессии (session_dead=True) — run() обязан честно донести это до
+    # report_result, а не молча потерять сигнал по дороге.
+    _patch_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(orch, "discover", lambda **_k: [1, 2])
+    monkeypatch.setattr(
+        orch,
+        "add",
+        lambda **_k: orch.licenses.AddResult(added=[1], session_dead=True),
+    )
+
+    captured = {}
+    monkeypatch.setattr(
+        orch.report, "report_result", lambda **kw: captured.update(kw)
+    )
+
+    orch.run(
+        do_add=True,
+        list_only=False,
+        limit=None,
+        include_demos=True,
+        cfg=SimpleNamespace(),
+    )
+
+    assert captured["session_dead"] is True
+
+
 def test_run_add_exception_reports_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
