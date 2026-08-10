@@ -107,3 +107,16 @@ def test_web_refresh_ignores_cookie_without_separator(
     saved = _setup(monkeypatch, tmp_path, cookie_value="мусор-без-разделителя")
     assert wr._web_refresh() is None
     assert saved == []
+
+
+def test_web_refresh_decodes_url_encoded_separator(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # http.cookiejar (в отличие от Playwright) может вернуть steamLoginSecure
+    # URL-encoded (%7C%7C вместо ||) — как storage.py::_save_manual_cookie,
+    # нужно unquote() ДО проверки "||", иначе шаг 2 fallback-цепочки тихо
+    # ВСЕГДА проваливается на таком Steam-ответе.
+    encoded = "76561198000000000%7C%7Cjwt-token"
+    saved = _setup(monkeypatch, tmp_path, cookie_value=encoded)
+    assert wr._web_refresh() == {"steamLoginSecure": _VALID}
+    assert saved == [_VALID]

@@ -72,18 +72,33 @@ def _load_session() -> tuple[str, str] | None:
     if _LEGACY_SESSION_FILE.exists():
         try:
             data = json.loads(_LEGACY_SESSION_FILE.read_text(encoding="utf-8"))
-            u = data.get("username", "")
-            p = data.get("password", "")
-            if u and p:
+        except Exception:
+            data = {}
+        u = data.get("username", "")
+        p = data.get("password", "")
+        if u and p:
+            try:
                 _save_session(u, p)
-                _LEGACY_SESSION_FILE.unlink()
+            except Exception:
+                # Миграция не удалась (keyring/DPAPI недоступен) — НЕ удаляем
+                # единственную сохранённую копию пароля, попробуем снова
+                # следующим запуском.
+                log.warning(
+                    "Steam CM: не удалось перенести учётные данные в "
+                    "Credential Manager, legacy-файл оставлен для повтора"
+                )
+            else:
+                try:
+                    _LEGACY_SESSION_FILE.unlink()
+                except Exception:
+                    pass
                 log.info(
                     "Steam CM: учётные данные перенесены в Credential Manager"
                 )
                 return u, p
-        except Exception:
-            pass
-        _LEGACY_SESSION_FILE.unlink(missing_ok=True)
+        else:
+            # Файл повреждён/неполный — восстанавливать нечего, чистим.
+            _LEGACY_SESSION_FILE.unlink(missing_ok=True)
 
     if not _USERNAME_FILE.exists():
         return None
