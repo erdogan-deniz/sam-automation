@@ -137,8 +137,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--retry-without",
         action="store_true",
-        help="Перепроверить ТОЛЬКО игры без достижений "
-        "(without.txt + Store-советы store_zero/store_empty)",
+        help="Перепроверить ТОЛЬКО игры без достижений (without.txt)",
     )
     parser.add_argument(
         "--retry-done",
