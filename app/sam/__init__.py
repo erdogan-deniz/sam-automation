@@ -8,6 +8,7 @@ from .launcher import (
     launch_game,
     launch_games_staggered,
     launch_picker,
+    prevent_idle_sleep,
 )
 from .manager_window import process_game
 from .picker_session import PickerSession
@@ -21,6 +22,7 @@ __all__ = [
     "launch_game",
     "launch_games_staggered",
     "launch_picker",
+    "prevent_idle_sleep",
     "process_game",
     "PickerSession",
     "check_steam_running",
