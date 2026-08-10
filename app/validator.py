@@ -52,6 +52,7 @@ _MAX_CONCURRENT_LIMIT = 20  # разумный потолок; выше — по
 # типо-валидную опечатку (напр. idle 10^9с ≈ 31 год), иначе тихо вешающую boost.
 _MAX_IDLE_DURATION = 86400  # сек (1 сутки idle на игру — уже абсурд)
 _MAX_LAUNCH_STAGGER = 3600  # сек (1 час между стартами в батче — абсурд)
+_MAX_BETWEEN_GAMES_DELAY = 3600  # сек (1 час паузы между играми — абсурд)
 
 
 def _check_numeric_bounds(cfg: Config) -> list[str]:
@@ -105,6 +106,30 @@ def _check_numeric_bounds(cfg: Config) -> list[str]:
         errors.append(
             f"launch_stagger too high: {cfg.launch_stagger} "
             f"(max {_MAX_LAUNCH_STAGGER})"
+        )
+    # max_consecutive_errors<=0 → ErrorTracker.record_error бросает
+    # SAMTooManyErrors на самой ПЕРВОЙ ошибке (self._consecutive(1) >=
+    # max_consecutive) — тихий emergency-stop вместо разумного лимита.
+    if cfg.max_consecutive_errors < 1:
+        errors.append(
+            f"max_consecutive_errors must be >= 1 "
+            f"(got {cfg.max_consecutive_errors})"
+        )
+    # between_games_delay: nan/inf проскакивают guard >= 0 (`nan < 0` ==
+    # False); отрицательное или nan значение роняет time.sleep() необработанным
+    # ValueError посреди прогона achievements/farm.py вместо честного отчёта.
+    if (
+        not math.isfinite(cfg.between_games_delay)
+        or cfg.between_games_delay < 0
+    ):
+        errors.append(
+            f"between_games_delay must be a finite number >= 0 "
+            f"(got {cfg.between_games_delay})"
+        )
+    elif cfg.between_games_delay > _MAX_BETWEEN_GAMES_DELAY:
+        errors.append(
+            f"between_games_delay too high: {cfg.between_games_delay} "
+            f"(max {_MAX_BETWEEN_GAMES_DELAY})"
         )
     return errors
 
