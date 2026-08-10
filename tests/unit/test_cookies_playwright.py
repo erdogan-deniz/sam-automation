@@ -108,3 +108,50 @@ def test_playwright_login_returns_cookies_and_closes_on_success(monkeypatch):
 
     assert result == {"steamLoginSecure": "76561||tok"}
     assert closed  # браузер закрыт на успешном пути
+
+
+def test_try_save_cm_refresh_token_uses_client_scope(tmp_path, monkeypatch):
+    # _cm_login (steam_cm.py) читает ТОЛЬКО _JWT_REFRESH_CLIENT_FILE (CM-scope,
+    # for_steam_client=True). Токен, сохранённый без этого флага, попадает в
+    # _JWT_REFRESH_FILE (web-scope) и физически никогда не используется —
+    # проверяем guard (ориентируется на client-файл) и сам вызов сохранения.
+    web_file = tmp_path / "jwt_refresh.json"
+    web_file.write_text("{}", encoding="utf-8")  # web-токен уже есть
+    client_file = tmp_path / "jwt_refresh_client.json"  # client-токена нет
+    monkeypatch.setattr(pw_mod, "_JWT_REFRESH_FILE", web_file, raising=False)
+    monkeypatch.setattr(
+        pw_mod, "_JWT_REFRESH_CLIENT_FILE", client_file, raising=False
+    )
+    monkeypatch.setattr(pw_mod, "_load_session", lambda: ("u", "p"))
+    monkeypatch.setattr("builtins.input", lambda *_a: "y")
+    calls = []
+    monkeypatch.setattr(
+        pw_mod,
+        "_jwt_web_cookies",
+        lambda u, p, **kw: calls.append((u, p, kw)),
+    )
+
+    pw_mod._try_save_cm_refresh_token()
+
+    assert calls, "guard не должен считать client-токен готовым по web-файлу"
+    assert calls[0][2].get("for_steam_client") is True
+
+
+def test_try_save_cm_refresh_token_skips_if_client_token_exists(
+    tmp_path, monkeypatch
+):
+    client_file = tmp_path / "jwt_refresh_client.json"
+    client_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        pw_mod, "_JWT_REFRESH_CLIENT_FILE", client_file, raising=False
+    )
+    monkeypatch.setattr(
+        pw_mod, "_JWT_REFRESH_FILE", tmp_path / "absent.json", raising=False
+    )
+
+    def _fail():
+        raise AssertionError("не должно вызываться — токен уже готов")
+
+    monkeypatch.setattr(pw_mod, "_load_session", _fail)
+
+    pw_mod._try_save_cm_refresh_token()

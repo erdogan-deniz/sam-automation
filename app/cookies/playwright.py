@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 import time
 
-from app.auth import _JWT_REFRESH_FILE, _jwt_web_cookies, _load_session
+from app.auth import (
+    _JWT_REFRESH_CLIENT_FILE,
+    _jwt_web_cookies,
+    _load_session,
+)
 
 from .storage import _save_manual_cookie, _save_remember_login
 
@@ -14,7 +18,7 @@ log = logging.getLogger("sam_automation")
 
 def _try_save_cm_refresh_token() -> None:
     """После браузерного входа сохраняет CM JWT refresh_token для автоматизации scan.py."""
-    if _JWT_REFRESH_FILE.exists():
+    if _JWT_REFRESH_CLIENT_FILE.exists():
         return
 
     saved = _load_session()
@@ -35,7 +39,7 @@ def _try_save_cm_refresh_token() -> None:
         return
 
     log.info("Получаю CM JWT refresh_token для автоматизации scan.py...")
-    _jwt_web_cookies(username, password)
+    _jwt_web_cookies(username, password, for_steam_client=True)
 
 
 def _playwright_login() -> dict | None:
