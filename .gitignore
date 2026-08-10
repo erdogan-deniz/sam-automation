@@ -27,9 +27,7 @@ TODO
 TODO.md
 
 # ── Tooling ───────────────────────────────────────────────────────────────────
-.cache/
 *.orig
-Options
 
 # IDE / local tooling
 .claude/
