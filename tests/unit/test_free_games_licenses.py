@@ -126,6 +126,46 @@ def test_add_licenses_timeout_none_granted_retries_then_succeeds(monkeypatch):
     assert len(client.calls) == 2  # ретрай на ТОМ ЖЕ батче
 
 
+def test_add_licenses_dead_session_aborts_instead_of_retrying_forever(
+    monkeypatch,
+):
+    # Слепая зона аудита 2026-08-10, расследована и подтверждена: CM-сессия
+    # может умереть посреди прогона (сон ноутбука, роуминг WiFi, вход с
+    # другого устройства). client.send() на мёртвом соединении ТИХО
+    # отбрасывает сообщение (steam/client/__init__.py) — request_free_license
+    # после этого ВСЕГДА timeout'ится (granted=None), неотличимо по EResult
+    # от штатного шторма RateLimitExceeded/Timeout на ЖИВОЙ сессии. Без
+    # проверки client.connected ретрай "без ограничения по числу попыток"
+    # (осознанный дизайн для живого шторма) превращается в НАВСЕГДА —
+    # честный abort вместо бесконечного hang.
+    sleeps: list[float] = []
+    monkeypatch.setattr(licenses.time, "sleep", lambda s: sleeps.append(s))
+    client = _FakeClient([(EResult.Timeout, None, None)] * 5)
+    client.connected = False
+    result = licenses.add_licenses(client, [1, 2], batch_size=50)
+    assert result.added == []
+    assert result.error == []  # не "транзиент одного батча" — сессия целиком
+    assert result.session_dead is True
+    assert len(client.calls) == 1  # НЕ ретраил на мёртвой сессии
+    assert sleeps == []  # не спал 30с без толку
+
+
+def test_add_licenses_dead_session_stops_remaining_batches(monkeypatch):
+    monkeypatch.setattr(licenses.time, "sleep", lambda *_a: None)
+    client = _FakeClient(
+        [
+            (EResult.OK, [1, 2], []),
+            (EResult.Timeout, None, None),
+            (EResult.OK, [5, 6], []),  # НЕ должен быть вызван
+        ]
+    )
+    client.connected = False
+    result = licenses.add_licenses(client, [1, 2, 3, 4, 5, 6], batch_size=2)
+    assert result.added == [1, 2]  # первый батч успел до обрыва
+    assert result.session_dead is True
+    assert client.calls == [[1, 2], [3, 4]]  # третий батч не запрошен
+
+
 def test_add_licenses_empty_input_no_calls():
     client = _FakeClient([])
     result = licenses.add_licenses(client, [], batch_size=50)
