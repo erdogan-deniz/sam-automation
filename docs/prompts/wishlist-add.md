@@ -173,6 +173,27 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   IP soft-ban НЕ воспроизведён — 429-поведение проверено только логически
   (моки), не живым долблением до реального бана.
 
+# НАЙДЕНО АУДИТОМ 2026-08-10 (открытые баги, TDD-фикс)
+> Полный проектный аудит (46 агентов), первый формальный проход. CONFIRMED
+> адверсариальной верификацией по коду. Полные evidence — память
+> `project_full_audit_2026_08_10`.
+
+1. **[Medium] `app/wishlist/orchestrate.py:174` — финальный
+   `report.report_result(...)` не переживает BaseException.** Голый
+   top-level statement, не обёрнутый в try/except — в отличие от
+   `scripts/playtime/boost.py` (полиш v1.14.1:
+   `try: _report_result(...) except BaseException: log.exception(...)`).
+   Ctrl+C ровно на этапе отчёта (напр. внутри `toast()`/`send_telegram()`)
+   даёт сырой трейсбек вместо уже честно посчитанного статуса, вместо
+   отчёта, ради которого весь `run()` и считал результат. Тот же баг
+   независимо найден и в `app/free_games/orchestrate.py` (см. add-free.md)
+   — фиксить обоих одним паттерном. Фикс: обернуть вызов в
+   `try/except BaseException: log.exception(...)`.
+
+Скрипт использует `get_web_cookies(interactive=False)` — находки по самой
+fallback-цепочке (playwright.py неверный файл токена, web_refresh.py без
+URL-decode) см. в `docs/prompts/core-auth-cookies.md`.
+
 # МЕТОД
 1. По симптому воспроизведи, сними лог, сверь 4 файла state ДО/ПОСЛЕ.
 2. Падающий тест на фейках (мок HTTP-ответа с `x-eresult`-заголовком; фейк
