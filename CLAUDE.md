@@ -1,8 +1,9 @@
 # CLAUDE.md — правила проекта sam-automation
 
 Автоматизация Steam через SAM (Steam Achievement Manager): разблокировка
-достижений, фарм карточек, набивка playtime. Python 3.12, Windows-only
-(pywinauto/win32), только CLI (`scripts/`; GUI удалён).
+достижений, фарм карточек, набивка playtime, авто-добавление бесплатных
+игр и вишлиста. Python 3.12, Windows-only (pywinauto/win32), только CLI
+(`scripts/`; GUI удалён).
 
 > Этот файл — единственный источник durable-правил, едущий с репозиторием.
 > Глубина по каждому воркфлоу — в `docs/prompts/` (playbook'и farm/boost/scan
