@@ -140,13 +140,28 @@ class PickerSession:
                 break
 
         if found_pid is None:
+            # Последний шанс: PID мог появиться чуть позже (ОС притормозила
+            # scheduling дочернего процесса) — если да, не бросаем сиротой.
+            time.sleep(0.1)
+            for late_pid in _get_sam_game_pids() - existing_pids:
+                try:
+                    _kill_pid(late_pid)
+                except Exception as kill_err:
+                    log.debug(
+                        "Не удалось убить поздний SAM.Game PID=%d: %s",
+                        late_pid,
+                        kill_err,
+                    )
             raise SAMGameError(
                 game_id, f"Процесс SAM.Game не появился за {timeout}с"
             )
 
         # Шаг 2: connect + ждём окно.
-        # found_pid уже запущен — при любом исключении убиваем его.
+        # found_pid уже запущен — при ЛЮБОМ исключении (не только
+        # SAMGameError — Application(...).connect() может бросить своё)
+        # убиваем его, иначе он остаётся сиротой.
         log.info("APP SAM PID: %d", found_pid)
+        success = False
         try:
             game_app = Application(backend="uia").connect(
                 process=found_pid, timeout=5
@@ -155,17 +170,20 @@ class PickerSession:
                 try:
                     wins = game_app.windows()
                     if wins:
+                        success = True
                         return game_app
                 except Exception:
                     pass
                 time.sleep(0.03)
 
             raise SAMGameError(game_id, "Окно Manager не появилось")
-        except SAMGameError:
-            try:
-                _kill_pid(found_pid)
-            except Exception as kill_err:
-                log.debug(
-                    "Не удалось убить SAM.Game PID=%d: %s", found_pid, kill_err
-                )
-            raise
+        finally:
+            if not success:
+                try:
+                    _kill_pid(found_pid)
+                except Exception as kill_err:
+                    log.debug(
+                        "Не удалось убить SAM.Game PID=%d: %s",
+                        found_pid,
+                        kill_err,
+                    )
