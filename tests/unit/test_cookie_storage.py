@@ -155,3 +155,33 @@ def test_save_remember_login_strips_and_writes(
     monkeypatch.setattr(st, "_REMEMBER_LOGIN_FILE", remember)
     st._save_remember_login("  token-value  \n")
     assert remember.read_text(encoding="utf-8") == "token-value"
+
+
+def test_save_manual_cookie_uses_atomic_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Прямой Path.write_text открывает файл на запись (truncate) ДО записи —
+    # краш/Ctrl+C между усечением и записью оставляет пустой/битый cookie-
+    # файл (единственную сохранённую сессию). Должен идти через
+    # _atomic_write_text (tmp-файл + os.replace), как id_file/cache.
+    cookie = _patch_files(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        st, "_atomic_write_text", lambda p, t: calls.append((p, t))
+    )
+    st._save_manual_cookie(f"{_STEAMID}||tok")
+    assert calls == [(cookie, f"{_STEAMID}||tok")]
+
+
+def test_save_remember_login_uses_atomic_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(st, "_CRED_DIR", tmp_path)
+    remember = tmp_path / "remember.txt"
+    monkeypatch.setattr(st, "_REMEMBER_LOGIN_FILE", remember)
+    calls = []
+    monkeypatch.setattr(
+        st, "_atomic_write_text", lambda p, t: calls.append((p, t))
+    )
+    st._save_remember_login("token-value")
+    assert calls == [(remember, "token-value")]

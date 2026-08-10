@@ -8,7 +8,6 @@
   orchestrate  — склейка фаз discover/add, точка входа для CLI
 """
 
-from .licenses import AddResult
 from .orchestrate import run
 
-__all__ = ["AddResult", "run"]
+__all__ = ["run"]

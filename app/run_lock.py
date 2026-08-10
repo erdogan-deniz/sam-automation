@@ -40,7 +40,17 @@ def _proc_create_time(pid: int) -> str | None:
 
 def _own_token(name: str) -> str:
     pid = os.getpid()
-    return f"{pid}:{_proc_create_time(pid)}:{name}"
+    ctime = _proc_create_time(pid)
+    if ctime is None:
+        # Наш ЖИВОЙ (это мы) create_time не определился — отказ вместо
+        # записи литеральной строки "None": другой инстанс сравнит свой
+        # реальный ctime владельца с нашим неразрешимым токеном →
+        # mismatch → сочтёт нас мёртвыми и снесёт наш живой лок.
+        raise RuntimeError(
+            "Не удалось определить собственный create_time процесса — "
+            "run-lock ненадёжен, отказ вместо записи неразрешимого токена."
+        )
+    return f"{pid}:{ctime}:{name}"
 
 
 def _is_live_owner(pid_str: str, ctime_str: str) -> bool:
@@ -99,6 +109,17 @@ def acquire_run_lock(name: str) -> None:
                 raw = ""
             parts = raw.split(":", 2)
             pid_str, ctime_str, owner = (parts + ["", "", ""])[:3]
+            if pid_str.strip() == str(
+                os.getpid()
+            ) and ctime_str.strip() == _proc_create_time(os.getpid()):
+                # Реентрантный вызов из ТОГО ЖЕ процесса — это буквально мы,
+                # а не «уже запущен кем-то другим».
+                log.debug(
+                    "Run-lock уже захвачен этим же процессом: %s (PID %d)",
+                    name,
+                    os.getpid(),
+                )
+                return
             if _is_live_owner(pid_str, ctime_str):
                 raise RuntimeError(
                     f"Уже запущен '{owner.strip()}' (PID {pid_str.strip()}). "
