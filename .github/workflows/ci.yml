@@ -21,7 +21,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Version consistency (VERSION == top CHANGELOG)
-        run: python scripts/ci/check_version.py
+        run: python .github/scripts/check_version.py
 
       # Один прогон pre-commit покрывает ruff (lint+format), mypy и file-hygiene
       # теми же ПИННУТЫМИ версиями, что и локально — CI и pre-commit не расходятся.
