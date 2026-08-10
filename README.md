@@ -186,10 +186,13 @@ sam-automation/
 │   ├── library/
 │   │   ├── add_free.py     # Add every free Steam game/app to the library
 │   │   └── wishlist_add.py # Add the Steam catalog to the wishlist
-│   ├── playtime/
-│   │   └── boost.py        # Boost low-playtime games via short SAM sessions
-│   └── ci/
-│       └── check_version.py  # Release version-invariant gate (run by CI)
+│   └── playtime/
+│       └── boost.py        # Boost low-playtime games via short SAM sessions
+├── .github/
+│   ├── workflows/ci.yml    # CI: version check, pre-commit, tests
+│   └── scripts/
+│       └── check_version.py  # Release version-invariant gate (run by CI only —
+│                              # not a project script, lives outside scripts/)
 ├── data/                   # Runtime state (gitignored)
 │   └── games/
 │       ├── names.json      # AppID → game name cache
