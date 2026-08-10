@@ -2,6 +2,50 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.14.2]
+
+Найдено систематическим прогоном по стабильности всех скриптов проекта:
+флагманский `achievements/farm.py` и `cards/farm.py` — единственные два из
+пяти SAM/library-скриптов с багом resolve-before-validate (RA-B), который
+уже был закрыт в остальных трёх. Плюс актуализация handoff-плейбуков.
+3 новых теста (634 → 637).
+
+### Исправления
+
+- **achievements/farm: резолвить `steam_id` (vanity/URL → ID64) до
+  `validate`** — флагманский скрипт проекта вообще НЕ резолвил vanity-имя/
+  URL `steam_id` (документированный README формат — «Steam ID, vanity name,
+  or full URL», все три принимаются). `validate()` шлёт `steam_id` в
+  `GetPlayerSummaries`, которому нужен числовой ID64; сырой vanity/URL давал
+  `players=[]` → ложное «Steam API key is invalid or Steam ID not found» →
+  `sys.exit(1)` до запуска чего-либо. `cfg.steam_id` нигде в скрипте, кроме
+  `validate()`, не используется — фикс идентичен паттерну, уже закрытому в
+  `boost.py`/`scan.py`/`add_free.py`/`wishlist_add.py`.
+- **cards/farm: тот же фикс** — резолвил `steam_id`, но ПОСЛЕ `validate()`,
+  а не до, с тем же практическим эффектом (ложная ошибка раньше, чем резолв
+  вообще случится).
+
+### Документация
+
+- `docs/prompts/achievements-farm.md`, `cards-farm.md` — порядок `main()` в
+  описании выровнен под фикс; раздел «ПРОБЕЛЫ В ТЕСТАХ» переписан по факту
+  текущего кода (achievements: `_process_one_game` давно покрыт тестами,
+  реальный пробел — `main()`-цикл целиком; cards: аудит 2026-07-02
+  предшествует удалению GUI-подсистемы и конвенции resolve-до-validate, не
+  переповторялся с тех пор).
+- `docs/prompts/add-free.md`, `wishlist-add.md` — НОВЫЕ handoff-плейбуки.
+  Обе фичи (`scripts/library/add_free.py`, `wishlist_add.py`) выпущены
+  (v1.13.0/v1.14.0), но не имели стартового брифа для новой сессии — теперь
+  единственные два скрипта проекта явно помечены как никогда не проходившие
+  формальный многоосевой аудит (в отличие от `scan.py`/`boost.py`/
+  `cards-farm.py`).
+
+### Тесты
+
+- 3 новых (634 → 637): порядок resolve→validate для `achievements/farm.py`
+  и `cards/farm.py` (по образцу `test_boost_main.py`) — пустой `steam_id` не
+  резолвится, сбой резолва даёт чистый `sys.exit(1)` без захода в `validate`.
+
 ## [1.14.1]
 
 Закрытие последнего остатка self-аудита v1.12.4 (полиш: неточный докстринг +
