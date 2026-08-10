@@ -138,21 +138,30 @@ def run(
         log.exception("Прервано ошибкой.")
 
     if not do_add and status == "ok":
-        report.report_result(
-            status="dry_run",
-            added=len(candidates),
-            refused=0,
-            error=0,
-            hit_cap=False,
-            cfg=cfg,
-        )
+        try:
+            report.report_result(
+                status="dry_run",
+                added=len(candidates),
+                refused=0,
+                error=0,
+                hit_cap=False,
+                cfg=cfg,
+            )
+        except BaseException:
+            # Отчёт — терминальный шаг: третий Ctrl+C ровно в этот момент
+            # (BaseException) не должен пробрасываться из run() сырым
+            # трейсбеком — статус уже честно посчитан (см. boost.py).
+            log.exception("Не удалось сформировать финальный отчёт.")
         return
 
-    report.report_result(
-        status=status,
-        added=len(result.added),
-        refused=len(result.refused),
-        error=len(result.error),
-        hit_cap=result.hit_cap,
-        cfg=cfg,
-    )
+    try:
+        report.report_result(
+            status=status,
+            added=len(result.added),
+            refused=len(result.refused),
+            error=len(result.error),
+            hit_cap=result.hit_cap,
+            cfg=cfg,
+        )
+    except BaseException:
+        log.exception("Не удалось сформировать финальный отчёт.")
