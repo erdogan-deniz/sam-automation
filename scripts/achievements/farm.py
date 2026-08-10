@@ -42,6 +42,7 @@ from app.sam import (
     kill_all_sam_games,
     kill_process,
     launch_picker,
+    prevent_idle_sleep,
     process_game,
 )
 from app.steam import resolve_steam_id
@@ -364,9 +365,19 @@ def main() -> None:
         )
         sys.exit(0)
 
-    proc, session = launch_picker(
-        cfg.sam_game_exe_path, launch_delay=cfg.launch_delay
-    )
+    try:
+        proc, session = launch_picker(
+            cfg.sam_game_exe_path, launch_delay=cfg.launch_delay
+        )
+    except SAMError as e:
+        log.error(str(e))
+        sys.exit(1)
+
+    # Единственный SAM-скрипт, кликающий через pywinauto — заблокированный/
+    # уснувший по простою рабочий стол роняет КАЖДУЮ следующую игру (см.
+    # prevent_idle_sleep docstring). Не спасает от ручного Win+L, но
+    # закрывает самый реалистичный триггер многочасового прогона.
+    prevent_idle_sleep()
 
     game_names = load_game_names()
     total = len(game_ids)
