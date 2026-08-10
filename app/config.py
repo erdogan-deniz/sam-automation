@@ -158,8 +158,12 @@ def load_config(config_path: str = "config.yaml") -> Config:
     ):
         setattr(cfg, int_key, _num(raw, int_key, int, getattr(cfg, int_key)))
 
-    cfg.telegram_bot_token = raw.get("telegram_bot_token", "")
-    cfg.telegram_chat_id = str(raw.get("telegram_chat_id", ""))
+    # strip: хвостовой пробел/перевод строки от копипаста уезжал прямо в URL
+    # send_telegram() (f"...bot{token}/sendMessage") — управляющий символ там
+    # роняет urllib с http.client.InvalidURL, чей __str__ включает URL
+    # ЦЕЛИКОМ (токен в cleartext) в log.warning, живущий в logs/ вечно plaintext.
+    cfg.telegram_bot_token = str(raw.get("telegram_bot_token", "")).strip()
+    cfg.telegram_chat_id = str(raw.get("telegram_chat_id", "")).strip()
 
     # Резолвим относительный путь к exe от директории конфига
     if cfg.sam_game_exe_path and not os.path.isabs(cfg.sam_game_exe_path):
