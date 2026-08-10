@@ -81,8 +81,12 @@ def _process_one_game(
         # рапортует ✅. record_success — только на честном исходе (UNLOCK / нет
         # достижений), чтобы серия таких ошибок взводила аварийный стоп.
         if result.skipped and result.skip_reason not in ("", "no achievements"):
-            tracker.record_error(game_id, SAMError(result.skip_reason))
+            # persist ПЕРЕД record_error: на N-й подряд ошибке record_error
+            # бросает SAMTooManyErrors, пропуская всё, что идёт ПОСЛЕ него в
+            # этом блоке — тогда игра, добившая лимит, не попала бы в
+            # error.txt и молча ретраилась бы следующим прогоном без следа.
             mark_error_id(game_id)
+            tracker.record_error(game_id, SAMError(result.skip_reason))
             return True
 
         tracker.record_success()
@@ -101,19 +105,20 @@ def _process_one_game(
     except SAMError as e:
         reason = e.message if hasattr(e, "message") else str(e)
         log.warning("APP STATUS: ERROR — %s", reason)
-        tracker.record_error(game_id, e)
+        # persist ПЕРЕД record_error — см. комментарий выше в soft-error пути.
         results.append(
             UnlockResult(game_id=game_id, skipped=True, skip_reason=reason)
         )
         mark_error_id(game_id)
+        tracker.record_error(game_id, e)
         return True
     except Exception as e:
         log.error("APP STATUS: ERROR — %s", e, exc_info=True)
-        tracker.record_error(game_id, e)
         results.append(
             UnlockResult(game_id=game_id, skipped=True, skip_reason=str(e))
         )
         mark_error_id(game_id)
+        tracker.record_error(game_id, e)
         return True
     finally:
         close_game(game_app)
@@ -251,6 +256,19 @@ def _report_result(
     send_telegram(f"{mark} Achievements — {head}: {detail}", cfg)
 
 
+def _teardown_picker(proc) -> None:
+    """Убивает SAM.Picker.exe. НИКОГДА не бросает (аналог boost.py _teardown).
+
+    Вызывается из finally main() на ЛЮБОМ выходе. Сбой kill_process (напр.
+    PermissionError в гонке терминации уже выходящего процесса) не должен
+    пропустить честный _log_summary/_report_result, идущие следом.
+    """
+    try:
+        kill_process(proc)
+    except Exception:
+        log.exception("teardown: сбой kill_process(picker)")
+
+
 def main() -> None:
     """Точка входа: запускает цикл разблокировки достижений."""
     print()
@@ -368,7 +386,7 @@ def main() -> None:
             "Прервано (Ctrl+C). Перезапусти — продолжит с места остановки."
         )
     finally:
-        kill_process(proc)
+        _teardown_picker(proc)
 
     print()
     log.info(SEPARATOR)
