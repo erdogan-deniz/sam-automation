@@ -402,3 +402,55 @@ def test_teardown_picker_survives_kill_process_failure(
     monkeypatch.setattr(farm, "kill_process", _boom)
 
     farm._teardown_picker(object())  # не должно бросить
+
+
+# ── _teardown_picker подчищает осиротевшие SAM.Game.exe (HIGH #3, аудит
+# 2026-08-10) ────────────────────────────────────────────────────────────────
+# finally main() убивал только Picker (kill_process(proc)) без бэкстопа
+# kill_all_sam_games(), в отличие от boost.py/cards/farm.py — сирота
+# SAM.Game.exe (напр. из бага picker_session.py Step-2, или Ctrl+C во время
+# обработки игры) никогда не подчищался, конфликт с run-lock инвариантом.
+
+
+def test_teardown_picker_sweeps_orphaned_sam_games(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(farm, "kill_process", lambda proc: calls.append("proc"))
+    monkeypatch.setattr(
+        farm, "kill_all_sam_games", lambda: calls.append("sweep")
+    )
+
+    farm._teardown_picker(object())
+
+    assert calls == ["proc", "sweep"]
+
+
+def test_teardown_picker_sweeps_even_if_kill_process_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(proc):
+        raise PermissionError("процесс уже завершается")
+
+    calls: list[str] = []
+    monkeypatch.setattr(farm, "kill_process", _boom)
+    monkeypatch.setattr(
+        farm, "kill_all_sam_games", lambda: calls.append("sweep")
+    )
+
+    farm._teardown_picker(object())  # не должно бросить
+
+    assert calls == ["sweep"]  # бэкстоп не пропущен из-за сбоя kill_process
+
+
+def test_teardown_picker_survives_sweep_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(farm, "kill_process", lambda proc: None)
+
+    def _boom_sweep():
+        raise OSError("CreateToolhelp32Snapshot упал")
+
+    monkeypatch.setattr(farm, "kill_all_sam_games", _boom_sweep)
+
+    farm._teardown_picker(object())  # не должно бросить
