@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import keyring.errors
 import pytest
 
 import app.auth.credentials as cred
@@ -83,3 +84,106 @@ def test_load_session_corrupted_legacy_file_is_discarded(
 
     assert result is None
     assert not legacy.exists()
+
+
+def test_save_session_keyring_failure_leaves_no_orphan_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # _save_session пишет _USERNAME_FILE ДО keyring.set_password. Если keyring
+    # бросит (DPAPI/Credential Manager недоступен), username-файл без
+    # соответствующего пароля — рассинхрон, вводящий в заблуждение _load_session
+    # (найдёт username, но не найдёт пароль). Не должен оставаться.
+    username_file = tmp_path / "username.txt"
+    monkeypatch.setattr(cred, "_USERNAME_FILE", username_file, raising=False)
+    monkeypatch.setattr(cred, "_CRED_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(
+        keyring,
+        "set_password",
+        lambda *_a: (_ for _ in ()).throw(
+            keyring.errors.PasswordSetError("недоступен")
+        ),
+    )
+
+    with pytest.raises(keyring.errors.PasswordSetError):
+        cred._save_session("u", "p")
+
+    assert not username_file.exists()
+
+
+def test_save_session_keyboard_interrupt_leaves_no_orphan_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Тот же контракт должен держаться и на BaseException (Ctrl+C), не только
+    # на Exception — иначе регрессия на "except Exception" тихо это сломает.
+    username_file = tmp_path / "username.txt"
+    monkeypatch.setattr(cred, "_USERNAME_FILE", username_file, raising=False)
+    monkeypatch.setattr(cred, "_CRED_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(
+        keyring,
+        "set_password",
+        lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        cred._save_session("u", "p")
+
+    assert not username_file.exists()
+
+
+def test_load_session_logs_on_keyring_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Keyring-сбой (KeyringLocked/NoKeyringError/DPAPI) должен ЛОГИРОВАТЬСЯ, а
+    # не молча трактоваться как «пароль не сохранён» — иначе non-interactive
+    # вызов (steam_cm._cm_login) залогирует ложное «нет сохранённых данных» и
+    # пропустит CM-логин, хотя реальная причина — недоступность keyring.
+    username_file = tmp_path / "username.txt"
+    username_file.write_text("user1", encoding="utf-8")
+    monkeypatch.setattr(cred, "_USERNAME_FILE", username_file, raising=False)
+    monkeypatch.setattr(
+        cred, "_LEGACY_SESSION_FILE", tmp_path / "absent.json", raising=False
+    )
+    monkeypatch.setattr(
+        keyring,
+        "get_password",
+        lambda *_a: (_ for _ in ()).throw(
+            keyring.errors.KeyringLocked("locked")
+        ),
+    )
+
+    with caplog.at_level("WARNING"):
+        result = cred._load_session()
+
+    assert result is None
+    assert any("keyring" in r.message.lower() for r in caplog.records)
+
+
+def test_clear_session_survives_non_password_delete_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # except keyring.errors.PasswordDeleteError ловит только один подкласс
+    # KeyringError. KeyringLocked/NoKeyringError/InitError — сиблинги, не
+    # подклассы PasswordDeleteError — раньше пролетали НЕПОЙМАННЫМИ, роняя
+    # _clear_session до удаления username-файла/JWT-кэшей.
+    username_file = tmp_path / "username.txt"
+    username_file.write_text("u", encoding="utf-8")
+    monkeypatch.setattr(cred, "_USERNAME_FILE", username_file, raising=False)
+    monkeypatch.setattr(
+        cred, "_JWT_REFRESH_CLIENT_FILE", tmp_path / "absent1", raising=False
+    )
+    monkeypatch.setattr(
+        cred, "_JWT_REFRESH_FILE", tmp_path / "absent2", raising=False
+    )
+    monkeypatch.setattr(
+        keyring,
+        "delete_password",
+        lambda *_a: (_ for _ in ()).throw(
+            keyring.errors.KeyringLocked("locked")
+        ),
+    )
+
+    cred._clear_session()  # не должно бросить
+
+    assert not username_file.exists()
