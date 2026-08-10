@@ -13,7 +13,13 @@
 | [playtime-boost.md](playtime-boost.md) | Фича `scripts/playtime/boost.py`: набивка playtime батчами (источник правды — Steam API `playtime_forever`). |
 | [add-free.md](add-free.md) | Фича `scripts/library/add_free.py`: авто-добавление бесплатных Steam-игр/app в библиотеку (CM `request_free_license`, потолок лицензий). Не проходила формальный аудит. |
 | [wishlist-add.md](wishlist-add.md) | Фича `scripts/library/wishlist_add.py`: авто-добавление каталога Steam в вишлист (`IWishlistService`, rate-limit-стена). Не проходила формальный аудит. |
+| [core-auth-cookies.md](core-auth-cookies.md) | Общая инфраструктура Steam-логина `app/auth/` + `app/cookies/` (CM-логин, web-cookie fallback-цепочка) — без своего скрипта, используется scan/add_free (cm_session) и cards-farm/wishlist-add (get_web_cookies). Заведён 2026-08-10 из находок full-project-аудита. |
 
 Перед стартом заполни в промпте секцию задачи/симптома. Примеры-зацепки внутри
 промптов датированы моментом сборки — проверяй актуальность на месте (код
 меняется).
+
+**2026-08-10**: полный проектный аудит (46 агентов) нашёл конкретные баги по
+нескольким скриптам — каждый вписан прямо в соответствующий плейбук выше
+(секция «НАЙДЕНО АУДИТОМ 2026-08-10»), так что открытие сессии по плейбуку
+сразу подхватывает и его. Полная сводка — память `project_full_audit_2026_08_10`.
