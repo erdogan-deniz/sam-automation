@@ -114,3 +114,96 @@ def test_main_resolve_failure_exits_cleanly(monkeypatch) -> None:  # type: ignor
 
     assert exc.value.code == 1
     assert "validate" not in order  # до validate не дошли
+
+
+def _stub_discovery_deps(monkeypatch, cfg, cookie_calls, discover_calls):  # type: ignore[no-untyped-def]
+    """Мокает main() до вызова fetch_games_with_card_drops включительно.
+
+    check_steam_running → True (в отличие от _stub_main_deps), чтобы дойти
+    до обнаружения игр с card drops.
+    """
+    monkeypatch.setattr(sys, "argv", ["farm.py"])
+    monkeypatch.setattr(cards_farm, "setup_logging", lambda *a, **k: None)
+    monkeypatch.setattr(cards_farm, "load_config", lambda: cfg)
+    monkeypatch.setattr(cards_farm, "acquire_run_lock", lambda name: None)
+    monkeypatch.setattr(cards_farm.atexit, "register", lambda f: None)
+    monkeypatch.setattr(cards_farm, "check_steam_running", lambda: True)
+    monkeypatch.setattr(cards_farm, "resolve_steam_id", lambda key, sid: sid)
+    monkeypatch.setattr(cards_farm, "validate", lambda c: None)
+    monkeypatch.setattr(cards_farm, "ensure_sam", lambda path: path)
+
+    def fake_get_cookies(steam_id, **kw):  # type: ignore[no-untyped-def]
+        cookie_calls.append(kw.get("interactive", "default"))
+        return {"n": len(cookie_calls)}
+
+    monkeypatch.setattr(cards_farm, "get_web_cookies", fake_get_cookies)
+
+
+# Баг (Medium, аудит 2026-08-10): AuthError (протухшие куки) от
+# fetch_games_with_card_drops не отличался от честного "пагинация
+# закончилась" — main() докладывал ложное "всё уже собрано" вместо
+# обновления куки/честной ошибки.
+
+
+def test_main_refreshes_cookies_on_auth_error_and_retries(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    cookie_calls: list[object] = []
+    discover_calls: list[dict] = []
+    _stub_discovery_deps(
+        monkeypatch, _cfg(steam_id="76561197960287930"), cookie_calls, []
+    )
+
+    def fake_discover(cookies, steam_id):  # type: ignore[no-untyped-def]
+        discover_calls.append(cookies)
+        if len(discover_calls) == 1:
+            raise cards_farm.AuthError("403: сессия истекла")
+        return [(730, 5)]
+
+    monkeypatch.setattr(
+        cards_farm, "fetch_games_with_card_drops", fake_discover
+    )
+
+    loop_args: dict = {}
+
+    def fake_loop(games, cfg, cookies, steam_id):  # type: ignore[no-untyped-def]
+        loop_args["games"] = games
+        loop_args["cookies"] = cookies
+
+    monkeypatch.setattr(cards_farm, "_farm_loop", fake_loop)
+
+    cards_farm.main()
+
+    assert len(discover_calls) == 2  # первая попытка + повтор после обновления
+    assert cookie_calls == [
+        "default",
+        False,
+    ]  # 2й вызов — неинтерактивный refresh
+    assert loop_args["games"] == [(730, 5)]
+    assert loop_args["cookies"] == {
+        "n": 2
+    }  # свежие куки после refresh, не старые
+
+
+def test_main_exits_honestly_if_session_still_dead_after_refresh(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    cookie_calls: list[object] = []
+    _stub_discovery_deps(
+        monkeypatch, _cfg(steam_id="76561197960287930"), cookie_calls, []
+    )
+
+    def always_auth_error(cookies, steam_id):  # type: ignore[no-untyped-def]
+        raise cards_farm.AuthError("403: сессия истекла")
+
+    monkeypatch.setattr(
+        cards_farm, "fetch_games_with_card_drops", always_auth_error
+    )
+    monkeypatch.setattr(
+        cards_farm,
+        "_farm_loop",
+        lambda *a, **k: pytest.fail("не должен дойти до _farm_loop"),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cards_farm.main()
+
+    assert exc.value.code == 1  # честная ошибка, НЕ "всё уже собрано" (code 0)
