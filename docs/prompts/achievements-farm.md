@@ -147,6 +147,54 @@ _apply_resume_filter) → launch_picker → цикл _process_one_game по ка
   перехват Ctrl+C/SAMTooManyErrors в самом цикле main (а не через прямой вызов
   функции) не проверяется — главный кандидат на первую TDD-итерацию.
 
+# НАЙДЕНО АУДИТОМ 2026-08-10 (открытые баги, TDD-фикс)
+> Полный проектный аудит (46 агентов), первый формальный проход по этому
+> скрипту. Все 3 CONFIRMED адверсариальной верификацией по коду. Полные
+> evidence — память `project_full_audit_2026_08_10`.
+
+1. **[High] `_process_one_game` теряет персист на игре-триггере лимита
+   ошибок** (строки 83/104/112). Все 3 error-ветки зовут
+   `tracker.record_error(...)` ДО `mark_error_id`/`results.append`.
+   `ErrorTracker.record_error` (app/safety.py) кидает `SAMTooManyErrors`
+   СИНХРОННО изнутри вызова, когда именно эта ошибка пересекает
+   `max_consecutive_errors` — персист для этой игры пропускается целиком,
+   `test_process_one_game_soft_errors_trigger_abort` этого не ловит (проверяет
+   только факт исключения). Фикс: персистить (mark_error_id/results.append)
+   ДО вызова `tracker.record_error` во всех 3 ветках.
+2. **[High] `app/sam/picker_session.py:150` — resource leak.** В
+   `add_and_open_game` cleanup (`_kill_pid(found_pid)`) висит только на
+   `except SAMGameError`. Если сам `Application(...).connect()` кинет иной
+   Exception (pywinauto `ProcessNotFoundError`/`TimeoutError`) или
+   KeyboardInterrupt — осиротевший `SAM.Game.exe` никогда не убивается
+   (`game_app` остаётся `None`, `finally: close_game(game_app)` у
+   вызывающего — no-op). Фикс: расширить except на все исключения (или
+   try/finally вокруг всего connect+wait блока), убивать `found_pid`, затем
+   re-raise.
+3. **[High] main() без `kill_all_sam_games()` backstop.** `finally:
+   kill_process(proc)` (строка 373-374) убивает только Picker — в отличие
+   от boost.py/cards/farm.py, которые ПОСЛЕ kill_process ещё зовут
+   `kill_all_sam_games()` явным свипом сирот. achievements/farm.py —
+   единственный из 3 SAM-скриптов без этого backstop; осиротевший
+   SAM.Game.exe (напр. из бага №2 выше) никогда не подчищается до конца
+   сессии, конфликтуя с run-lock инвариантом для последующих запусков.
+   Фикс: добавить `kill_all_sam_games()` в finally после `kill_process(proc)`.
+4. **[Medium] `launch_picker` без try/except** (строки 340-342). В отличие
+   от `acquire_run_lock`/`resolve_steam_id`/`ensure_sam` в том же `main()`
+   (все три ловят свою ошибку → `log.error` + `sys.exit(1)`),
+   `launch_picker` может кинуть `SAMLaunchError`/`SAMConnectionError`
+   некатчево — сырой трейсбек вместо чистого выхода. Фикс: обернуть тем же
+   паттерном.
+5. **[Low, доки] `--retry-without` help-текст устарел** (строка 138):
+   упоминает удалённые в v1.9.x «Store-советы store_zero/store_empty» —
+   `_select_retry_subset` их не трогает, читает только `without.txt`.
+
+Общий баг в `app/run_lock.py` (`_proc_create_time`/`_is_live_owner`
+трактует `psutil.AccessDenied` как «владелец мёртв» — может украсть лок у
+живого процесса при elevation-mismatch) затрагивает и этот скрипт, и
+cards/farm.py, и boost.py — файл общий, см. любой из трёх плейбуков или
+память `project_full_audit_2026_08_10` за деталями. Не дублируй фикс, если
+другая сессия уже взялась (проверь `git log`/`git status` перед правкой).
+
 # МЕТОД
 1. По симптому выбери цель. Баг → воспроизведи, сними лог, сверь состояние
    3 файлов ДО/ПОСЛЕ; для UIA — дамп окна (docs/debug-sam-uia.md).
