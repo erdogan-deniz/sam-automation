@@ -161,6 +161,7 @@ def run(
             refused=len(result.refused),
             error=len(result.error),
             hit_cap=result.hit_cap,
+            session_dead=result.session_dead,
             cfg=cfg,
         )
     except BaseException:

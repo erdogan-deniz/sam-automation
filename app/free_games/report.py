@@ -23,11 +23,14 @@ def report_result(
     refused: int,
     error: int,
     hit_cap: bool,
+    session_dead: bool = False,
     cfg: Any,
 ) -> None:
     """Честный финальный отчёт (лог + toast + Telegram).
 
-    status: "ok" | "interrupted" | "error" | "dry_run".
+    status: "ok" | "interrupted" | "error" | "dry_run". session_dead=True
+    (CM-сессия умерла посреди прогона, add_licenses абортил вместо
+    бесконечного ретрая — слепая зона аудита 2026-08-10) — тоже НЕ ✅.
     """
     if status == "dry_run":
         head, ok = "dry-run (ничего не добавлено)", True
@@ -37,6 +40,8 @@ def report_result(
         head, ok = "прервано ошибкой", False
     elif hit_cap:
         head, ok = "упор в стену (потолок лицензий)", False
+    elif session_dead:
+        head, ok = "прервано: сессия Steam умерла", False
     elif refused or error:
         head, ok = "готово с оговорками", False
     else:
