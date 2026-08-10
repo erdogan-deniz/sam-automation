@@ -26,7 +26,8 @@ sam_game_exe_path: "./external/SAM/SAM.Game.exe"
 # Используется вместо scan.py если нужен ручной список.
 # game_ids_file: "my_games.txt"
 
-# Явный список App ID (переопределяет scan.py и game_ids_file)
+# Явный список App ID (отключает all.txt от scan.py; объединяется —
+# union, не override — с game_ids_file)
 # game_ids:
 #   - 570
 #   - 730
