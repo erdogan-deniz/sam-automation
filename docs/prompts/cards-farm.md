@@ -22,13 +22,14 @@ main() flow:
 3. `acquire_run_lock('cards/farm')` в try/except RuntimeError → log.error + sys.exit(1)
 4. `atexit.register(release_run_lock)`
 5. `cfg = load_config()`
-6. `validate(cfg)`
-7. `check_steam_running()` иначе error + exit(1)
-8. `cfg.sam_game_exe_path = ensure_sam(...)` в try/except RuntimeError → exit(1)
-9. `steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)` try/except → exit(1)
-10. `cookies = get_web_cookies(cfg.steam_id)`; если пусто → error + exit(1)
-11. `games_with_drops = fetch_games_with_card_drops(cookies, steam_id)`; если пусто → лог «всё уже получено» + sys.exit(0)
-12. `_farm_loop(games_with_drops, cfg, cookies, steam_id)`
+6. если `cfg.steam_id` непусто: `cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)` try/except(RuntimeError, KeyError) → exit(1) — ДО validate (RA-B: validate шлёт steam_id в GetPlayerSummaries, которому нужен числовой ID64 — сырой vanity/URL иначе даёт ложное «API key invalid»; пустой steam_id НЕ резолвим, пусть validate выдаст локальную «missing»)
+7. `validate(cfg)`
+8. `check_steam_running()` иначе error + exit(1)
+9. `cfg.sam_game_exe_path = ensure_sam(...)` в try/except RuntimeError → exit(1)
+10. `steam_id = cfg.steam_id` (уже резолвлен на шаге 6)
+11. `cookies = get_web_cookies(cfg.steam_id)`; если пусто → error + exit(1)
+12. `games_with_drops = fetch_games_with_card_drops(cookies, steam_id)`; если пусто → лог «всё уже получено» + sys.exit(0)
+13. `_farm_loop(games_with_drops, cfg, cookies, steam_id)`
 
 Хелперы в farm.py:
 - `_kill_game(appid, proc)` → `kill_process(proc)`
@@ -84,6 +85,20 @@ write-only, очередь строится из живого скрейпа bad
 - Константы: `_MAX_CHECK_FAILURES=5`, `_FLUSH_PAUSE_SECONDS=20`, `_PAUSE_BETWEEN_GAMES=3s`, `_MAX_NO_PROGRESS=10`. Финальный тост честный: «прерван» / «с оговорками: не запущено N, застряло M, не проверено K» / «Card farming завершён».
 - Приватный профиль даёт пустой результат с одним warning-логом, НЕ error. Требуется 17-значный steamid64 + валидные web-cookies.
 - НЕ проверено e2e: сам факт, что коллапс в ноль сбрасывает дроп за 20с — гипотеза (документирован Idle Master Fast mode + наблюдение юзера), не подтверждена реальным прогоном. `_FLUSH_PAUSE_SECONDS=20` — неизмеренная константа; если мало — дроп увидится следующим циклом (не потеря).
+
+# ПРОБЕЛЫ В ТЕСТАХ (если правишь — закрой TDD)
+> Проверено 2026-08-10 систематическим прогоном по стабильности всех
+> скриптов проекта. Полный аудит (82 агента, MF1/MF2) был 2026-07-02 — ДО
+> удаления GUI-подсистемы и ДО конвенции resolve-до-validate; часть находок
+> актуальна, но сам прогон не переповторялся на текущем коде.
+- `_farm_loop` покрыт плотно (19 тестов в test_cards_farm_loop.py). `main()`
+  покрыт ТОЛЬКО порядком resolve_steam_id→validate (test_cards_farm_main.py,
+  RA-B, закрыт 2026-08-10) — остальной main() (check_steam_running/ensure_sam/
+  get_web_cookies/fetch_games_with_card_drops сбои и их exit-коды, пустая
+  очередь) БЕЗ покрытия.
+- Zero-transition flush (`_FLUSH_PAUSE_SECONDS=20`) остаётся неподтверждённой
+  гипотезой — см. выше. Если беритесь за фичу глубоко, это первый кандидат на
+  живую e2e-проверку, не на TDD.
 
 # МЕТОД
 1. Сначала ЗАДАЧА/СИМПТОМ выше — заполни и воспроизведи. Корень ищи по доказательствам (systematic-debugging) ДО любого фикса.

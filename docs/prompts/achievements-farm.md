@@ -32,11 +32,15 @@ logs/achievements/farm/, и состояние achievements/{unlocked,error,with
 # ТОЧКА ВХОДА: scripts/achievements/farm.py
 main(): parse args → setup_logging(category="achievements/farm") →
 acquire_run_lock("achievements/farm") [ДО сброса прогресса!] → atexit release →
-load_config/validate → _prepare_progress(args) → check_steam_running →
-ensure_sam → load_game_ids → выбор среза (--retry-without/--retry-done →
-_select_retry_subset, иначе _apply_resume_filter) →
-launch_picker → цикл _process_one_game по каждой игре → kill_process(proc) в
-finally → _report_result (честный тост+telegram по статусу ok/interrupted/aborted).
+load_config → resolve_steam_id (ДО validate, если steam_id непусто: validate
+шлёт steam_id в GetPlayerSummaries, которому нужен числовой ID64 — сырой
+vanity/URL иначе даёт ложное «API key invalid»; RA-B, исправлено — раньше
+farm.py вообще НЕ резолвил) → validate → _prepare_progress(args) →
+check_steam_running → ensure_sam → load_game_ids → выбор среза
+(--retry-without/--retry-done → _select_retry_subset, иначе
+_apply_resume_filter) → launch_picker → цикл _process_one_game по каждой игре
+→ kill_process(proc) в finally → _report_result (честный тост+telegram по
+статусу ok/interrupted/aborted).
 
 - _process_one_game(session, gid, cfg, tracker, results, name):
   session.add_and_open_game(gid, timeout=load_timeout) → process_game(...) →
@@ -125,11 +129,23 @@ finally → _report_result (честный тост+telegram по статусу
 - Логи: logs/achievements/farm/<TIMESTAMP>.log (UTF-8).
 
 # ПРОБЕЛЫ В ТЕСТАХ (если правишь — закрой TDD)
-- _process_one_game, _apply_resume_filter, main()-цикл — БЕЗ покрытия; фейка
-  session (add_and_open_game/close_game/launch_picker) нет.
-- Реальный pywinauto-путь против живого SAM не тестируется (только логика на фейках).
+> Проверено 2026-08-10 систематическим прогоном по стабильности всех
+> скриптов проекта: этот файл — единственный из пяти SAM/library-скриптов,
+> НИКОГДА не имевший полного многоосевого аудита (в отличие от scan.py/
+> boost.py/cards-farm.py). Ниже — реальное состояние покрытия, не
+> предположение.
+- _process_one_game — ПОКРЫТ (test_farm.py: soft-error/abort/unlock/no-achievements
+  маршруты). _apply_resume_filter — БЕЗ покрытия.
+- test_farm_main.py покрывает ТОЛЬКО порядок resolve_steam_id→validate (RA-B,
+  закрыт 2026-08-10). Остальной main()-цикл — БЕЗ покрытия: сам for-цикл по
+  game_ids (перехват SAMTooManyErrors→aborted, KeyboardInterrupt→interrupted
+  внутри цикла, а не в изоляции как в test_farm.py), launch_picker/kill_process
+  в finally, ветки "all.txt не найден"/"список пуст"/"все обработаны". Фейка
+  session (add_and_open_game/close_game/launch_picker) для main() нет.
+- Реальный pywinauto-путь против живого SAM не тестируется (только логика на фейках) — ожидаемо, не баг.
 - _report_result покрыт (test_farm: ✅ vs ⚠️ на interrupted/aborted/errors), но
-  перехват Ctrl+C/SAMTooManyErrors в самом цикле main не проверяется.
+  перехват Ctrl+C/SAMTooManyErrors в самом цикле main (а не через прямой вызов
+  функции) не проверяется — главный кандидат на первую TDD-итерацию.
 
 # МЕТОД
 1. По симптому выбери цель. Баг → воспроизведи, сними лог, сверь состояние
