@@ -133,6 +133,40 @@ def test_bounds_playtime_concurrent_zero() -> None:
     assert any("playtime_concurrent_games" in e for e in errors)
 
 
+# Баг (Medium, аудит 2026-08-10): max_consecutive_errors/between_games_delay
+# не входили в _check_numeric_bounds, в отличие от соседних полей того же
+# класса риска (launch_stagger). 0/отрицательное max_consecutive_errors
+# мгновенно триггерит SAMTooManyErrors на первой же ошибке (ErrorTracker:
+# self._consecutive(1) >= max_consecutive(0)); отрицательный
+# between_games_delay роняет time.sleep() необработанным ValueError без
+# честного отчёта validate().
+
+
+def test_bounds_max_consecutive_errors_zero() -> None:
+    errors = _check_numeric_bounds(Config(max_consecutive_errors=0))
+    assert any("max_consecutive_errors" in e for e in errors)
+
+
+def test_bounds_max_consecutive_errors_negative() -> None:
+    errors = _check_numeric_bounds(Config(max_consecutive_errors=-1))
+    assert any("max_consecutive_errors" in e for e in errors)
+
+
+def test_bounds_between_games_delay_negative() -> None:
+    errors = _check_numeric_bounds(Config(between_games_delay=-1.0))
+    assert any("between_games_delay" in e for e in errors)
+
+
+def test_bounds_between_games_delay_nan() -> None:
+    errors = _check_numeric_bounds(Config(between_games_delay=float("nan")))
+    assert any("between_games_delay" in e for e in errors)
+
+
+def test_bounds_between_games_delay_too_high() -> None:
+    errors = _check_numeric_bounds(Config(between_games_delay=7200.0))
+    assert any("between_games_delay" in e for e in errors)
+
+
 # ── _check_steam_api ──────────────────────────────────────────────────────
 
 
