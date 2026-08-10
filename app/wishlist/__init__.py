@@ -12,6 +12,5 @@
 from __future__ import annotations
 
 from .orchestrate import run
-from .wishlist_api import AddResult
 
-__all__ = ["AddResult", "run"]
+__all__ = ["run"]
