@@ -347,7 +347,6 @@ def main() -> None:
 
     tracker = ErrorTracker(max_consecutive=cfg.max_consecutive_errors)
     results: list[UnlockResult] = []
-    errors = 0
     status = "ok"
 
     try:
@@ -356,8 +355,7 @@ def main() -> None:
             header = f"[{i}/{total}]"
             log.info(centered(header))
             log.info("APP ID: %d", game_id)
-            if _process_one_game(session, game_id, cfg, tracker, results, name):
-                errors += 1
+            _process_one_game(session, game_id, cfg, tracker, results, name)
             if i < total:
                 time.sleep(cfg.between_games_delay)
 
@@ -375,10 +373,10 @@ def main() -> None:
     print()
     log.info(SEPARATOR)
     log.info("ИТОГИ")
-    _log_summary(results, errors)
+    _log_summary(results, tracker.total_errors)
 
     unlocked = sum(1 for r in results if not r.skipped)
-    _report_result(status, unlocked, errors, total, cfg)
+    _report_result(status, unlocked, tracker.total_errors, total, cfg)
 
 
 if __name__ == "__main__":
