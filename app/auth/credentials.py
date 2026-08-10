@@ -60,7 +60,13 @@ def _save_session(username: str, password: str) -> None:
     """Сохраняет username на диск, пароль — в Windows Credential Manager."""
     _CRED_DIR.mkdir(parents=True, exist_ok=True)
     _USERNAME_FILE.write_text(username, encoding="utf-8")
-    keyring.set_password(_KEYRING_SERVICE, username, password)
+    try:
+        keyring.set_password(_KEYRING_SERVICE, username, password)
+    except BaseException:
+        # keyring недоступен (или прервано Ctrl+C) — не оставляем
+        # username-файл без соответствующего пароля в Credential Manager.
+        _USERNAME_FILE.unlink(missing_ok=True)
+        raise
 
 
 def _load_session() -> tuple[str, str] | None:
@@ -108,6 +114,9 @@ def _load_session() -> tuple[str, str] | None:
     try:
         password = keyring.get_password(_KEYRING_SERVICE, username)
     except Exception:
+        log.warning(
+            "Steam CM: keyring недоступен при чтении пароля", exc_info=True
+        )
         return None
     return (username, password) if password else None
 
@@ -119,9 +128,15 @@ def _clear_session() -> None:
         if username:
             try:
                 keyring.delete_password(_KEYRING_SERVICE, username)
-            except keyring.errors.PasswordDeleteError:
-                pass
-        _USERNAME_FILE.unlink()
+            except Exception:
+                # PasswordDeleteError и сиблинги (KeyringLocked/NoKeyringError/
+                # InitError) — не подклассы друг друга, но одинаково не
+                # должны блокировать очистку username-файла/JWT-кэшей ниже.
+                log.warning(
+                    "Steam CM: keyring.delete_password упал, продолжаю очистку",
+                    exc_info=True,
+                )
+        _USERNAME_FILE.unlink(missing_ok=True)
         log.info("Steam CM: учётные данные удалены из Credential Manager")
     # JWT-кэши тоже сносим: после стирания на достоверно-неверном пароле
     # short-circuit _jwt_web_cookies (игнорирует username) иначе переиспользовал
