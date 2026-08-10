@@ -598,6 +598,60 @@ def test_run_add_keyboard_interrupt_reports_interrupted(
     assert captured["status"] == "interrupted"
 
 
+# ── report.report_result переживает BaseException (аудит 2026-08-10) ───────
+# Найдено формальным аудитом: голый top-level report.report_result(...) не
+# обёрнут в try/except — третий Ctrl+C (BaseException) ровно на этапе отчёта
+# (внутри toast()/send_telegram()) даёт сырой трейсбек вместо уже честно
+# посчитанного статуса. Тот же паттерн, что boost.py (полиш v1.14.1).
+
+
+def test_run_add_report_result_raises_does_not_crash(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(orch, "discover", lambda **_k: [1, 2])
+    monkeypatch.setattr(
+        orch, "add", lambda **_k: orch.wishlist_api.AddResult(added=[1, 2])
+    )
+
+    def _boom(**_kw):
+        raise KeyboardInterrupt()  # третий Ctrl+C — BaseException, не Exception
+
+    monkeypatch.setattr(orch.report, "report_result", _boom)
+
+    orch.run(
+        do_add=True,
+        list_only=False,
+        limit=None,
+        interval=1.0,
+        api_key="k",
+        steam_id="s",
+        cfg=SimpleNamespace(),
+    )  # не должно поднять исключение
+
+
+def test_run_dry_run_report_result_raises_does_not_crash(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    monkeypatch.setattr(orch, "discover", lambda **_k: [1, 2, 3])
+
+    def _boom(**_kw):
+        raise SystemExit(1)  # тоже BaseException, не Exception
+
+    monkeypatch.setattr(orch.report, "report_result", _boom)
+
+    orch.run(
+        do_add=False,
+        list_only=False,
+        limit=None,
+        interval=1.0,
+        api_key="k",
+        steam_id="s",
+        cfg=SimpleNamespace(),
+    )  # не должно поднять исключение
+
+
 def test_run_dry_run_discover_exception_reports_error(
     monkeypatch, tmp_path
 ) -> None:
