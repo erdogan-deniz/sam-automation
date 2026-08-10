@@ -2,6 +2,30 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.16.1]
+
+### Последняя слепая зона аудита: screen lock роняет achievements/farm.py + мелкий доклад
+
+Закрывает последнюю (5-ю) слепую зону full-project-аудита 2026-08-10:
+`achievements/farm.py` — единственный SAM-скрипт, кликающий через pywinauto
+(mouse.click/keyboard.send_keys). На заблокированном/неактивном рабочем
+столе Win32 SetCursorPos/SendInput отказывают, и это не разовый сбой —
+КАЖДАЯ следующая игра падает так же, реально исчерпывая
+`max_consecutive_errors` на многочасовом необслуживаемом прогоне. Ошибка
+корректно уходит в `error.txt` (без порчи данных), но теряется всё время
+прогона.
+
+- **`app/sam/launcher.py`**: новая `prevent_idle_sleep()`
+  (`SetThreadExecutionState`), зовётся в `main()` сразу после
+  `launch_picker` — закрывает авто-сон/авто-выключение экрана по таймауту
+  простоя (самый реалистичный триггер для «запустил и ушёл»). НЕ спасает
+  от ручного Win+L/экранной заставки с паролем. `boost.py`/`cards/farm.py`
+  иммунны (не используют pywinauto).
+- **`scripts/achievements/farm.py`**: `launch_picker` — был единственным из
+  4 похожих вызовов в `main()` без `try/except` (сбой
+  `SAMLaunchError`/`SAMConnectionError` давал сырой трейсбек вместо чистого
+  `exit(1)`). Обёрнут тем же паттерном.
+
 ## [1.16.0]
 
 ### Скрипт сверки bookkeeping с реальным Steam ground-truth
