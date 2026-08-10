@@ -2,6 +2,31 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.15.2]
+
+### Дозакрытие 3 MEDIUM-находок full-project-аудита 2026-08-10
+
+- **`app/cards/card_checker.py`**: `fetch_games_with_card_drops` ловила
+  `AuthError` (протухшие куки) тем же `except RuntimeError`, что и
+  транзиентные сетевые сбои — 3 страницы подряд с 401/403 просто обрывали
+  пагинацию с частичным/пустым результатом, и `cards/farm.py` докладывал
+  ложное «всё уже собрано» вместо честной «сессия протухла». `_AuthError`
+  переименован в публичный `AuthError`; пагинация пробрасывает его целиком,
+  `main()` обновляет куки один раз неинтерактивно и повторяет.
+- **`app/free_games/state.py`**: `save_candidates` писала
+  `sorted(set(appids))` — числовая сортировка стирала порядок приоритета
+  `games>software>demos`, который строит `discovery.discover_candidates`, и
+  на который полагается `--limit`. Переведено на дедуп без сортировки
+  (`dict.fromkeys`).
+- **`app/validator.py`**: добавлены границы для `max_consecutive_errors`
+  (<=0 мгновенно триггерит emergency-stop на первой же ошибке) и
+  `between_games_delay` (отрицательное/nan значение роняло `time.sleep()`
+  необработанным `ValueError`).
+
+Также: `docs/gitflow.md` — порядок backmerge/delete в release/hotfix
+приведён в соответствие с фактической практикой проекта (backmerge, затем
+удаление ветки — не наоборот).
+
 ## [1.15.1]
 
 ### Дозакрытие 2 HIGH-находок full-project-аудита, ложно помеченных закрытыми
