@@ -290,6 +290,19 @@ def main() -> None:
     log.info("SAM Automation: Farm Cards")
     log.info(SEPARATOR)
     cfg = load_config()
+
+    # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации: validate шлёт
+    # steam_id в GetPlayerSummaries, которому нужен числовой ID64 (сырой
+    # vanity даёт ложное «API key invalid»). Пустой steam_id НЕ резолвим —
+    # пусть validate выдаст локальную «missing». (RA-B; порядок resolve→
+    # validate выровнен со scan.py/boost.py/add_free.py/wishlist_add.py.)
+    if cfg.steam_id:
+        try:
+            cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
+        except (RuntimeError, KeyError) as e:
+            log.error("Не удалось определить Steam ID: %s", e)
+            sys.exit(1)
+
     validate(cfg)
 
     if not check_steam_running():
@@ -305,11 +318,7 @@ def main() -> None:
         log.error(str(e))
         sys.exit(1)
 
-    try:
-        steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
-    except RuntimeError as e:
-        log.error("Не удалось определить Steam ID: %s", e)
-        sys.exit(1)
+    steam_id = cfg.steam_id
 
     log.info(
         "Поиск приложений библиотеки Steam с доступными картами на выпадение ..."
