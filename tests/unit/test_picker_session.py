@@ -208,6 +208,56 @@ def test_window_never_appears_kills_spawned_pid(monkeypatch):
     assert killed == [999]  # сирота не оставлен
 
 
+def test_connect_failure_kills_spawned_pid(monkeypatch):
+    # Application(...).connect() может бросить НЕ SAMGameError (напр.
+    # pywinauto-таймаут коннекта) — узкий except SAMGameError это не
+    # перехватывал, оставляя уже запущенный SAM.Game сиротой без cleanup.
+    session = _session(monkeypatch, items=[_Item()])
+    monkeypatch.setattr(ps, "_is_window_enabled", lambda _h: True)
+    pids = iter([{1}, {1, 999}])
+    monkeypatch.setattr(ps, "_get_sam_game_pids", lambda: next(pids, {1, 999}))
+    killed: list[int] = []
+    monkeypatch.setattr(ps, "_kill_pid", lambda pid: killed.append(pid))
+
+    def _boom(_s, **k):
+        raise TimeoutError("Could not connect to process")
+
+    monkeypatch.setattr(
+        ps,
+        "Application",
+        lambda backend: type("_C", (), {"connect": _boom})(),
+    )
+
+    with pytest.raises(TimeoutError):
+        session.add_and_open_game(730, timeout=0.2)
+    assert killed == [999]  # сирота не оставлен
+
+
+def test_late_arriving_pid_is_killed_not_orphaned(monkeypatch):
+    # PID может появиться чуть ПОСЛЕ основного poll-дедлайна (ОС притормозила
+    # scheduling дочернего процесса) — раньше он просто терялся без diag/kill.
+    session = _session(monkeypatch, items=[_Item()])
+    monkeypatch.setattr(ps, "_is_window_enabled", lambda _h: True)
+
+    # 3 вызова _get_sam_game_pids происходят ДО grace-check (existing_pids +
+    # 2 итерации основного poll-цикла, пока не истёк его собственный
+    # дедлайн) — PID появляется только на 4-м вызове (сам grace-check).
+    calls = {"n": 0}
+
+    def _get_pids():
+        calls["n"] += 1
+        return {1} if calls["n"] <= 3 else {1, 999}
+
+    monkeypatch.setattr(ps, "_get_sam_game_pids", _get_pids)
+    killed: list[int] = []
+    monkeypatch.setattr(ps, "_kill_pid", lambda pid: killed.append(pid))
+
+    with pytest.raises(SAMGameError, match="не появился"):
+        session.add_and_open_game(730, timeout=0.05)
+
+    assert killed == [999]
+
+
 def test_success_returns_connected_game_app(monkeypatch):
     session = _session(monkeypatch, items=[_Item()])
     monkeypatch.setattr(ps, "_is_window_enabled", lambda _h: True)
