@@ -43,6 +43,7 @@ from app.sam import (
     launch_picker,
     process_game,
 )
+from app.steam import resolve_steam_id
 from app.unlock_result import UnlockResult
 from app.validator import validate
 
@@ -268,6 +269,19 @@ def main() -> None:
     log.info("Разблокировка достижений Steam")
     log.info(SEPARATOR)
     cfg = load_config()
+
+    # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации: validate шлёт
+    # steam_id в GetPlayerSummaries, которому нужен числовой ID64 (сырой
+    # vanity даёт ложное «API key invalid»). Пустой steam_id НЕ резолвим —
+    # пусть validate выдаст локальную «missing». (RA-B; порядок resolve→
+    # validate выровнен со scan.py/boost.py/add_free.py/wishlist_add.py.)
+    if cfg.steam_id:
+        try:
+            cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
+        except (RuntimeError, KeyError) as e:
+            log.error("Не удалось определить Steam ID: %s", e)
+            sys.exit(1)
+
     validate(cfg)
     _prepare_progress(args)
 
