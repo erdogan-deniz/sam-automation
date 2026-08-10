@@ -290,6 +290,27 @@ def test_kill_all_sam_games_noop_when_none(monkeypatch):
     assert killed == []
 
 
+def test_prevent_idle_sleep_calls_set_thread_execution_state(monkeypatch):
+    # Слепая зона аудита: заблокированный/уснувший по простою рабочий стол
+    # роняет pywinauto-клики в achievements/farm.py каждой следующей игрой.
+    # ES_CONTINUOUS|ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRED закрывает
+    # авто-сон/авто-выключение экрана по бездействию (не ручной Win+L).
+    calls: list[int] = []
+    fake_kernel32 = MagicMock()
+    fake_kernel32.SetThreadExecutionState = lambda flags: calls.append(flags)
+    monkeypatch.setattr(
+        launcher.ctypes, "windll", MagicMock(kernel32=fake_kernel32)
+    )
+
+    launcher.prevent_idle_sleep()
+
+    assert calls == [
+        launcher._ES_CONTINUOUS
+        | launcher._ES_SYSTEM_REQUIRED
+        | launcher._ES_DISPLAY_REQUIRED
+    ]
+
+
 def test_idle_split_zero_poll_interval_terminates(monkeypatch):
     # poll_interval<=0 не должен зацикливаться: кламп до 0.1 двигает часы к deadline.
     clock, _ = _patch_clock_and_kill(monkeypatch)
