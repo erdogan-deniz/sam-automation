@@ -39,6 +39,7 @@ from app.sam import (
     check_steam_running,
     close_game,
     ensure_sam,
+    kill_all_sam_games,
     kill_process,
     launch_picker,
     process_game,
@@ -257,16 +258,25 @@ def _report_result(
 
 
 def _teardown_picker(proc) -> None:
-    """Убивает SAM.Picker.exe. НИКОГДА не бросает (аналог boost.py _teardown).
+    """Убивает SAM.Picker.exe + бэкстоп-свип осиротевших SAM.Game.exe.
 
-    Вызывается из finally main() на ЛЮБОМ выходе. Сбой kill_process (напр.
-    PermissionError в гонке терминации уже выходящего процесса) не должен
-    пропустить честный _log_summary/_report_result, идущие следом.
+    НИКОГДА не бросает (аналог boost.py _teardown). Вызывается из finally
+    main() на ЛЮБОМ выходе. Сбой kill_process (напр. PermissionError в гонке
+    терминации уже выходящего процесса) не должен пропустить ни бэкстоп, ни
+    честный _log_summary/_report_result, идущие следом. Бэкстоп нужен,
+    поскольку kill_process(proc) убивает только сам Picker — осиротевший
+    SAM.Game.exe (напр. из сбоя подключения в picker_session.py или Ctrl+C
+    во время обработки игры) иначе никогда не подчищается, конфликт с
+    run-lock инвариантом (как в boost.py/cards/farm.py).
     """
     try:
         kill_process(proc)
     except Exception:
         log.exception("teardown: сбой kill_process(picker)")
+    try:
+        kill_all_sam_games()
+    except Exception:
+        log.exception("teardown: сбой kill_all_sam_games")
 
 
 def main() -> None:
