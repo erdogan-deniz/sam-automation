@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import subprocess
 import time
@@ -15,6 +16,10 @@ from .picker_session import PickerSession
 from .win32_utils import _get_sam_game_pids, _has_error_window, _kill_pid
 
 log = logging.getLogger("sam_automation")
+
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
+_ES_DISPLAY_REQUIRED = 0x00000002
 
 # Пауза между стартами SAM.Game.exe (сек). Одновременный запуск нескольких
 # процессов вызывает гонку за Steam global user → 'failed to connect to
@@ -206,3 +211,22 @@ def kill_all_sam_games() -> None:
     """
     for pid in _get_sam_game_pids():
         _kill_pid(pid)
+
+
+def prevent_idle_sleep() -> None:
+    """Не даёт Windows усыпить систему/погасить экран по таймауту простоя.
+
+    Слепая зона аудита: achievements/farm.py — единственный SAM-скрипт,
+    кликающий через pywinauto (mouse.click/keyboard.send_keys). На
+    заблокированном/неактивном рабочем столе Win32 SetCursorPos/SendInput
+    отказывают (pywinauto бросает RuntimeError "нет активного рабочего
+    стола"), и это НЕ одноразовый сбой — КАЖДАЯ следующая игра будет падать
+    так же, пока рабочий стол не разблокируют, что реально исчерпывает
+    max_consecutive_errors и обрывает многочасовой необслуживаемый прогон.
+    ОГОВОРКА: не спасает от ручного Win+L или экранной заставки с паролем —
+    только от авто-сна/авто-выключения экрана по бездействию, самого
+    реалистичного триггера для "запустил и ушёл на ночь".
+    """
+    ctypes.windll.kernel32.SetThreadExecutionState(
+        _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_DISPLAY_REQUIRED
+    )
