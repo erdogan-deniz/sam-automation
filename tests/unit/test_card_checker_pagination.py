@@ -130,6 +130,30 @@ def test_prev_html_size_reset_after_skip(
     assert (333, 4) in result
 
 
+def test_fetch_games_propagates_auth_error_instead_of_silent_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Протухшие куки (AuthError) не должны маскироваться под "конец пагинации".
+
+    Баг (Medium, аудит 2026-08-10): пагинация ловила AuthError тем же
+    `except RuntimeError`, что и транзиентные сетевые сбои — 3 страницы
+    подряд с 401/403 просто обрывали цикл с частичным/пустым результатом,
+    и main() докладывал ложное "всё уже собрано" вместо честного "сессия
+    протухла". AuthError должен пробрасываться из fetch_games_with_card_drops
+    целиком, а не поглощаться consec_failures-бухгалтерией.
+    """
+
+    def fake_fetch(opener, url):
+        raise card_checker.AuthError("403: сессия истекла")
+
+    monkeypatch.setattr(card_checker, "_make_opener", lambda cookies: object())
+    monkeypatch.setattr(card_checker, "_fetch_page", fake_fetch)
+    monkeypatch.setattr(card_checker.time, "sleep", lambda *_: None)
+
+    with pytest.raises(card_checker.AuthError):
+        card_checker.fetch_games_with_card_drops({}, "76561190000000000")
+
+
 def test_absolute_page_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     """Без content-стопа пагинация обрывается по абсолютному капу страниц."""
     # Каждая страница уникальна (свой appid и длина) → ни size-повтор,
@@ -232,15 +256,15 @@ def test_fetch_page_429_is_rate_limit_with_retry_after() -> None:
 
 
 def test_fetch_page_403_is_auth_error() -> None:
-    """403 (истёкшие куки / нет доступа) → _AuthError, а не транзиент."""
-    with pytest.raises(card_checker._AuthError):
+    """403 (истёкшие куки / нет доступа) → AuthError, а не транзиент."""
+    with pytest.raises(card_checker.AuthError):
         card_checker._fetch_page(
             _http_error_opener(403), f"{card_checker._COMMUNITY_BASE}/x"
         )
 
 
 def test_retry_does_not_retry_auth_error() -> None:
-    """_AuthError НЕ ретраится (куки ретраем не чинятся) — ровно 1 попытка."""
+    """AuthError НЕ ретраится (куки ретраем не чинятся) — ровно 1 попытка."""
     import urllib.error
 
     calls = {"n": 0}
@@ -250,7 +274,7 @@ def test_retry_does_not_retry_auth_error() -> None:
             calls["n"] += 1
             raise urllib.error.HTTPError(url, 403, "Forbidden", None, None)
 
-    with pytest.raises(card_checker._AuthError):
+    with pytest.raises(card_checker.AuthError):
         card_checker._fetch_page_with_retry(
             _Boom(), f"{card_checker._COMMUNITY_BASE}/x"
         )

@@ -25,12 +25,28 @@ def test_load_candidates_empty(
     assert state_mod.load_candidates() == []
 
 
-def test_save_and_load_candidates_sorted_deduped(
+def test_save_and_load_candidates_deduped(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_all(monkeypatch, tmp_path)
     state_mod.save_candidates([730, 10, 730, 440])
-    assert state_mod.load_candidates() == [10, 440, 730]
+    assert state_mod.load_candidates() == [730, 10, 440]  # дедуп, не сортировка
+
+
+def test_save_candidates_preserves_priority_order(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Баг (Medium, аудит 2026-08-10): save_candidates писала
+    # sorted(set(appids)) — числовая сортировка стирала порядок приоритета
+    # (games>software>demos), который discovery.discover_candidates строит
+    # специально, а orchestrate.add()'s --limit срезает по этому порядку
+    # (pending[:limit]). Числовая сортировка превращала --limit в "N игр с
+    # наименьшим appid" вместо "N по приоритету".
+    _patch_all(monkeypatch, tmp_path)
+    # Не по возрастанию appid — если бы save_candidates сортировала численно,
+    # порядок ниже не сохранился бы.
+    state_mod.save_candidates([500, 10, 999])
+    assert state_mod.load_candidates() == [500, 10, 999]
 
 
 def test_mark_added_and_load(
