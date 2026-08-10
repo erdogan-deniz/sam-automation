@@ -2,6 +2,59 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.15.0]
+
+### Хардненинг после full-project-аудита (2026-08-10)
+
+Отдельная сессия провела 46-агентный security/correctness-аудит (12 финдеров
++ верификация + критик слепых зон) по всем модулям — найдено 7 High
+(data-loss/resource-leak/run-lock). Все переоткрыты, адверсариально
+верифицированы и исправлены TDD этим релизом:
+
+- **`app/auth/credentials.py`**: легаси-миграция plaintext-JSON → keyring
+  теряла единственную сохранённую копию пароля при сбое `_save_session`
+  (keyring/DPAPI недоступен) — файл удалялся безусловно, даже без
+  подтверждённого успеха миграции. `_save_session` оставляла username-файл
+  без пароля при сбое `keyring.set_password` (рассинхрон). `_load_session`
+  молча трактовала любой сбой keyring как «пароль не сохранён» —
+  добавлено логирование. `_clear_session` ловила только один подкласс
+  `KeyringError` (`PasswordDeleteError`), сиблинги (`KeyringLocked` и т.п.)
+  пролетали непойманными.
+- **`app/cookies/playwright.py`**: `_try_save_cm_refresh_token` кэшировала
+  CM JWT-токен в web-scope файл вместо client-scope — токен физически
+  никогда не использовался `_cm_login`. На успешном пути `_playwright_login`
+  вызывала `browser.close()` ДО сохранения cookie — сбой close() терял уже
+  добытый JWT. Незащищённый `_try_save_cm_refresh_token()` мог утопить уже
+  успешный основной cookie. Обрыв соединения во время ожидания входа давал
+  ту же строку лога, что настоящий таймаут.
+- **`app/cookies/storage.py`**: `_save_manual_cookie`/`_save_remember_login`
+  писали через сырой `Path.write_text` — переведены на атомарную запись
+  (`_atomic_write_text`), как `id_file`/`cache`.
+- **`app/sam/picker_session.py`**: cleanup осиротевшего SAM.Game.exe висел
+  на узком `except SAMGameError` — не ловил сбои `Application(...).connect()`
+  иного рода. Заменён на `try/finally`. Добавлен grace-check на PID,
+  появившийся чуть позже основного poll-дедлайна.
+- **`app/run_lock.py`**: `_own_token` могла записать литеральную строку
+  `"None"` при недоступном `create_time` — другой инстанс счёл бы живого
+  владельца мёртвым и снёс его лок. Теперь падает громко вместо записи
+  неразрешимого токена. Добавлен reentrancy-guard для повторного захвата
+  из того же процесса.
+- **`scripts/achievements/farm.py`**: в 3 error-путях `_process_one_game`
+  `tracker.record_error()` (может бросить `SAMTooManyErrors` на лимите)
+  вызывался ДО `mark_error_id`/`results.append` — бросок пропускал персист,
+  игра молча ретраилась бы без следа о прежней ошибке. Порядок переставлен.
+  `finally: kill_process(proc)` в `main()` не был защищён — вынесен в
+  `_teardown_picker` (никогда не бросает, аналог `boost.py::_teardown`).
+- Устранён дрейф документации/мёртвый код, накопившийся с v1.11.0–v1.14.2:
+  собственная эталонная структура `docs/prompts/project-auditor.md`
+  (пропущены `free_games`/`wishlist`, ложная запись про
+  `[tool.pytest.ini_options]`), `config.example.yaml` (неверное описание
+  `game_ids`/`game_ids_file`), `docs/gitflow.md` (неверный merge-back флоу),
+  `CLAUDE.md`, устаревший `--help` в `farm.py`; мёртвые поля/свойства
+  (`UnlockResult.already_unlocked`, `ErrorTracker.total_errors` — теперь
+  подключено вместо дублирующего счётчика в `farm.py`), лишние реэкспорты
+  `AddResult`; мёртвые записи `.gitignore` (`.cache/`, `Options`).
+
 ## [1.14.2]
 
 Найдено систематическим прогоном по стабильности всех скриптов проекта:
