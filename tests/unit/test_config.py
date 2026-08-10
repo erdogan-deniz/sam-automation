@@ -153,6 +153,27 @@ def test_load_config_telegram_chat_id_numeric_becomes_string(
     assert cfg.telegram_chat_id == "42"
 
 
+def test_load_config_strips_telegram_bot_token_whitespace(
+    write_config: Callable[..., str],
+) -> None:
+    # Тот же класс, что steam_api_key/steam_id: токен, скопированный из
+    # BotFather с хвостовым пробелом/переводом строки, уезжал прямо в URL
+    # send_telegram() — urllib.request.urlopen на управляющем символе кидает
+    # http.client.InvalidURL, чьё __str__ включает URL ЦЕЛИКОМ (токен в
+    # cleartext) в log.warning, который живёт в logs/ вечно plaintext.
+    path = write_config(telegram_bot_token=" 123:ABC456\n")
+    cfg = load_config(path)
+    assert cfg.telegram_bot_token == "123:ABC456"
+
+
+def test_load_config_strips_telegram_chat_id_whitespace(
+    write_config: Callable[..., str],
+) -> None:
+    path = write_config(telegram_chat_id=" 42 ")
+    cfg = load_config(path)
+    assert cfg.telegram_chat_id == "42"
+
+
 # ── load_config — базовые поля ────────────────────────────────────────────
 
 
