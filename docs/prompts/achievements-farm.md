@@ -13,8 +13,8 @@ farm (разблокировка достижений Steam через SAM — �
 кодом, RED→GREEN). Гейты перед каждым коммитом: ruff check ., ruff format
 --check ., mypy app, pytest tests/unit -q (line-length 80, target py312; mypy
 scoped ТОЛЬКО на app/, scripts/ не типизируется). git-flow: feature/* от
-develop через merge --no-ff. Коммиты conventional, тело на русском,
-заканчивать Co-Authored-By.
+develop через merge --no-ff. Коммиты conventional, тело на русском, БЕЗ
+футеров-атрибуций (ни Co-Authored-By, ни «Generated with …»).
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: фича/баг/вопрос. Если баг — приложи реальный вывод
