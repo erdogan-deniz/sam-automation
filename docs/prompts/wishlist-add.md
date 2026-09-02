@@ -15,8 +15,8 @@ Wishlist (авто-добавление каталога Steam в вишлист
 `ruff format --check .`, `mypy app`, `pytest tests/unit -q` (line-length 80,
 target py312; mypy scoped ТОЛЬКО на `app/`, `scripts/` не типизируется).
 git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты conventional,
-тело на русском, заканчивать `Co-Authored-By: Claude Opus 4.8
-<noreply@anthropic.com>`.
+тело на русском, БЕЗ футеров-атрибуций (ни `Co-Authored-By`, ни
+«Generated with …») — ни в коммитах, ни в PR-боди.
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: фича/баг/вопрос. Если баг — приложи реальный вывод
