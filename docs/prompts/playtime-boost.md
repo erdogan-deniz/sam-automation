@@ -10,7 +10,8 @@ boost playtime (набивка времени в играх). Только Windo
 (systematic-debugging). TDD обязателен (тест ПЕРЕД кодом, RED→GREEN). Гейты
 перед каждым коммитом: pytest, ruff check, ruff format, mypy app (line-length 80,
 target py312). git-flow: feature/* от develop через merge --no-ff. Коммиты
-conventional, тело на русском, заканчивать Co-Authored-By.
+conventional, тело на русском, БЕЗ футеров-атрибуций (ни Co-Authored-By,
+ни «Generated with …»).
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: что нужно — фича/баг/вопрос. Если баг — приложи реальный вывод
