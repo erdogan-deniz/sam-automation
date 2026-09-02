@@ -17,8 +17,8 @@ Python 3.12, venv в `.venv`. Отвечай коротко. Перед фикс
 RED→GREEN). Гейты перед каждым коммитом: `ruff check .`, `ruff format
 --check .`, `mypy app`, `pytest tests/unit -q` (line-length 80, target
 py312; mypy scoped ТОЛЬКО на `app/`). git-flow: `feature/*` от develop через
-`merge --no-ff`. Коммиты conventional, тело на русском, заканчивать
-`Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+`merge --no-ff`. Коммиты conventional, тело на русском, БЕЗ футеров-атрибуций
+(ни `Co-Authored-By`, ни «Generated with …») — ни в коммитах, ни в PR-боди.
 
 ВАЖНО (общий файл, не один владелец): эти модули дёргают scan.py, cards/
 farm.py, add_free.py, wishlist_add.py — прежде чем чинить, `git log --oneline
