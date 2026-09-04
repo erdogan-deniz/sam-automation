@@ -74,38 +74,29 @@ get_web_cookies), реальный лог, что наблюдаешь vs ожи
   `client.login()` + `_do_interactive_login`), `_cm_login` читает
   `_JWT_REFRESH_CLIENT_FILE`.
 
-# НАЙДЕНО АУДИТОМ 2026-08-10 (4 находки, все CONFIRMED адверсариальной
-верификацией по коду — полные evidence в памяти project_full_audit_2026_08_10)
+# НАЙДЕНО АУДИТОМ 2026-08-10 (была 4 находки; №1-3 ИСПРАВЛЕНЫ коммитом
+07534dc в тот же день, TDD, +9 тестов — см. `git show 07534dc`. Полные
+evidence находок — память `project_full_audit_2026_08_10`.)
 
-1. **[High] Данные — `app/auth/credentials.py:71-86`.** Легаси-миграция
-   plaintext-JSON→keyring: `_save_session(u, p)` может кинуть (keyring/DPAPI
-   недоступен — реальный транзиентный сценарий на Windows), исключение
-   глотается `except Exception: pass`, а СЛЕДУЮЩЕЙ строкой безусловно
-   `_LEGACY_SESSION_FILE.unlink(missing_ok=True)` — единственная сохранённая
-   копия пароля удаляется, даже если миграция в keyring провалилась.
-   Фикс: удалять legacy-файл ТОЛЬКО после подтверждённого успеха
-   `_save_session` (например, переместить unlink внутрь `if u and p:` после
-   успешного возврата, не в общий fallthrough).
-2. **[High] `app/cookies/playwright.py:15` — `_try_save_cm_refresh_token`.**
-   Зовёт `_jwt_web_cookies(username, password)` БЕЗ `for_steam_client=True`
-   → кэширует в `_JWT_REFRESH_FILE` (web-scope), а `_cm_login`
-   (steam_cm.py:268) читает ТОЛЬКО `_JWT_REFRESH_CLIENT_FILE`. Токен,
-   который эта функция готовит для CM-логина, физически никогда не
-   используется. Фикс: добавить `for_steam_client=True` к вызову.
-3. **[Medium] `app/cookies/web_refresh.py:64` — `_web_refresh`.** Не делает
-   `unquote()` над `steamLoginSecure` перед проверкой `"||" in c.value` (в
-   отличие от `storage.py::_save_manual_cookie`, которая документирует и
-   декодирует `%7C%7C`→`||`). Если Steam отдаёт этот cookie
-   URL-encoded и через `http.cookiejar` (не только через Playwright) — шаг 2
-   fallback-цепочки тихо ВСЕГДА возвращает `None`. Фикс: `unquote(c.value)`
-   перед проверкой/возвратом.
-4. **[Medium] Пробелы в тестах.** `app/auth/credentials.py`
-   (`_load_shared_secret`/`_save_session`/`_load_session`/
-   `_ask_keep_credentials` — 0% покрытия, только `_clear_session`
-   протестирован); `app/auth/interactive.py` (email-код и
-   TOTP-vs-manual-ввод ветки `_do_interactive_login` — 0% покрытия);
-   `app/cookies/__init__.py::get_web_cookies` (ни один тест не импортирует
-   `app.cookies` напрямую — везде монки-патчится как чёрный ящик).
+1. ~~**[High]** `app/auth/credentials.py::_load_session` — легаси-миграция
+   plaintext-JSON→keyring теряла единственную копию пароля при сбое
+   `_save_session`.~~ ИСПРАВЛЕНО: legacy-файл удаляется только после
+   подтверждённого успеха миграции.
+2. ~~**[High]** `app/cookies/playwright.py::_try_save_cm_refresh_token` —
+   кэшировала CM refresh-токен не в тот файл (web-scope вместо
+   client-scope), токен никогда не использовался.~~ ИСПРАВЛЕНО:
+   `for_steam_client=True` добавлен к вызову, guard проверяет правильный файл.
+3. ~~**[Medium]** `app/cookies/web_refresh.py::_web_refresh` — не делала
+   `unquote()` над `steamLoginSecure`, шаг 2 fallback-цепочки тихо ВСЕГДА
+   возвращал `None` на URL-encoded ответе Steam.~~ ИСПРАВЛЕНО: `unquote()`
+   применяется перед проверкой `"||"`.
+4. **[Medium, открыто] Пробелы в тестах.** `app/auth/credentials.py`
+   (`_load_shared_secret`/`_ask_keep_credentials` — всё ещё 0% покрытия,
+   `_save_session`/`_load_session` частично закрыты фиксом выше);
+   `app/auth/interactive.py` (email-код и TOTP-vs-manual-ввод ветки
+   `_do_interactive_login` — 0% покрытия); `app/cookies/__init__.py::
+   get_web_cookies` (ни один тест не импортирует `app.cookies` напрямую —
+   везде монки-патчится как чёрный ящик).
 
 # ЗНАЧИМЫЕ ПОВЕДЕНИЯ / РИСКИ
 - **Legacy CM InvalidPassword-ловушка** (см. память
