@@ -78,9 +78,9 @@ python scripts/playtime/boost.py
 
 ### Growing the library (CLI)
 
-Both scripts are **dry-run by default** — they only report what they found.
-The account is modified only when you pass `--add`. Both are resumable: state
-lives in `data/games/ids/` and a re-run picks up where it stopped.
+All three scripts are **dry-run by default** — they only report what they
+found. The account is modified only when you pass `--add`. All are resumable:
+state lives in `data/games/ids/` and a re-run picks up where it stopped.
 
 ```bash
 # Add every free Steam game/app to your library (CM request_free_license)
@@ -91,7 +91,15 @@ python scripts/library/add_free.py --add      # actually add
 #    --reset         wipe resume state
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
-#    --no-demos      skip demos during discovery
+
+# Add every demo to your library (same CM mechanism, separate from add_free.py)
+python scripts/library/add_demos.py           # dry-run: how many candidates
+python scripts/library/add_demos.py --add     # actually add
+
+#    --list          show current candidates and exit
+#    --reset         wipe resume state
+#    --retry-errors  retry transient failures (clears error.txt)
+#    --limit N       cap how many are added per run
 
 # Add the Steam catalog to your wishlist (IWishlistService/AddToWishlist)
 python scripts/library/wishlist_add.py         # dry-run: how many candidates
@@ -104,10 +112,10 @@ python scripts/library/wishlist_add.py --add   # actually add
 #    --interval SEC  pause between adds (default 1.0; 0 = full speed)
 ```
 
-Both stop honestly rather than pretending to finish: `add_free.py` stops when
-the account hits its free-license ceiling, and `wishlist_add.py` backs off on
-Steam's rate limit and stops after five consecutive throttles. Neither reports
-success when it stopped early.
+All three stop honestly rather than pretending to finish: `add_free.py` and
+`add_demos.py` stop when the account hits its free-license ceiling, and
+`wishlist_add.py` backs off on Steam's rate limit and stops after five
+consecutive throttles. None report success when they stopped early.
 
 ## Configuration (`config.yaml`)
 
@@ -162,6 +170,7 @@ sam-automation/
 │   ├── auth/               # Steam authentication (TOTP, JWT, keyring)
 │   ├── cards/              # Card drop tracking and farming logic
 │   ├── cookies/            # Steam web cookie extraction
+│   ├── demos/              # Demo discovery and granting (CM, mirrors free_games/)
 │   ├── free_games/         # Free-license discovery and granting (CM)
 │   ├── sam/                # SAM process automation (launcher, UI)
 │   ├── steam/              # Steam data access (API, CM, local files)
@@ -185,6 +194,7 @@ sam-automation/
 │   │   └── farm.py         # Idle games to collect card drops
 │   ├── library/
 │   │   ├── add_free.py     # Add every free Steam game/app to the library
+│   │   ├── add_demos.py    # Add every demo to the library
 │   │   └── wishlist_add.py # Add the Steam catalog to the wishlist
 │   └── playtime/
 │       └── boost.py        # Boost low-playtime games via short SAM sessions
