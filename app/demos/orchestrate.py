@@ -1,11 +1,17 @@
-"""Оркестрация авто-добавления бесплатных игр Steam: discover + add фазы."""
+"""Оркестрация авто-добавления demo-версий игр Steam: discover + add фазы.
+
+Зеркало app/free_games/orchestrate.py (2026-09-12, B-11). Выдача лицензий
+переиспользует app.free_games.licenses — тот же generic CM-механизм
+(request_free_license, батчинг+backoff), не free_games-специфика.
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any, Literal
 
-from app.free_games import discovery, licenses, report, state
+from app.demos import discovery, report, state
+from app.free_games import licenses
 from app.logging_setup import SEPARATOR
 from app.steam.packageinfo import expand_packages_to_apps
 from app.steam.steam_cm import cm_session
@@ -15,10 +21,10 @@ log = logging.getLogger("sam_automation")
 
 
 def discover() -> list[int]:
-    """Фаза discover: витрина free → candidates.txt минус owned/added/refused.
+    """Фаза discover: витрина Demos → candidates.txt минус owned/added/refused.
 
     owned вычисляется из client.licenses живой CM-сессии (authoritative для
-    аккаунта) через expand_packages_to_apps — тот же путь, что и scan.py.
+    аккаунта) через expand_packages_to_apps — тот же путь, что и free_games.
     Отсутствие Steam или неуспех CM-логина НЕ роняет discover — просто owned
     не вычитается (кандидаты могут включать уже имеющееся, лишнее отсеется
     на фазе add как DuplicateRequest/refused).
@@ -38,7 +44,7 @@ def discover() -> list[int]:
             else:
                 log.warning(
                     "Steam CM: вход не удался — owned не вычтен, кандидаты "
-                    "могут включать уже имеющиеся игры"
+                    "могут включать уже имеющиеся демо"
                 )
     else:
         log.warning("Папка Steam не найдена — owned не вычтен")
@@ -81,7 +87,7 @@ def add(*, limit: int | None = None) -> licenses.AddResult:
         return licenses.AddResult()
 
     log.info(SEPARATOR)
-    log.info("Добавление бесплатных лицензий: %d кандидатов", len(pending))
+    log.info("Добавление demo-лицензий: %d кандидатов", len(pending))
 
     with cm_session() as client:
         if client is None:
@@ -111,9 +117,8 @@ def run(
     """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True.
 
     discover() и add() (если do_add) выполняются под общим try/except —
-    Ctrl+C/исключение ВО ВРЕМЯ discover() (включая CM-логин) раньше уходили
-    необработанным трейсбеком мимо честного отчёта; теперь оба случая дают
-    status="interrupted"/"error", как и сбой во время add().
+    Ctrl+C/исключение ВО ВРЕМЯ discover() (включая CM-логин) даёт честный
+    status="interrupted"/"error", а не сырой трейсбек мимо отчёта.
     """
     if list_only:
         listed_candidates = state.load_candidates()
@@ -149,7 +154,7 @@ def run(
         except BaseException:
             # Отчёт — терминальный шаг: третий Ctrl+C ровно в этот момент
             # (BaseException) не должен пробрасываться из run() сырым
-            # трейсбеком — статус уже честно посчитан (см. boost.py).
+            # трейсбеком — статус уже честно посчитан.
             log.exception("Не удалось сформировать финальный отчёт.")
         return
 

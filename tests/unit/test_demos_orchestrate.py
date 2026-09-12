@@ -1,4 +1,9 @@
-"""Тесты оркестрации discover/add (app/free_games/orchestrate.py)."""
+"""Тесты оркестрации discover/add (app/demos/orchestrate.py).
+
+Зеркало test_free_games_orchestrate.py (2026-09-12, B-11) без include_demos —
+выдача лицензий переиспользует app.free_games.licenses (тот же generic
+CM-механизм).
+"""
 
 from __future__ import annotations
 
@@ -8,8 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import app.free_games.orchestrate as orch
-import app.free_games.state as state_mod
+import app.demos.orchestrate as orch
+import app.demos.state as state_mod
 
 
 def _patch_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -60,9 +65,7 @@ def test_discover_subtracts_owned_added_refused(
 
 
 def test_discover_no_steam_path_skips_owned_subtraction(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_state(monkeypatch, tmp_path)
     monkeypatch.setattr(
@@ -249,9 +252,6 @@ def test_run_add_reports_ok(
 def test_run_add_session_dead_propagates_to_report(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Слепая зона аудита 2026-08-10: add_licenses абортит на мёртвой
-    # CM-сессии (session_dead=True) — run() обязан честно донести это до
-    # report_result, а не молча потерять сигнал по дороге.
     _patch_state(monkeypatch, tmp_path)
     monkeypatch.setattr(orch, "discover", lambda **_k: [1, 2])
     monkeypatch.setattr(
@@ -383,12 +383,7 @@ def test_run_add_discover_exception_reports_error_without_calling_add(
     assert captured["added"] == 0
 
 
-# ── report.report_result переживает BaseException (аудит 2026-08-10) ───────
-# Найдено формальным аудитом: голый top-level report.report_result(...) не
-# обёрнут в try/except — третий Ctrl+C (BaseException) ровно на этапе отчёта
-# (внутри toast()/send_telegram()) даёт сырой трейсбек вместо уже честно
-# посчитанного статуса. Тот же паттерн, что boost.py (полиш v1.14.1), и
-# app/wishlist/orchestrate.py (тот же баг, найден там же).
+# ── report.report_result переживает BaseException ───────────────────────────
 
 
 def test_run_add_report_result_raises_does_not_crash(
