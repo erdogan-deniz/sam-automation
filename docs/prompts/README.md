@@ -14,6 +14,7 @@
 | [add-free.md](add-free.md) | Фича `scripts/library/add_free.py`: авто-добавление бесплатных Steam-игр/app в библиотеку (CM `request_free_license`, потолок лицензий). Не проходила формальный аудит. |
 | [add-demos.md](add-demos.md) | Фича `scripts/library/add_demos.py`: авто-добавление demo-версий игр в библиотеку. Отделена от add_free.py 2026-09-12 (B-11) — переиспользует его `licenses.py` и общий `app.steam.store_search`. Не проходила формальный аудит. |
 | [wishlist-add.md](wishlist-add.md) | Фича `scripts/library/wishlist_add.py`: авто-добавление каталога Steam в вишлист (`IWishlistService`, rate-limit-стена). Не проходила формальный аудит. |
+| [add-dlc.md](add-dlc.md) | RESEARCH-сессия (R-6 в backlog): работает ли `request_free_license` для DLC уже имеющихся игр и как его обнаруживать. Ничего не реализовано — скрипта/ветки ещё нет. |
 | [core-auth-cookies.md](core-auth-cookies.md) | Общая инфраструктура Steam-логина `app/auth/` + `app/cookies/` (CM-логин, web-cookie fallback-цепочка) — без своего скрипта, используется scan/add_free (cm_session) и cards-farm/wishlist-add (get_web_cookies). Заведён 2026-08-10 из находок full-project-аудита. |
 
 Перед стартом заполни в промпте секцию задачи/симптома. Примеры-зацепки внутри
