@@ -53,7 +53,7 @@ def test_discover_subtracts_owned_added_refused(
     state_mod.mark_added(3)
     state_mod.mark_refused(4)
 
-    result = orch.discover(include_demos=True)
+    result = orch.discover()
 
     assert result == [1, 5]  # 2=owned, 3=added, 4=refused исключены
     assert state_mod.load_candidates() == [1, 5]
@@ -70,7 +70,7 @@ def test_discover_no_steam_path_skips_owned_subtraction(
     )
     monkeypatch.setattr(orch, "find_steam_path", lambda: "")
 
-    result = orch.discover(include_demos=True)
+    result = orch.discover()
 
     assert result == [1, 2]  # ничего не вычтено — Steam не найден
 
@@ -85,7 +85,7 @@ def test_discover_cm_login_failed_skips_owned_subtraction(
     monkeypatch.setattr(orch, "find_steam_path", lambda: "C:/steam")
     monkeypatch.setattr(orch, "cm_session", _fake_cm_session(None))
 
-    result = orch.discover(include_demos=True)
+    result = orch.discover()
 
     assert result == [1, 2]  # логин не удался — owned не вычтен, не падаем
 
@@ -186,7 +186,6 @@ def test_run_list_only_does_not_call_discover(
         do_add=False,
         list_only=True,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -213,7 +212,6 @@ def test_run_dry_run_reports_without_adding(
         do_add=False,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -241,7 +239,6 @@ def test_run_add_reports_ok(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -272,7 +269,6 @@ def test_run_add_session_dead_propagates_to_report(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -299,7 +295,6 @@ def test_run_add_exception_reports_error(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -326,7 +321,6 @@ def test_run_add_keyboard_interrupt_reports_interrupted(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -352,7 +346,6 @@ def test_run_dry_run_discover_keyboard_interrupt_reports_interrupted(
         do_add=False,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -383,7 +376,6 @@ def test_run_add_discover_exception_reports_error_without_calling_add(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -417,7 +409,6 @@ def test_run_add_report_result_raises_does_not_crash(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )  # не должно поднять исключение
 
@@ -437,6 +428,5 @@ def test_run_dry_run_report_result_raises_does_not_crash(
         do_add=False,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )  # не должно поднять исключение

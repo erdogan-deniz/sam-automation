@@ -14,7 +14,7 @@ from app.steam.steam_local import find_steam_path
 log = logging.getLogger("sam_automation")
 
 
-def discover(*, include_demos: bool = True) -> list[int]:
+def discover() -> list[int]:
     """Фаза discover: витрина free → candidates.txt минус owned/added/refused.
 
     owned вычисляется из client.licenses живой CM-сессии (authoritative для
@@ -24,7 +24,7 @@ def discover(*, include_demos: bool = True) -> list[int]:
     на фазе add как DuplicateRequest/refused).
     """
     log.info(SEPARATOR)
-    discovered = discovery.discover_candidates(include_demos=include_demos)
+    discovered = discovery.discover_candidates()
     log.info("Store search: всего обнаружено кандидатов: %d", len(discovered))
 
     steam_path = find_steam_path()
@@ -106,7 +106,6 @@ def run(
     do_add: bool,
     list_only: bool,
     limit: int | None,
-    include_demos: bool,
     cfg: Any,
 ) -> None:
     """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True.
@@ -127,7 +126,7 @@ def run(
     candidates: list[int] = []
     result = licenses.AddResult()
     try:
-        candidates = discover(include_demos=include_demos)
+        candidates = discover()
         if do_add:
             result = add(limit=limit)
     except KeyboardInterrupt:
