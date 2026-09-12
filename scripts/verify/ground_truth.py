@@ -5,9 +5,10 @@
 refused.txt/etc.) — ничего не сверяло, отражает ли она правду. v1 — только
 free_games и wishlist: оба дают весь список ОДНИМ вызовом (GetOwnedGames/
 GetWishlist), поэтому сверка дешева независимо от размера библиотеки.
-Achievements сюда сознательно не входит — GetPlayerAchievements не имеет
-batch-варианта (по игре за вызов), полный свип на большой библиотеке — часы;
-это отдельная, более дорогая задача.
+demos (2026-09-12, B-11) добавлены тем же способом — свой added.txt,
+сверяется с тем же GetOwnedGames. Achievements сюда сознательно не входит —
+GetPlayerAchievements не имеет batch-варианта (по игре за вызов), полный
+свип на большой библиотеке — часы; это отдельная, более дорогая задача.
 
 Ничего не чинит и не пишет в data/ — только сообщает расхождения. Не требует
 SAM/run-lock (как scan.py) — чистый Steam API read-only отчёт.
@@ -26,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import logging
 
 from app.config import load_config
+from app.demos import state as demos_state
 from app.free_games import state as free_games_state
 from app.logging_setup import SEPARATOR, setup_logging
 from app.steam import fetch_owned_games, resolve_steam_id
@@ -44,6 +46,17 @@ def _check_free_games(api_key: str, steam_id: str) -> list[int]:
     проявиться здесь именно так: appid в added.txt, которого нет в owned.
     """
     added = free_games_state.load_added_ids()
+    if not added:
+        return []
+    owned = {int(g["appid"]) for g in fetch_owned_games(api_key, steam_id)}
+    return sorted(added - owned)
+
+
+def _check_demos(api_key: str, steam_id: str) -> list[int]:
+    """added.txt (demos) минус реально owned — тот же класс сигнала, что
+    _check_free_games, для отдельного bookkeeping app/demos (B-11).
+    """
+    added = demos_state.load_added_ids()
     if not added:
         return []
     owned = {int(g["appid"]) for g in fetch_owned_games(api_key, steam_id)}
@@ -106,7 +119,20 @@ def main() -> None:
         log.info("Расхождений нет — все added.txt реально в вишлисте")
 
     log.info(SEPARATOR)
-    if mismatched_free or mismatched_wishlist:
+    log.info("Demos: added.txt vs GetOwnedGames")
+    mismatched_demos = _check_demos(cfg.steam_api_key, cfg.steam_id)
+    if mismatched_demos:
+        log.warning(
+            "%d appid в added.txt (demos) НЕ найдены среди owned "
+            "(потерянный персист?): %s",
+            len(mismatched_demos),
+            mismatched_demos,
+        )
+    else:
+        log.info("Расхождений нет — все added.txt (demos) реально owned")
+
+    log.info(SEPARATOR)
+    if mismatched_free or mismatched_wishlist or mismatched_demos:
         log.warning("Сверка завершена С РАСХОЖДЕНИЯМИ — см. выше")
         sys.exit(1)
     log.info("Сверка завершена — bookkeeping соответствует Steam")

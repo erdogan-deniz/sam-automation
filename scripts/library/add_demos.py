@@ -1,18 +1,20 @@
-"""Auto-add Free Games — добавляет бесплатные App ID в библиотеку Steam.
+"""Auto-add Demos — добавляет demo-версии игр в библиотеку Steam.
 
-Две фазы: discover (витрина free store search → candidates.txt минус owned) и
-add (request_free_license батчами, resume-aware). По умолчанию — dry-run
-(только discover + отчёт), реальное добавление лицензий — только по --add
-(необратимое действие на аккаунте: добавленные бесплатные лицензии нельзя
-удалить из библиотеки штатными средствами Steam).
+Отделено от add_free.py (2026-09-12, B-11) — раньше демо были побочным
+эффектом того скрипта. Две фазы: discover (витрина Demos store search →
+candidates.txt минус owned) и add (request_free_license батчами,
+resume-aware). По умолчанию — dry-run (только discover + отчёт), реальное
+добавление лицензий — только по --add (необратимое действие на аккаунте:
+добавленные бесплатные лицензии нельзя удалить из библиотеки штатными
+средствами Steam).
 
 Использование:
-    python scripts/library/add_free.py              # dry-run: сколько найдено
-    python scripts/library/add_free.py --add         # реально добавить
-    python scripts/library/add_free.py --list        # показать candidates.txt
-    python scripts/library/add_free.py --add --limit 100
-    python scripts/library/add_free.py --add --retry-errors
-    python scripts/library/add_free.py --reset
+    python scripts/library/add_demos.py              # dry-run: сколько найдено
+    python scripts/library/add_demos.py --add         # реально добавить
+    python scripts/library/add_demos.py --list        # показать candidates.txt
+    python scripts/library/add_demos.py --add --limit 100
+    python scripts/library/add_demos.py --add --retry-errors
+    python scripts/library/add_demos.py --reset
 """
 
 from __future__ import annotations
@@ -29,8 +31,8 @@ import os
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 from app.config import load_config
-from app.free_games import run
-from app.free_games import state as free_games_state
+from app.demos import run
+from app.demos import state as demos_state
 from app.logging_setup import setup_logging
 from app.steam import resolve_steam_id
 from app.validator import validate
@@ -41,8 +43,7 @@ log = logging.getLogger("sam_automation")
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Auto-add Free Games — добавляет бесплатные игры/app в "
-            "библиотеку Steam"
+            "Auto-add Demos — добавляет demo-версии игр в библиотеку Steam"
         )
     )
     parser.add_argument(
@@ -77,13 +78,12 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_parser().parse_args()
 
-    setup_logging(name="add_free", category="library/add_free")
+    setup_logging(name="add_demos", category="library/add_demos")
     cfg = load_config()
 
-    # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации — как scan.py/
-    # boost.py: validate шлёт steam_id в GetPlayerSummaries, которому нужен
-    # числовой ID64. Пустой steam_id НЕ резолвим — пусть validate выдаст
-    # локальную «missing».
+    # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации — как
+    # add_free.py/scan.py/boost.py: validate шлёт steam_id в
+    # GetPlayerSummaries, которому нужен числовой ID64.
     if cfg.steam_id:
         try:
             cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
@@ -101,10 +101,10 @@ def main() -> None:
 
     if not args.list:
         if args.reset:
-            free_games_state.clear_state()
+            demos_state.clear_state()
             log.info("Сброшено resume-состояние (--reset)")
         if args.retry_errors:
-            free_games_state.clear_error_ids()
+            demos_state.clear_error_ids()
             log.info("Очищен error.txt (--retry-errors)")
 
     run(
