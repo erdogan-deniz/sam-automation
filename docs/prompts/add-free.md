@@ -26,14 +26,19 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
 Две фазы. **Discover**: неофициальный store-search API
-(`store.steampowered.com/search/results/`) собирает кандидатов из трёх
+(`store.steampowered.com/search/results/`) собирает кандидатов из двух
 категорий (F2P-игры `category1=998`+`maxprice=free`, бесплатный софт
-`994`+`maxprice=free`, демо `10` — без `maxprice`, всегда бесплатны), минус
-owned (развёрнутые через `packageinfo.vdf` пакеты живой CM-сессии), минус
-уже added/refused → `candidates.txt`. **Add**: `client.request_free_license`
-батчами по 20 поверх переиспользуемого `cm_session()`. Дефолт — dry-run
-(только discover + отчёт); реальное добавление лицензий необратимо на
-аккаунте (штатными средствами Steam не убрать) — только по `--add`.
+`994`+`maxprice=free`), минус owned (развёрнутые через `packageinfo.vdf`
+пакеты живой CM-сессии), минус уже added/refused → `candidates.txt`.
+**Add**: `client.request_free_license` батчами по 20 поверх переиспользуемого
+`cm_session()`. Дефолт — dry-run (только discover + отчёт); реальное
+добавление лицензий необратимо на аккаунте (штатными средствами Steam не
+убрать) — только по `--add`.
+
+> **Демо (category1=10) больше НЕ входят сюда** (2026-09-12, B-11) — своим
+> отдельным скриптом `scripts/library/add_demos.py`/`app/demos/`, см.
+> `docs/prompts/add-demos.md`. Раньше были частью этого скрипта
+> (`include_demos=True`) — история в git, не здесь.
 
 # ТОЧКА ВХОДА: scripts/library/add_free.py
 `main()`: `_build_parser().parse_args()` → `setup_logging(category="library/
@@ -43,10 +48,10 @@ add_free")` → `load_config()` → если `cfg.steam_id` непусто:
 правильно с самого начала, см. add_free.py:88-97) → `validate(cfg)` → guard
 `--list` vs `--reset`/`--retry-errors` (варнинг, не ошибка) → применяет
 `--reset`/`--retry-errors` к state → `app.free_games.run(do_add, list_only,
-limit, include_demos, cfg)`.
+limit, cfg)`.
 
 `app/free_games/orchestrate.py`:
-- `discover(*, include_demos=True) -> list[int]` — `discovery.discover_candidates`
+- `discover() -> list[int]` — `discovery.discover_candidates`
   → `with cm_session() as client:` (None при неуспехе логина — WARNING, owned
   НЕ вычитается, discover НЕ падает) → `expand_packages_to_apps(steam_path,
   client.licenses.keys())` → кандидаты минус owned/added/refused →
@@ -67,16 +72,16 @@ limit, include_demos, cfg)`.
 `--add` (реально добавить, иначе dry-run) · `--list` (показать
 `candidates.txt` и выйти) · `--reset` (стереть весь state) ·
 `--retry-errors` (стереть только `error.txt` — `refused.txt` терминален,
-не трогается) · `--limit N` (потолок добавлений за прогон) · `--no-demos`
-(пропустить демо-подфазу discovery).
+не трогается) · `--limit N` (потолок добавлений за прогон).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - `scripts/library/add_free.py` — CLI, разбор флагов, resolve→validate,
   wiring в `app.free_games.run`.
-- `app/free_games/discovery.py` — `discover_candidates(*, include_demos=True,
-  target_count=3000, page_size=100, max_pages=200) -> list[int]`. Свой
-  ретрай на 429/сеть (`_RETRY_ATTEMPTS=3`, `_RETRY_DELAY=2.0`,
-  `_PAGE_DELAY=0.5`) — НЕ через `app.steam.steam_api._api_get` (другой хост
+- `app/free_games/discovery.py` — `discover_candidates(*, target_count=3000,
+  page_size=100, max_pages=200) -> list[int]`. Пагинация (`search_page`/
+  `collect_category`, ретрай на 429/сеть) вынесена в
+  `app.steam.store_search` (2026-09-12) — общий с `app/demos/discovery.py`
+  Store-API примитив, НЕ через `app.steam.steam_api._api_get` (другой хост
   и форма ответа: `results_html`, не типизированный JSON). Не гарантирует
   полноту каталога (Games+free даёт ~20k по `total_count`) — набирает
   кандидатов с запасом относительно потолка лицензий (~1000-2000).

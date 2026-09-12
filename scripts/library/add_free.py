@@ -71,11 +71,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Потолок числа добавлений за прогон",
     )
-    parser.add_argument(
-        "--no-demos",
-        action="store_true",
-        help="Пропустить демо-подфазу обнаружения",
-    )
     return parser
 
 
@@ -116,7 +111,6 @@ def main() -> None:
         do_add=args.add,
         list_only=args.list,
         limit=args.limit,
-        include_demos=not args.no_demos,
         cfg=cfg,
     )
 
