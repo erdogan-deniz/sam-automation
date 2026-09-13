@@ -39,6 +39,8 @@
     ".markdownlint-cli2.jsonc",
     ".venv/**",
     // Проектное: планы и спеки, сгенерированные skill-ом superpowers — не редактируем и не линтуем.
-    "docs/superpowers/**"
+    "docs/superpowers/**",
+    // Проектное: промпты для Claude, несколько заголовков первого уровня в файле — не документация.
+    "docs/prompts/**"
   ]
 }
