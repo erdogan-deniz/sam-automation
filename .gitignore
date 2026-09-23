@@ -28,6 +28,16 @@ desktop.ini
 nul
 # ── конец общего блока ──
 
+# ── Internal working files: kept locally, never published ─────────────────────
+# AI assistant instructions, backlog, design specs and plans. Removed from the
+# whole history on 2026-09-24 as well.
+CLAUDE.md
+AGENTS.md
+.claude/
+docs/backlog.md
+docs/superpowers/
+ideas.md
+
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
