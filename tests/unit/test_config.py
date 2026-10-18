@@ -280,3 +280,26 @@ def test_load_config_absolute_sam_exe_unchanged(
     path = write_config(sam_game_exe_path=abs_path)
     cfg = load_config(path)
     assert cfg.sam_game_exe_path == abs_path
+
+
+# Первый запуск: без ключа (или с пустым значением) путь раньше оставался "",
+# а Path("").exists() — True (это "."), и ensure_sam не скачивал SAM. Дефолт
+# совпадает с README и config.example.yaml.
+
+
+def test_load_config_missing_sam_exe_uses_documented_default(
+    write_config: Callable[..., str], tmp_path: Path
+) -> None:
+    path = write_config(steam_id="76561198000000000")
+    cfg = load_config(path)
+    expected = str(tmp_path / "external" / "SAM" / "SAM.Game.exe")
+    assert cfg.sam_game_exe_path == expected
+
+
+def test_load_config_empty_sam_exe_uses_documented_default(
+    write_config: Callable[..., str], tmp_path: Path
+) -> None:
+    path = write_config(sam_game_exe_path="")
+    cfg = load_config(path)
+    expected = str(tmp_path / "external" / "SAM" / "SAM.Game.exe")
+    assert cfg.sam_game_exe_path == expected

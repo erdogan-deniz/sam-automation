@@ -324,3 +324,20 @@ def test_ensure_sam_downloads_when_exe_missing(tmp_path: Path) -> None:
         result = ensure_sam(exe_path)
     assert result == expected
     mock_dl.assert_called_once_with(str(tmp_path))
+
+
+def test_ensure_sam_directory_path_is_not_sam(tmp_path: Path) -> None:
+    """Существующая папка — не SAM.Game.exe: exists() был бы True и скачивание
+    молча пропускалось бы (так же вёл себя пустой путь: Path("") — это ".")."""
+    sam_dir = tmp_path / "SAM"
+    sam_dir.mkdir()
+    with (
+        patch(
+            "app.sam.sam_downloader.download_sam",
+            return_value=str(sam_dir / "SAM.Game.exe"),
+        ) as mock_dl,
+        patch("app.sam.sam_downloader.check_for_update") as mock_upd,
+    ):
+        ensure_sam(str(sam_dir))
+    mock_dl.assert_called_once()
+    mock_upd.assert_not_called()
