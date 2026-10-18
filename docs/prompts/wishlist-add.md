@@ -27,7 +27,7 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
 Две фазы. **Discover**: вселенная через `IStoreService/GetAppList/v1`
 (пагинация по `last_appid`; типы выбираются флагами, без флагов — все,
-B-14 от 19.10.2026; демо не входят — их в библиотеку добавляет
+B-14 от 19.10.2026; DLC и демо не входят — демо в библиотеку добавляет
 `add_demos.py`) минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
 (`IWishlistService/GetWishlist/v1`, keyless) минус added/refused →
 `state.candidates_file(types)`. **Add**: по одному appid (batch-эндпоинта у Steam нет)
@@ -75,10 +75,10 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   refused, error, hit_wall=result.hit_wall, cfg)`.
 
 # CLI-ФЛАГИ
-`--add` (реально добавить, иначе dry-run) · типы `--games`, `--dlc`
-(он же `--dls`), `--software`, `--videos`, `--hardware` — складываются, без
-них все типы · регистр имён флагов не важен (`app.cli.casefold_options`:
-`--DLC` = `--dlc`) · `--list` (показать
+`--add` (реально добавить, иначе dry-run) · типы `--games`, `--software`,
+`--videos`, `--hardware` — складываются, без них все типы; DLC и демо в
+вишлист не идут (DLC фильтр `include_dlc=0` передаётся всегда) · регистр имён флагов не важен (`app.cli.casefold_options`:
+`--GAMES` = `--games`) · `--list` (показать
 кандидатов выбранных типов и выйти) · `--reset` (стереть весь state) ·
 `--retry-errors` (стереть только `error.txt`) · `--limit N` (потолок
 добавлений за прогон) · `--interval SEC` (пауза между добавлениями, дефолт
@@ -137,7 +137,7 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 - `candidates.txt` — universe минус owned/wishlisted/added/refused
   (все типы).
 - `candidates_<типы>.txt` — то же для выбранных флагами типов, имя в
-  каноническом порядке (`candidates_dlc.txt`, `candidates_games_software.txt`).
+  каноническом порядке (`candidates_games.txt`, `candidates_games_software.txt`).
   `added`/`refused`/`error` общие: appid у разных типов не совпадают.
 - `added.txt` — успешно добавлено (x-eresult=1).
 - `refused.txt` — терминально (owned/уже-в-вишлисте/delisted) — только `--reset` вернёт.

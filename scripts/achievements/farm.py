@@ -28,6 +28,7 @@ from app.cache import (
     mark_no_achievements,
     unmark_no_achievements,
 )
+from app.cli import casefold_options
 from app.config import load_config
 from app.exceptions import SAMError, SAMTooManyErrors
 from app.game_list import load_game_ids
@@ -283,7 +284,7 @@ def _teardown_picker(proc) -> None:
 def main() -> None:
     """Точка входа: запускает цикл разблокировки достижений."""
     print()
-    args = _build_parser().parse_args()
+    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
     setup_logging(
         name="farm_achievements",
         category="achievements/farm",

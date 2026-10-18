@@ -5,7 +5,7 @@
 
   candidates.txt — universe минус owned/wishlisted/added/refused (все типы)
   candidates_<типы>.txt — то же для выбранных флагами типов (B-14), напр.
-                   candidates_dlc.txt; отдельный файл, чтобы --list одного
+                   candidates_games.txt; отдельный файл, чтобы --list одного
                    набора типов не показывал кандидатов другого
   added.txt      — успешно добавлено (x-eresult=1) — skip
   refused.txt    — терминально (owned/уже-в-вишлисте/invalid) — skip
