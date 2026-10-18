@@ -55,11 +55,12 @@ app/auth/credentials.py — детали и предложения там, не 
   - scripts/achievements/farm.py:138 — help-текст `--retry-without` всё ещё
     упоминает удалённые в v1.9.x Store-советы store_zero/store_empty;
     реализация (_select_retry_subset) их не трогает.
-  - README.md:118 — задокументированный дефолт `sam_game_exe_path` реально
-    исходит только из config.example.yaml; Config-датакласс (app/config.py:58)
-    дефолтит на пустую строку — при удалении строки из config.yaml тихо
-    ломает авто-скачивание SAM (`Path("").exists()` == True → ensure_sam
-    пропускает download-ветку).
+  - ~~README.md:118 — задокументированный дефолт `sam_game_exe_path` исходил
+    только из config.example.yaml, датакласс дефолтил на "" → авто-скачивание
+    SAM тихо не срабатывало.~~ ИСПРАВЛЕНО 2026-10-18 (B-5) вместе с более
+    серьёзным: `validate()` вызывался до `ensure_sam` и обрывал первый запуск
+    на отсутствующем SAM.Game.exe. Теперь дефолт как в README, валидатор SAM
+    не требует, `ensure_sam` проверяет `is_file()`.
 - E (пере-верифицировано 2026-08-10, тест-сьют вырос 356→637): app/cookies/*
   (весь пакет) — ПОДТВЕРЖДЁН, крупнейший пробел; app/auth/credentials.py и
   interactive.py — ПОДТВЕРЖДЕНЫ, конкретика: credentials._load_shared_secret/
