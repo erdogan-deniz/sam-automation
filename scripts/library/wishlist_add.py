@@ -1,9 +1,9 @@
 """Auto-add Wishlist — добавляет позиции каталога Steam в вишлист аккаунта.
 
-Без флагов типа — все типы контента. Флаги --games, --software, --videos,
---hardware сужают выбор и складываются. Регистр флагов не важен (--GAMES =
---games). DLC и демо в вишлист не идут: демо добавляет в библиотеку
-add_demos.py.
+Добавляет только платное: бесплатное забирает в библиотеку add_free.py.
+Без флагов типа — все типы. Флаги --games, --dlc, --software, --videos,
+--hardware сужают выбор и складываются. Регистр флагов не важен (--DLC =
+--dlc). Демо в вишлист не идут — их добавляет add_demos.py.
 
 Две фазы: discover (GetAppList минус owned/wishlisted → candidates.txt) и add
 (добавление по одному через IWishlistService, resume-aware, адаптивный
@@ -13,7 +13,7 @@ backoff на rate-limit). По умолчанию — dry-run (только disc
 Использование:
     python scripts/library/wishlist_add.py              # dry-run: сколько найдено
     python scripts/library/wishlist_add.py --add         # реально добавить
-    python scripts/library/wishlist_add.py --add --games # то же, только игры
+    python scripts/library/wishlist_add.py --add --dlc   # то же, только DLC
     python scripts/library/wishlist_add.py --add --games --software
     python scripts/library/wishlist_add.py --list        # показать candidates.txt
     python scripts/library/wishlist_add.py --add --limit 100
@@ -60,6 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "типы контента (без флагов — все; флаги складываются)"
     )
     types.add_argument("--games", action="store_true", help="Игры")
+    types.add_argument("--dlc", action="store_true", help="DLC")
     types.add_argument("--software", action="store_true", help="Софт")
     types.add_argument("--videos", action="store_true", help="Видео")
     types.add_argument("--hardware", action="store_true", help="Железо")
