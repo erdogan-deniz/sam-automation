@@ -373,22 +373,25 @@ def main() -> None:
         log.error(str(e))
         sys.exit(1)
 
-    # Единственный SAM-скрипт, кликающий через pywinauto — заблокированный/
-    # уснувший по простою рабочий стол роняет КАЖДУЮ следующую игру (см.
-    # prevent_idle_sleep docstring). Не спасает от ручного Win+L, но
-    # закрывает самый реалистичный триггер многочасового прогона.
-    prevent_idle_sleep()
-
-    game_names = load_game_names()
-    total = len(game_ids)
-    log.info("Игр к обработке: %d", total)
-    print()
-
+    # Счётчики итогов — ДО try: при Ctrl+C на подготовке их читает отчёт ниже.
     tracker = ErrorTracker(max_consecutive=cfg.max_consecutive_errors)
     results: list[UnlockResult] = []
     status = "ok"
+    total = len(game_ids)
 
+    # Всё после launch_picker — внутри try: исключение до цикла (B-9) иначе
+    # оставляло запущенный SAM.Picker.exe висеть мимо _teardown_picker.
     try:
+        # Единственный SAM-скрипт, кликающий через pywinauto — заблокированный/
+        # уснувший по простою рабочий стол роняет КАЖДУЮ следующую игру (см.
+        # prevent_idle_sleep docstring). Не спасает от ручного Win+L, но
+        # закрывает самый реалистичный триггер многочасового прогона.
+        prevent_idle_sleep()
+
+        game_names = load_game_names()
+        log.info("Игр к обработке: %d", total)
+        print()
+
         for i, game_id in enumerate(game_ids, 1):
             name = game_names.get(game_id, "")
             header = f"[{i}/{total}]"
