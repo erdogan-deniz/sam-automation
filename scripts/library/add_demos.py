@@ -30,6 +30,7 @@ import os
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+from app.cli import casefold_options
 from app.config import load_config
 from app.demos import run
 from app.demos import state as demos_state
@@ -76,7 +77,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = _build_parser().parse_args()
+    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
     setup_logging(name="add_demos", category="library/add_demos")
     cfg = load_config()

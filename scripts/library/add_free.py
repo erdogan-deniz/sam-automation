@@ -28,6 +28,7 @@ import os
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+from app.cli import casefold_options
 from app.config import load_config
 from app.free_games import run
 from app.free_games import state as free_games_state
@@ -75,7 +76,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = _build_parser().parse_args()
+    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
     setup_logging(name="add_free", category="library/add_free")
     cfg = load_config()
