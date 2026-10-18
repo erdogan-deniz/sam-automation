@@ -258,7 +258,7 @@ def _run_with(monkeypatch, *flags: str) -> dict:  # type: ignore[no-untyped-def]
 def test_main_without_type_flags_takes_all_types(monkeypatch) -> None:
     run_kw = _run_with(monkeypatch)
     assert run_kw["types"] == frozenset(
-        {"games", "software", "videos", "hardware"}
+        {"games", "dlc", "software", "videos", "hardware"}
     )
 
 
@@ -266,6 +266,7 @@ def test_main_without_type_flags_takes_all_types(monkeypatch) -> None:
     ("flag", "kind"),
     [
         ("--games", "games"),
+        ("--dlc", "dlc"),
         ("--software", "software"),
         ("--videos", "videos"),
         ("--hardware", "hardware"),
@@ -295,9 +296,9 @@ def test_main_case_insensitive_for_every_flag(monkeypatch) -> None:
     assert run_kw["types"] == frozenset({"games"})
 
 
-@pytest.mark.parametrize("flag", ["--demos", "--dlc", "--dls"])
-def test_main_demos_and_dlc_flags_rejected(monkeypatch, flag) -> None:
-    # DLC и демо в вишлист не идут (решение владельца 19.10.2026).
+@pytest.mark.parametrize("flag", ["--demos", "--dls"])
+def test_main_removed_flags_rejected(monkeypatch, flag) -> None:
+    # Демо в вишлист не идут, --dls был опиской (владелец, 19.10.2026).
     with pytest.raises(SystemExit) as exc:
         _run_with(monkeypatch, flag)
     assert exc.value.code == 2

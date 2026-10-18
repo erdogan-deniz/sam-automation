@@ -10,14 +10,30 @@ app/free_games/discovery.py (store.steampowered.com, HTML results_html) здес
 
 from __future__ import annotations
 
+import json
 import logging
+import time
+import urllib.parse
 
-from app.steam.steam_api import BASE_URL, _api_get, fetch_owned_games
-from app.wishlist.content import ALL_TYPES, APPLIST_FILTERS, label
+from app.steam.steam_api import (
+    BASE_URL,
+    _api_get,
+    _RateLimitError,
+    fetch_owned_games,
+)
+from app.wishlist.content import ALL_TYPES, CONTENT_TYPES, label
 
 log = logging.getLogger("sam_automation")
 
 _MAX_RESULTS = 50000  # максимум GetAppList/v1 на страницу
+# GetItems — GET с JSON в URL: на 300 appid URL длиннее ~8 КБ и Steam
+# отвечает 400 (живая проба 19.10.2026); 200 — с запасом.
+_ITEMS_BATCH = 200
+_ITEMS_PROGRESS_EVERY = 100  # пачек между строками прогресса в логе
+# 429, не пережитый ретраем _api_get: пауза и повтор пачки. Живой прогон
+# 19.10.2026 (760 пачек) ловил 429 сотню раз, до 2-й попытки из 3.
+_ITEMS_COOLDOWN = 30.0
+_ITEMS_COOLDOWNS = 3
 
 
 def _type_params(types: frozenset[str]) -> str:
@@ -26,7 +42,7 @@ def _type_params(types: frozenset[str]) -> str:
     Все пять флагов явные: include_games у GetAppList по умолчанию включён.
     """
     return "".join(
-        f"&include_{t}={1 if t in types else 0}" for t in APPLIST_FILTERS
+        f"&include_{t}={1 if t in types else 0}" for t in CONTENT_TYPES
     )
 
 
@@ -84,6 +100,64 @@ def discover_universe(
     return out
 
 
+def _get_items(url: str) -> dict:
+    """_api_get с паузой _ITEMS_COOLDOWN, если 429 пережил его ретраи."""
+    for cooldown in range(_ITEMS_COOLDOWNS):
+        try:
+            return _api_get(url)
+        except _RateLimitError:
+            log.warning(
+                "Steam GetItems: 429 не проходит — пауза %.0fс (%d/%d)",
+                _ITEMS_COOLDOWN,
+                cooldown + 1,
+                _ITEMS_COOLDOWNS,
+            )
+            time.sleep(_ITEMS_COOLDOWN)
+    return _api_get(url)
+
+
+def fetch_free_ids(appids: list[int]) -> set[int]:
+    """Какие из appids бесплатны: IStoreBrowseService/GetItems, пачками.
+
+    Steam ставит `is_free: true` только бесплатным (CS2, Dota 2, TF2 —
+    живая проба 19.10.2026), у платных и ещё не вышедших поля нет. Неизвестные
+    магазину appid бесплатными не считаются: их отсеет AddToWishlist как
+    refused. Сбой запроса и ответ без store_items пробрасываются — см.
+    discover_candidates.
+    """
+    free: set[int] = set()
+    batches = range(0, len(appids), _ITEMS_BATCH)
+    for n, start in enumerate(batches, 1):
+        payload = {
+            "ids": [{"appid": a} for a in appids[start : start + _ITEMS_BATCH]],
+            # Без country_code Steam отвечает пустым response (живая проба
+            # 19.10.2026) — тихо «ничего бесплатного».
+            "context": {"language": "english", "country_code": "US"},
+            "data_request": {},
+        }
+        query = urllib.parse.quote(json.dumps(payload, separators=(",", ":")))
+        url = f"{BASE_URL}/IStoreBrowseService/GetItems/v1/?input_json={query}"
+        response = _get_items(url).get("response", {})
+        if "store_items" not in response:
+            raise RuntimeError(
+                "Steam GetItems вернул ответ без store_items — "
+                "бесплатность не проверена"
+            )
+        items = response["store_items"]
+        free.update(
+            int(it["appid"])
+            for it in items
+            if it.get("is_free") and it.get("appid") is not None
+        )
+        if n % _ITEMS_PROGRESS_EVERY == 0:
+            log.info(
+                "Wishlist: проверено на бесплатность %d из %d",
+                min(start + _ITEMS_BATCH, len(appids)),
+                len(appids),
+            )
+    return free
+
+
 def fetch_wishlist_ids(steam_id: str) -> set[int]:
     """GetWishlist/v1 (keyless) → set appid. Весь список одним ответом —
     снято вживую на 24 253 позициях, пагинация читателю не требуется."""
@@ -96,7 +170,12 @@ def fetch_wishlist_ids(steam_id: str) -> set[int]:
 def discover_candidates(
     *, api_key: str, steam_id: str, types: frozenset[str] = ALL_TYPES
 ) -> list[int]:
-    """Вселенная выбранных типов минус owned минус wishlisted (B-14).
+    """Вселенная выбранных типов минус owned, wishlisted и бесплатное (B-14).
+
+    Бесплатное в вишлист не идёт — его забирает в библиотеку add_free.py
+    (решение владельца 19.10.2026). Проверяется только то, что осталось после
+    вычета owned/wishlisted. Сбой проверки пробрасывается, как сбой
+    universe: иначе бесплатное попало бы в candidates и дальше в вишлист.
 
     Устойчив к сбою owned/wishlisted: недоступны → просто не вычитаются
     (WARNING в лог, лишнее появление отсеется как refused при add —
@@ -136,6 +215,14 @@ def discover_candidates(
         "Wishlist: кандидатов (минус owned=%d, wishlisted=%d): %d",
         len(owned),
         len(wishlisted),
+        len(candidates),
+    )
+
+    free = fetch_free_ids(candidates)
+    candidates = [a for a in candidates if a not in free]
+    log.info(
+        "Wishlist: минус бесплатное (%d) — платных кандидатов: %d",
+        len(free),
         len(candidates),
     )
     return candidates
