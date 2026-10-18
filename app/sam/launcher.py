@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.wintypes
 import logging
 import subprocess
 import time
@@ -213,7 +214,7 @@ def kill_all_sam_games() -> None:
         _kill_pid(pid)
 
 
-def prevent_idle_sleep() -> None:
+def prevent_idle_sleep() -> bool:
     """Не даёт Windows усыпить систему/погасить экран по таймауту простоя.
 
     Слепая зона аудита: achievements/farm.py — единственный SAM-скрипт,
@@ -226,7 +227,23 @@ def prevent_idle_sleep() -> None:
     ОГОВОРКА: не спасает от ручного Win+L или экранной заставки с паролем —
     только от авто-сна/авто-выключения экрана по бездействию, самого
     реалистичного триггера для "запустил и ушёл на ночь".
+
+    Returns:
+        True — защита включена; False — Windows отказала (возврат 0). Отказ не
+        фатален (прогон продолжается), но пишется WARNING: иначе экран гаснет
+        по простою, каждая игра падает, а в логе нет причины.
     """
-    ctypes.windll.kernel32.SetThreadExecutionState(
-        _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_DISPLAY_REQUIRED
+    set_state = ctypes.windll.kernel32.SetThreadExecutionState
+    # Как в win32_utils: без явных типов ctypes считает аргумент и возврат
+    # c_int, а флаг ES_CONTINUOUS (0x80000000) в знаковый int не влезает.
+    set_state.argtypes = [ctypes.wintypes.DWORD]
+    set_state.restype = ctypes.wintypes.DWORD
+    if set_state(_ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_DISPLAY_REQUIRED):
+        return True
+    log.warning(
+        "SetThreadExecutionState отказал — защита от авто-сна НЕ включена: "
+        "при долгом простое экран может погаснуть, и клики SAM начнут падать. "
+        "Отключи сон и гашение экрана в настройках питания Windows на время "
+        "прогона."
     )
+    return False

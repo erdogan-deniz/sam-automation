@@ -11,6 +11,7 @@ SAM.Game.exe ('failed to connect to global user'). Пауза МЕЖДУ зап�
 
 from __future__ import annotations
 
+from ctypes import wintypes
 from unittest.mock import MagicMock, call, patch
 
 import app.sam.launcher as launcher
@@ -309,6 +310,48 @@ def test_prevent_idle_sleep_calls_set_thread_execution_state(monkeypatch):
         | launcher._ES_SYSTEM_REQUIRED
         | launcher._ES_DISPLAY_REQUIRED
     ]
+
+
+# B-8: SetThreadExecutionState возвращает прежнее состояние, а при отказе — 0.
+# Без проверки отказ был молчаливым: экран гас по простою, фарм падал на каждой
+# игре, а в логе не было ни слова о причине.
+
+
+def _fake_windll(monkeypatch, ret: int) -> MagicMock:  # type: ignore[no-untyped-def]
+    fn = MagicMock(return_value=ret)
+    monkeypatch.setattr(
+        launcher.ctypes,
+        "windll",
+        MagicMock(kernel32=MagicMock(SetThreadExecutionState=fn)),
+    )
+    return fn
+
+
+def test_prevent_idle_sleep_failure_logs_warning(monkeypatch, caplog) -> None:  # type: ignore[no-untyped-def]
+    _fake_windll(monkeypatch, 0)
+    with caplog.at_level("WARNING", logger="sam_automation"):
+        assert launcher.prevent_idle_sleep() is False
+    assert any(
+        "SetThreadExecutionState" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_prevent_idle_sleep_success_returns_true_silently(  # type: ignore[no-untyped-def]
+    monkeypatch, caplog
+) -> None:
+    _fake_windll(monkeypatch, launcher._ES_CONTINUOUS)
+    with caplog.at_level("WARNING", logger="sam_automation"):
+        assert launcher.prevent_idle_sleep() is True
+    assert not caplog.records
+
+
+def test_prevent_idle_sleep_declares_ctypes_types(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Как в win32_utils: без явных типов ctypes трактует аргумент и возврат как
+    # c_int — флаг 0x80000000 не влезает в знаковый int.
+    fn = _fake_windll(monkeypatch, launcher._ES_CONTINUOUS)
+    launcher.prevent_idle_sleep()
+    assert fn.argtypes == [wintypes.DWORD]
+    assert fn.restype is wintypes.DWORD
 
 
 def test_idle_split_zero_poll_interval_terminates(monkeypatch):
