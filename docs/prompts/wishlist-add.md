@@ -26,9 +26,9 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
 Две фазы. **Discover**: вселенная через `IStoreService/GetAppList/v1`
-(пагинация по `last_appid`) плюс демо из поиска витрины
-(`app.demos.discovery`: у GetAppList фильтра демо нет); типы выбираются
-флагами, без флагов — все (B-14 от 19.10.2026); минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
+(пагинация по `last_appid`; типы выбираются флагами, без флагов — все,
+B-14 от 19.10.2026; демо не входят — их в библиотеку добавляет
+`add_demos.py`) минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
 (`IWishlistService/GetWishlist/v1`, keyless) минус added/refused →
 `state.candidates_file(types)`. **Add**: по одному appid (batch-эндпоинта у Steam нет)
 через `POST IWishlistService/AddToWishlist/v1` с community-JWT. Дефолт —
@@ -76,8 +76,9 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 
 # CLI-ФЛАГИ
 `--add` (реально добавить, иначе dry-run) · типы `--games`, `--dlc`
-(он же `--DLC`/`--dls`/`--DLS`), `--demos`, `--software`, `--videos`,
-`--hardware` — складываются, без них все типы · `--list` (показать
+(он же `--dls`), `--software`, `--videos`, `--hardware` — складываются, без
+них все типы · регистр имён флагов не важен (`app.cli.casefold_options`:
+`--DLC` = `--dlc`) · `--list` (показать
 кандидатов выбранных типов и выйти) · `--reset` (стереть весь state) ·
 `--retry-errors` (стереть только `error.txt`) · `--limit N` (потолок
 добавлений за прогон) · `--interval SEC` (пауза между добавлениями, дефолт
@@ -86,8 +87,8 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - `scripts/library/wishlist_add.py` — CLI, разбор флагов, resolve→validate,
   wiring в `app.wishlist.run`.
-- `app/wishlist/content.py` — типы контента: `APPLIST_TYPES` (пять фильтров
-  GetAppList), `CONTENT_TYPES` (плюс `demos`), `ALL_TYPES`.
+- `app/wishlist/content.py` — типы контента: `CONTENT_TYPES` (пять фильтров
+  GetAppList `include_*`), `ALL_TYPES`.
 - `app/wishlist/discovery.py` — `discover_universe(api_key, *, types=ALL_TYPES,
   max_pages=200) -> list[int]`: пагинация `IStoreService/GetAppList/v1`
   (`_MAX_RESULTS=50000`/страница; `_type_params(types)` ставит все пять
@@ -97,7 +98,7 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   steam_id) -> set[int]`: `IWishlistService/GetWishlist/v1` (keyless), снято
   вживую на 24 253 позициях ОДНИМ ответом — пагинация читателю НЕ нужна.
   `discover_candidates(*, api_key, steam_id, types=ALL_TYPES) -> list[int]`:
-  universe (+ демо витрины, если `demos` в types) минус
+  universe минус
   owned (`fetch_owned_games`) минус wishlisted; ОБА сбоя owned/wishlisted
   ПРОГЛАТЫВАЮТСЯ (WARNING, не вычитается — самоисцеление: лишнее появление
   отсеется как refused при add); сбой САМОГО universe (`GetAppList`) НЕ
@@ -136,7 +137,7 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 - `candidates.txt` — universe минус owned/wishlisted/added/refused
   (все типы).
 - `candidates_<типы>.txt` — то же для выбранных флагами типов, имя в
-  каноническом порядке (`candidates_dlc.txt`, `candidates_games_demos.txt`).
+  каноническом порядке (`candidates_dlc.txt`, `candidates_games_software.txt`).
   `added`/`refused`/`error` общие: appid у разных типов не совпадают.
 - `added.txt` — успешно добавлено (x-eresult=1).
 - `refused.txt` — терминально (owned/уже-в-вишлисте/delisted) — только `--reset` вернёт.
@@ -168,10 +169,6 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   оправдано). Не «исправляй» это на импорт enum без веской причины.
 
 # ПРОБЕЛЫ В ТЕСТАХ (если правишь — закрой TDD)
-- **Демо (19.10.2026):** не проверено, принимает ли `AddToWishlist` демо.
-  Поиск витрины ловит 429 примерно на 22-й странице (~2100 из 36 185 демо)
-  и после трёх попыток по 2 с обрывает выборку; следующий прогон начнёт с
-  тех же первых страниц.
 > Проверено 2026-08-10: фича построена через TDD (75 тестов в
 > test_wishlist_{api,discovery,orchestrate,report,state}.py) и живьём
 > e2e-верифицирована (234 955 кандидатов dry-run, 24 281 добавлено за

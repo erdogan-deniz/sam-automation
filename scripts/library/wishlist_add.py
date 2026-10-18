@@ -1,7 +1,8 @@
 """Auto-add Wishlist — добавляет позиции каталога Steam в вишлист аккаунта.
 
-Без флагов типа — все типы контента. Флаги --games, --dlc, --demos,
---software, --videos, --hardware сужают выбор и складываются.
+Без флагов типа — все типы контента. Флаги --games, --dlc, --software,
+--videos, --hardware сужают выбор и складываются. Регистр флагов не важен
+(--DLC = --dlc). Демо в вишлист не идут — их добавляет add_demos.py.
 
 Две фазы: discover (GetAppList минус owned/wishlisted → candidates.txt) и add
 (добавление по одному через IWishlistService, resume-aware, адаптивный
@@ -12,7 +13,7 @@ backoff на rate-limit). По умолчанию — dry-run (только disc
     python scripts/library/wishlist_add.py              # dry-run: сколько найдено
     python scripts/library/wishlist_add.py --add         # реально добавить
     python scripts/library/wishlist_add.py --add --dlc   # то же, только DLC
-    python scripts/library/wishlist_add.py --add --games --demos
+    python scripts/library/wishlist_add.py --add --games --software
     python scripts/library/wishlist_add.py --list        # показать candidates.txt
     python scripts/library/wishlist_add.py --add --limit 100
     python scripts/library/wishlist_add.py --add --retry-errors
@@ -33,6 +34,7 @@ import os
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+from app.cli import casefold_options
 from app.config import load_config
 from app.logging_setup import setup_logging
 from app.steam import resolve_steam_id
@@ -57,10 +59,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "типы контента (без флагов — все; флаги складываются)"
     )
     types.add_argument("--games", action="store_true", help="Игры")
-    types.add_argument(
-        "--dlc", "--DLC", "--dls", "--DLS", action="store_true", help="DLC"
-    )
-    types.add_argument("--demos", action="store_true", help="Демо")
+    types.add_argument("--dlc", "--dls", action="store_true", help="DLC")
     types.add_argument("--software", action="store_true", help="Софт")
     types.add_argument("--videos", action="store_true", help="Видео")
     types.add_argument("--hardware", action="store_true", help="Железо")
@@ -101,7 +100,7 @@ def _selected_types(args: argparse.Namespace) -> frozenset[str]:
 
 
 def main() -> None:
-    args = _build_parser().parse_args()
+    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
     setup_logging(name="wishlist_add", category="library/wishlist_add")
     cfg = load_config()
