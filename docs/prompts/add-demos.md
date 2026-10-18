@@ -132,8 +132,9 @@ limit, cfg)`.
   работает по-старому, так что при правке `add()` не потеряй аргумент
   (страхует `test_add_wires_working_persist_callback_to_add_licenses`).
 - `ground_truth.py::_check_demos` сверяет `added.txt` (demos) с
-  `GetOwnedGames` тем же способом, что `_check_free_games` — тот же слепой
-  участок B-6 (неоднозначный пустой ответ Steam API) относится и сюда.
+  `GetOwnedGames` тем же способом, что `_check_free_games`. Битый ответ
+  GetOwnedGames (`game_count>0`, `games` пуст) с 2026-10-18 (B-6) даёт
+  «проверка не выполнена» (код выхода 2), а не ложное «всё потеряно».
 
 # ПРОБЕЛЫ В ТЕСТАХ (если правишь — закрой TDD)
 > Построена через TDD 2026-09-12 (34 теста в
