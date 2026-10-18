@@ -1,17 +1,14 @@
-"""Типы контента вишлиста и их флаги (B-14).
+"""Типы контента вишлиста — фильтры GetAppList `include_<тип>` (B-14).
 
-Пять типов фильтрует сам GetAppList (`include_<тип>`). Демо в нём отдельного
-фильтра нет (живая проба 19.10.2026: ни в одном из пяти списков нет ни одного
-из 2443 известных демо), поэтому демо берутся из поиска витрины, как у
-`add_demos.py`.
+Демо сюда не входят: у GetAppList их фильтра нет, а в библиотеку их и так
+добавляет `add_demos.py` (решение владельца 19.10.2026).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
-APPLIST_TYPES = ("games", "dlc", "software", "videos", "hardware")
-CONTENT_TYPES = (*APPLIST_TYPES, "demos")
+CONTENT_TYPES = ("games", "dlc", "software", "videos", "hardware")
 ALL_TYPES = frozenset(CONTENT_TYPES)
 
 

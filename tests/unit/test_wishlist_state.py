@@ -93,10 +93,10 @@ def test_candidates_kept_apart_per_type_set(
     _patch_all(monkeypatch, tmp_path)
     state_mod.save_candidates([10, 20])
     state_mod.save_candidates([30], {"dlc"})
-    state_mod.save_candidates([40], {"demos", "games"})
+    state_mod.save_candidates([40], {"software", "games"})
     assert state_mod.load_candidates() == [10, 20]
     assert state_mod.load_candidates({"dlc"}) == [30]
-    assert state_mod.load_candidates({"games", "demos"}) == [40]
+    assert state_mod.load_candidates({"games", "software"}) == [40]
 
 
 def test_candidates_file_names(
@@ -107,10 +107,10 @@ def test_candidates_file_names(
     assert state_mod.candidates_file({"dlc"}).name == "candidates_dlc.txt"
     # Порядок имени канонический, не порядок флагов.
     assert (
-        state_mod.candidates_file({"demos", "games"}).name
-        == "candidates_games_demos.txt"
+        state_mod.candidates_file({"software", "games"}).name
+        == "candidates_games_software.txt"
     )
-    # Все шесть флагов разом — то же, что без флагов.
+    # Все пять флагов разом — то же, что без флагов.
     assert state_mod.candidates_file(state_mod.ALL_TYPES).name == (
         "candidates.txt"
     )
