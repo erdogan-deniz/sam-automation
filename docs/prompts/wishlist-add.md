@@ -26,10 +26,10 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
 Две фазы. **Discover**: вселенная через `IStoreService/GetAppList/v1`
-(пагинация по `last_appid`, все типы контента — games/dlc/software/videos/
-hardware) минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
+(пагинация по `last_appid`; без флага — games/software/videos/hardware,
+с `--dls` — только DLC, B-14 от 19.10.2026) минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
 (`IWishlistService/GetWishlist/v1`, keyless) минус added/refused →
-`candidates.txt`. **Add**: по одному appid (batch-эндпоинта у Steam нет)
+`candidates.txt` (`candidates_dlc.txt` при `--dls`). **Add**: по одному appid (batch-эндпоинта у Steam нет)
 через `POST IWishlistService/AddToWishlist/v1` с community-JWT. Дефолт —
 dry-run (только discover + отчёт); реальное добавление — только по `--add`.
 
@@ -50,10 +50,10 @@ args.add, list_only=args.list, limit=args.limit, interval=args.interval,
 api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 
 `app/wishlist/orchestrate.py`:
-- `discover(*, api_key, steam_id) -> list[int]` — `discovery.discover_candidates`
+- `discover(*, api_key, steam_id, dlc=False) -> list[int]` — `discovery.discover_candidates`
   (universe минус owned минус wishlisted, оба через Web API — см. КЛЮЧЕВЫЕ
   ФАЙЛЫ) минус added/refused → `state.save_candidates`.
-- `add(*, limit=None, interval=1.0) -> wishlist_api.AddResult` — pending =
+- `add(*, limit=None, interval=1.0, dlc=False) -> wishlist_api.AddResult` — pending =
   candidates минус added/refused/error (срез по `limit`); пустой pending →
   `AddResult()`; `cookies = get_web_cookies("", interactive=False)` — `None`
   → `AddResult(auth_fail=True)` БЕЗ пометки appid в error (сбой СЕССИИ, не
@@ -74,8 +74,9 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   refused, error, hit_wall=result.hit_wall, cfg)`.
 
 # CLI-ФЛАГИ
-`--add` (реально добавить, иначе dry-run) · `--list` (показать
-`candidates.txt` и выйти) · `--reset` (стереть весь state) ·
+`--add` (реально добавить, иначе dry-run) · `--dls`/`--DLS` (только
+DLC; без него — все типы, кроме DLC) · `--list` (показать кандидатов
+текущего режима и выйти) · `--reset` (стереть весь state) ·
 `--retry-errors` (стереть только `error.txt`) · `--limit N` (потолок
 добавлений за прогон) · `--interval SEC` (пауза между добавлениями, дефолт
 1.0; 0 = максимальная скорость).
@@ -83,13 +84,14 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - `scripts/library/wishlist_add.py` — CLI, разбор флагов, resolve→validate,
   wiring в `app.wishlist.run`.
-- `app/wishlist/discovery.py` — `discover_universe(api_key, *, max_pages=200)
-  -> list[int]`: пагинация `IStoreService/GetAppList/v1` (`_MAX_RESULTS=
-  50000`/страница, все `include_*` флаги включены) через `last_appid`-курсор
+- `app/wishlist/discovery.py` — `discover_universe(api_key, *, dlc=False,
+  max_pages=200) -> list[int]`: пагинация `IStoreService/GetAppList/v1`
+  (`_MAX_RESULTS=50000`/страница; `_type_params(dlc)` ставит все пять
+  `include_*` явно, потому что `include_games` по умолчанию включён) через `last_appid`-курсор
   до `have_more_results=False` или пустой страницы. `fetch_wishlist_ids(
   steam_id) -> set[int]`: `IWishlistService/GetWishlist/v1` (keyless), снято
   вживую на 24 253 позициях ОДНИМ ответом — пагинация читателю НЕ нужна.
-  `discover_candidates(*, api_key, steam_id) -> list[int]`: universe минус
+  `discover_candidates(*, api_key, steam_id, dlc=False) -> list[int]`: universe минус
   owned (`fetch_owned_games`) минус wishlisted; ОБА сбоя owned/wishlisted
   ПРОГЛАТЫВАЮТСЯ (WARNING, не вычитается — самоисцеление: лишнее появление
   отсеется как refused при add); сбой САМОГО universe (`GetAppList`) НЕ
@@ -125,7 +127,10 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   `IWishlistService`.
 
 # STATE-ФАЙЛЫ (data/games/ids/wishlist/)
-- `candidates.txt` — universe минус owned/wishlisted/added/refused.
+- `candidates.txt` — universe минус owned/wishlisted/added/refused
+  (все типы, кроме DLC).
+- `candidates_dlc.txt` — то же для `--dls`. `added`/`refused`/`error` общие
+  для обоих режимов: appid у игры и DLC не совпадают.
 - `added.txt` — успешно добавлено (x-eresult=1).
 - `refused.txt` — терминально (owned/уже-в-вишлисте/delisted) — только `--reset` вернёт.
 - `error.txt` — транзиентная сетевая ошибка — восстановимо `--retry-errors`.

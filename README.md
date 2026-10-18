@@ -105,6 +105,7 @@ python scripts/library/add_demos.py --add     # actually add
 python scripts/library/wishlist_add.py         # dry-run: how many candidates
 python scripts/library/wishlist_add.py --add   # actually add
 
+#    --dls           DLC only (default: every type except DLC)
 #    --list          show current candidates and exit
 #    --reset         wipe resume state
 #    --retry-errors  retry transient failures (clears error.txt)
@@ -275,6 +276,8 @@ and **Wishlist** (`data/games/ids/wishlist/`) share the same four-file layout:
 | `added.txt` | Successfully added |
 | `refused.txt` | Steam refused permanently (delisted, already owned, not free) — never retried |
 | `error.txt` | Transient failures; cleared and retried with `--retry-errors` |
+
+The wishlist keeps DLC candidates (`--dls`) apart, in `candidates_dlc.txt`.
 
 **Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
 API reports playtime for are gated on the **actual** `playtime_forever`: those at

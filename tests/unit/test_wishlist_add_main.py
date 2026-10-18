@@ -239,3 +239,33 @@ def test_main_interval_defaults_to_one_second(monkeypatch) -> None:
     wishlist_add.main()
 
     assert calls["run"]["interval"] == 1.0
+
+
+# ── B-14: --dls / --DLS ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("flag", ["--dls", "--DLS"])
+def test_main_dls_flag_wires_dlc_into_run(monkeypatch, flag) -> None:
+    cfg = _cfg()
+    calls = _stub_common(monkeypatch, cfg, ["wishlist_add.py", flag])
+    monkeypatch.setattr(
+        wishlist_add, "resolve_steam_id", lambda *a: cfg.steam_id
+    )
+    monkeypatch.setattr(wishlist_add, "validate", lambda c: None)
+
+    wishlist_add.main()
+
+    assert calls["run"]["dlc"] is True
+
+
+def test_main_without_dls_flag_is_not_dlc(monkeypatch) -> None:
+    cfg = _cfg()
+    calls = _stub_common(monkeypatch, cfg, ["wishlist_add.py"])
+    monkeypatch.setattr(
+        wishlist_add, "resolve_steam_id", lambda *a: cfg.steam_id
+    )
+    monkeypatch.setattr(wishlist_add, "validate", lambda c: None)
+
+    wishlist_add.main()
+
+    assert calls["run"]["dlc"] is False
