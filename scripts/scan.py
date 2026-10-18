@@ -24,6 +24,7 @@ import os
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 from app.cache import ALL_IDS_FILE, save_game_names
+from app.cli import casefold_options
 from app.config import load_config
 from app.id_file import _atomic_write_text, read_ids_ordered
 from app.logging_setup import SEPARATOR, setup_logging
@@ -232,7 +233,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="перезаписать all.txt даже при резкой усадке библиотеки "
         "(обход защиты от транзиентного отказа источника)",
     )
-    return parser.parse_args(argv)
+    return parser.parse_args(
+        casefold_options(sys.argv[1:] if argv is None else argv)
+    )
 
 
 if __name__ == "__main__":

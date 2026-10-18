@@ -91,17 +91,17 @@ def test_discover_types_saves_into_own_candidates(
     )
     state_mod.save_candidates([1])
 
-    orch.discover(api_key="k", steam_id="s", types=frozenset({"dlc"}))
+    orch.discover(api_key="k", steam_id="s", types=frozenset({"hardware"}))
 
-    assert captured["types"] == frozenset({"dlc"})
-    assert state_mod.load_candidates({"dlc"}) == [7, 8]
+    assert captured["types"] == frozenset({"hardware"})
+    assert state_mod.load_candidates({"hardware"}) == [7, 8]
     assert state_mod.load_candidates() == [1]
 
 
 def test_add_types_takes_own_candidates(monkeypatch, tmp_path) -> None:
     _patch_state(monkeypatch, tmp_path)
     state_mod.save_candidates([1, 2])
-    state_mod.save_candidates([9], {"dlc"})
+    state_mod.save_candidates([9], {"hardware"})
     monkeypatch.setattr(
         orch, "get_web_cookies", lambda *a, **k: {"steamLoginSecure": "x||tok"}
     )
@@ -113,7 +113,7 @@ def test_add_types_takes_own_candidates(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(orch.wishlist_api, "add_pending", fake_add_pending)
 
-    orch.add(types=frozenset({"dlc"}))
+    orch.add(types=frozenset({"hardware"}))
 
     assert seen["pending"] == [9]
 
@@ -487,7 +487,7 @@ def test_run_list_only_prints_candidates_of_chosen_types(
 ) -> None:
     _patch_state(monkeypatch, tmp_path)
     state_mod.save_candidates([1, 2])
-    state_mod.save_candidates([9], {"dlc"})
+    state_mod.save_candidates([9], {"hardware"})
 
     orch.run(
         do_add=False,
@@ -497,7 +497,7 @@ def test_run_list_only_prints_candidates_of_chosen_types(
         api_key="k",
         steam_id="s",
         cfg=SimpleNamespace(),
-        types=frozenset({"dlc"}),
+        types=frozenset({"hardware"}),
     )
 
     assert capsys.readouterr().out.split() == ["9"]

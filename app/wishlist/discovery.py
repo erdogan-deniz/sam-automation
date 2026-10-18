@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 from app.steam.steam_api import BASE_URL, _api_get, fetch_owned_games
-from app.wishlist.content import ALL_TYPES, CONTENT_TYPES, label
+from app.wishlist.content import ALL_TYPES, APPLIST_FILTERS, label
 
 log = logging.getLogger("sam_automation")
 
@@ -26,7 +26,7 @@ def _type_params(types: frozenset[str]) -> str:
     Все пять флагов явные: include_games у GetAppList по умолчанию включён.
     """
     return "".join(
-        f"&include_{t}={1 if t in types else 0}" for t in CONTENT_TYPES
+        f"&include_{t}={1 if t in types else 0}" for t in APPLIST_FILTERS
     )
 
 

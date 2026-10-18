@@ -74,13 +74,13 @@ def test_clear_state_removes_everything(
 ) -> None:
     _patch_all(monkeypatch, tmp_path)
     state_mod.save_candidates([730])
-    state_mod.save_candidates([731], {"dlc"})
+    state_mod.save_candidates([731], {"hardware"})
     state_mod.mark_added(730)
     state_mod.mark_refused(10)
     state_mod.mark_error(20)
     state_mod.clear_state()
     assert state_mod.load_candidates() == []
-    assert state_mod.load_candidates({"dlc"}) == []
+    assert state_mod.load_candidates({"hardware"}) == []
     assert state_mod.load_added_ids() == set()
     assert state_mod.load_refused_ids() == set()
     assert state_mod.load_error_ids() == set()
@@ -92,10 +92,10 @@ def test_candidates_kept_apart_per_type_set(
     # B-14: --list одного набора типов не показывает кандидатов другого.
     _patch_all(monkeypatch, tmp_path)
     state_mod.save_candidates([10, 20])
-    state_mod.save_candidates([30], {"dlc"})
+    state_mod.save_candidates([30], {"hardware"})
     state_mod.save_candidates([40], {"software", "games"})
     assert state_mod.load_candidates() == [10, 20]
-    assert state_mod.load_candidates({"dlc"}) == [30]
+    assert state_mod.load_candidates({"hardware"}) == [30]
     assert state_mod.load_candidates({"games", "software"}) == [40]
 
 
@@ -104,13 +104,16 @@ def test_candidates_file_names(
 ) -> None:
     _patch_all(monkeypatch, tmp_path)
     assert state_mod.candidates_file().name == "candidates.txt"
-    assert state_mod.candidates_file({"dlc"}).name == "candidates_dlc.txt"
+    assert (
+        state_mod.candidates_file({"hardware"}).name
+        == "candidates_hardware.txt"
+    )
     # Порядок имени канонический, не порядок флагов.
     assert (
         state_mod.candidates_file({"software", "games"}).name
         == "candidates_games_software.txt"
     )
-    # Все пять флагов разом — то же, что без флагов.
+    # Все флаги разом — то же, что без флагов.
     assert state_mod.candidates_file(state_mod.ALL_TYPES).name == (
         "candidates.txt"
     )
