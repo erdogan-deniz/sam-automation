@@ -171,6 +171,29 @@ def test_add_cm_login_failed_marks_all_pending_as_error(
     assert state_mod.load_error_ids() == {1, 2}
 
 
+def test_add_wires_working_persist_callback_to_add_licenses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # B-1 (FG-1): add_licenses умеет persist по каждому батчу, но demos
+    # получает защиту, только если orch.add() передаёт рабочий callback.
+    # Килл посреди многоминутного retry-шторма не должен терять уже выданные
+    # лицензии из added.txt.
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2, 3])
+
+    def fake_add_licenses(client, appids, **kw):
+        kw["persist"](1, "added")
+        raise SystemExit("имитация жёсткого килла процесса")
+
+    monkeypatch.setattr(orch.licenses, "add_licenses", fake_add_licenses)
+    monkeypatch.setattr(orch, "cm_session", _fake_cm_session(_FakeClient({})))
+
+    with pytest.raises(SystemExit):
+        orch.add()
+
+    assert state_mod.load_added_ids() == {1}
+
+
 # ── run(): dry-run / --add / --list ветвление ────────────────────────────────
 
 
