@@ -12,17 +12,12 @@ from __future__ import annotations
 
 import logging
 
-from app.demos import discovery as demos_discovery
 from app.steam.steam_api import BASE_URL, _api_get, fetch_owned_games
-from app.wishlist.content import ALL_TYPES, APPLIST_TYPES, label
+from app.wishlist.content import ALL_TYPES, CONTENT_TYPES, label
 
 log = logging.getLogger("sam_automation")
 
 _MAX_RESULTS = 50000  # максимум GetAppList/v1 на страницу
-# Демо — весь каталог витрины (36 185 на 19.10.2026), не запас под потолок
-# лицензий, как у add_demos.py: у вишлиста потолка нет.
-_DEMOS_TARGET = 1_000_000
-_DEMOS_MAX_PAGES = 1000
 
 
 def _type_params(types: frozenset[str]) -> str:
@@ -31,7 +26,7 @@ def _type_params(types: frozenset[str]) -> str:
     Все пять флагов явные: include_games у GetAppList по умолчанию включён.
     """
     return "".join(
-        f"&include_{t}={1 if t in types else 0}" for t in APPLIST_TYPES
+        f"&include_{t}={1 if t in types else 0}" for t in CONTENT_TYPES
     )
 
 
@@ -68,12 +63,12 @@ def discover_universe(
 ) -> list[int]:
     """Пагинирует GetAppList/v1 до конца каталога выбранных типов.
 
-    Без единого типа GetAppList не зовётся: со всеми include_*=0 Steam
+    С пустым набором типов GetAppList не зовётся: со всеми include_*=0 Steam
     отдаёт весь каталог без фильтра (живая проба 19.10.2026, 332 587 appid).
     max_pages — защита от зависания, если Steam когда-либо вернёт
     have_more_results=True с незменяющимся курсором.
     """
-    if not types & set(APPLIST_TYPES):
+    if not types:
         return []
     out: list[int] = []
     last_appid = 0
@@ -103,10 +98,6 @@ def discover_candidates(
 ) -> list[int]:
     """Вселенная выбранных типов минус owned минус wishlisted (B-14).
 
-    Демо приходят из поиска витрины (`app.demos.discovery`), остальное — из
-    GetAppList. Сбой витрины обрезает список демо, но не бросает: пропущенные
-    демо найдутся следующим прогоном, added/refused не теряются.
-
     Устойчив к сбою owned/wishlisted: недоступны → просто не вычитаются
     (WARNING в лог, лишнее появление отсеется как refused при add —
     самозалечивание). Сбой universe (GetAppList) НЕ проглатывается —
@@ -118,13 +109,6 @@ def discover_candidates(
     честным status="error" и НЕ вызывает save_candidates() вовсе.
     """
     universe = discover_universe(api_key, types=types)
-    if "demos" in types:
-        universe.extend(
-            demos_discovery.discover_candidates(
-                target_count=_DEMOS_TARGET, max_pages=_DEMOS_MAX_PAGES
-            )
-        )
-        universe = list(dict.fromkeys(universe))
     log.info(
         "Wishlist: вселенная кандидатов (%s): %d",
         label(types),
