@@ -258,7 +258,7 @@ def _run_with(monkeypatch, *flags: str) -> dict:  # type: ignore[no-untyped-def]
 def test_main_without_type_flags_takes_all_types(monkeypatch) -> None:
     run_kw = _run_with(monkeypatch)
     assert run_kw["types"] == frozenset(
-        {"games", "dlc", "demos", "software", "videos", "hardware"}
+        {"games", "dlc", "software", "videos", "hardware"}
     )
 
 
@@ -267,10 +267,7 @@ def test_main_without_type_flags_takes_all_types(monkeypatch) -> None:
     [
         ("--games", "games"),
         ("--dlc", "dlc"),
-        ("--DLC", "dlc"),
         ("--dls", "dlc"),
-        ("--DLS", "dlc"),
-        ("--demos", "demos"),
         ("--software", "software"),
         ("--videos", "videos"),
         ("--hardware", "hardware"),
@@ -281,5 +278,27 @@ def test_main_single_type_flag(monkeypatch, flag, kind) -> None:
 
 
 def test_main_type_flags_combine(monkeypatch) -> None:
-    run_kw = _run_with(monkeypatch, "--games", "--demos")
-    assert run_kw["types"] == frozenset({"games", "demos"})
+    run_kw = _run_with(monkeypatch, "--games", "--software")
+    assert run_kw["types"] == frozenset({"games", "software"})
+
+
+@pytest.mark.parametrize("flag", ["--DLC", "--Dls", "--DLS", "--dLc"])
+def test_main_flags_ignore_case(monkeypatch, flag) -> None:
+    assert _run_with(monkeypatch, flag)["types"] == frozenset({"dlc"})
+
+
+def test_main_case_insensitive_for_every_flag(monkeypatch) -> None:
+    run_kw = _run_with(
+        monkeypatch, "--ADD", "--Limit", "7", "--INTERVAL=0.5", "--Games"
+    )
+    assert run_kw["do_add"] is True
+    assert run_kw["limit"] == 7
+    assert run_kw["interval"] == 0.5
+    assert run_kw["types"] == frozenset({"games"})
+
+
+def test_main_demos_flag_rejected(monkeypatch) -> None:
+    # Демо в вишлист не идут (решение владельца 19.10.2026) — add_demos.py.
+    with pytest.raises(SystemExit) as exc:
+        _run_with(monkeypatch, "--demos")
+    assert exc.value.code == 2
