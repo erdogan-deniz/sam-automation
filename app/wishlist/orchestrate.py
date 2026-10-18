@@ -8,16 +8,19 @@ from typing import Any, Literal
 from app.cookies import get_web_cookies
 from app.logging_setup import SEPARATOR
 from app.wishlist import discovery, report, state, wishlist_api
+from app.wishlist.content import ALL_TYPES
 
 log = logging.getLogger("sam_automation")
 
 
-def discover(*, api_key: str, steam_id: str, dlc: bool = False) -> list[int]:
-    """Фаза discover: universe (GetAppList) минус owned/wishlisted (Web API)
-    минус added/refused (state) → candidates.txt (candidates_dlc.txt при dlc)."""
+def discover(
+    *, api_key: str, steam_id: str, types: frozenset[str] = ALL_TYPES
+) -> list[int]:
+    """Фаза discover: universe выбранных типов минус owned/wishlisted (Web API)
+    минус added/refused (state) → state.candidates_file(types)."""
     log.info(SEPARATOR)
     discovered = discovery.discover_candidates(
-        api_key=api_key, steam_id=steam_id, dlc=dlc
+        api_key=api_key, steam_id=steam_id, types=types
     )
     log.info(
         "Wishlist: обнаружено кандидатов (минус owned/wishlisted): %d",
@@ -31,7 +34,7 @@ def discover(*, api_key: str, steam_id: str, dlc: bool = False) -> list[int]:
         for a in discovered
         if a not in already_added and a not in already_refused
     ]
-    state.save_candidates(candidates, dlc=dlc)
+    state.save_candidates(candidates, types)
     log.info(
         "Кандидатов к добавлению (минус added/refused): %d", len(candidates)
     )
@@ -39,7 +42,10 @@ def discover(*, api_key: str, steam_id: str, dlc: bool = False) -> list[int]:
 
 
 def add(
-    *, limit: int | None = None, interval: float = 1.0, dlc: bool = False
+    *,
+    limit: int | None = None,
+    interval: float = 1.0,
+    types: frozenset[str] = ALL_TYPES,
 ) -> wishlist_api.AddResult:
     """Фаза add: добавляет pending appid по одному (resume-aware).
 
@@ -50,7 +56,7 @@ def add(
     метит ВСЕ pending как error — там сессия внутри cm_session() ближе к
     per-run ресурсу, не хранится между запусками).
     """
-    candidates = state.load_candidates(dlc=dlc)
+    candidates = state.load_candidates(types)
     already_added = state.load_added_ids()
     already_refused = state.load_refused_ids()
     already_error = state.load_error_ids()
@@ -134,14 +140,14 @@ def run(
     api_key: str,
     steam_id: str,
     cfg: Any,
-    dlc: bool = False,
+    types: frozenset[str] = ALL_TYPES,
 ) -> None:
     """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True.
 
-    dlc=True (флаг --dls) — только DLC, иначе все типы, кроме DLC (B-14).
+    types — типы контента из флагов CLI (B-14), по умолчанию все.
     """
     if list_only:
-        listed_candidates = state.load_candidates(dlc=dlc)
+        listed_candidates = state.load_candidates(types)
         for appid in listed_candidates:
             print(appid)
         log.info("Кандидатов в candidates.txt: %d", len(listed_candidates))
@@ -151,9 +157,9 @@ def run(
     candidates: list[int] = []
     result = wishlist_api.AddResult()
     try:
-        candidates = discover(api_key=api_key, steam_id=steam_id, dlc=dlc)
+        candidates = discover(api_key=api_key, steam_id=steam_id, types=types)
         if do_add:
-            result = add(limit=limit, interval=interval, dlc=dlc)
+            result = add(limit=limit, interval=interval, types=types)
     except KeyboardInterrupt:
         status = "interrupted"
         log.info("Прервано (Ctrl+C).")

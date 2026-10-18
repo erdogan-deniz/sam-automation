@@ -241,31 +241,45 @@ def test_main_interval_defaults_to_one_second(monkeypatch) -> None:
     assert calls["run"]["interval"] == 1.0
 
 
-# ── B-14: --dls / --DLS ─────────────────────────────────────────────────
+# ── B-14: флаги типов контента ──────────────────────────────────────────
 
 
-@pytest.mark.parametrize("flag", ["--dls", "--DLS"])
-def test_main_dls_flag_wires_dlc_into_run(monkeypatch, flag) -> None:
+def _run_with(monkeypatch, *flags: str) -> dict:  # type: ignore[no-untyped-def]
     cfg = _cfg()
-    calls = _stub_common(monkeypatch, cfg, ["wishlist_add.py", flag])
+    calls = _stub_common(monkeypatch, cfg, ["wishlist_add.py", *flags])
     monkeypatch.setattr(
         wishlist_add, "resolve_steam_id", lambda *a: cfg.steam_id
     )
     monkeypatch.setattr(wishlist_add, "validate", lambda c: None)
-
     wishlist_add.main()
+    return calls["run"]
 
-    assert calls["run"]["dlc"] is True
 
-
-def test_main_without_dls_flag_is_not_dlc(monkeypatch) -> None:
-    cfg = _cfg()
-    calls = _stub_common(monkeypatch, cfg, ["wishlist_add.py"])
-    monkeypatch.setattr(
-        wishlist_add, "resolve_steam_id", lambda *a: cfg.steam_id
+def test_main_without_type_flags_takes_all_types(monkeypatch) -> None:
+    run_kw = _run_with(monkeypatch)
+    assert run_kw["types"] == frozenset(
+        {"games", "dlc", "demos", "software", "videos", "hardware"}
     )
-    monkeypatch.setattr(wishlist_add, "validate", lambda c: None)
 
-    wishlist_add.main()
 
-    assert calls["run"]["dlc"] is False
+@pytest.mark.parametrize(
+    ("flag", "kind"),
+    [
+        ("--games", "games"),
+        ("--dlc", "dlc"),
+        ("--DLC", "dlc"),
+        ("--dls", "dlc"),
+        ("--DLS", "dlc"),
+        ("--demos", "demos"),
+        ("--software", "software"),
+        ("--videos", "videos"),
+        ("--hardware", "hardware"),
+    ],
+)
+def test_main_single_type_flag(monkeypatch, flag, kind) -> None:
+    assert _run_with(monkeypatch, flag)["types"] == frozenset({kind})
+
+
+def test_main_type_flags_combine(monkeypatch) -> None:
+    run_kw = _run_with(monkeypatch, "--games", "--demos")
+    assert run_kw["types"] == frozenset({"games", "demos"})
