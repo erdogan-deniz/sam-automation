@@ -12,23 +12,26 @@ from __future__ import annotations
 
 import logging
 
+from app.demos import discovery as demos_discovery
 from app.steam.steam_api import BASE_URL, _api_get, fetch_owned_games
+from app.wishlist.content import ALL_TYPES, APPLIST_TYPES, label
 
 log = logging.getLogger("sam_automation")
 
 _MAX_RESULTS = 50000  # максимум GetAppList/v1 на страницу
+# Демо — весь каталог витрины (36 185 на 19.10.2026), не запас под потолок
+# лицензий, как у add_demos.py: у вишлиста потолка нет.
+_DEMOS_TARGET = 1_000_000
+_DEMOS_MAX_PAGES = 1000
 
 
-def _type_params(dlc: bool) -> str:
-    """Фильтр типов GetAppList (B-14): DLC — отдельным прогоном.
+def _type_params(types: frozenset[str]) -> str:
+    """Фильтр типов GetAppList (B-14): include_<тип>=1 для выбранных.
 
-    Без dlc — игры, софт, видео и железо; с dlc — только DLC. Все пять
-    флагов явные: include_games у GetAppList по умолчанию включён.
+    Все пять флагов явные: include_games у GetAppList по умолчанию включён.
     """
-    on, off = ("0", "1") if dlc else ("1", "0")
-    return (
-        f"&include_games={on}&include_dlc={off}&include_software={on}"
-        f"&include_videos={on}&include_hardware={on}"
+    return "".join(
+        f"&include_{t}={1 if t in types else 0}" for t in APPLIST_TYPES
     )
 
 
@@ -36,16 +39,16 @@ def _fetch_universe_page(
     api_key: str,
     *,
     last_appid: int,
-    dlc: bool = False,
+    types: frozenset[str] = ALL_TYPES,
     max_results: int = _MAX_RESULTS,
 ) -> tuple[list[int], bool, int]:
-    """Одна страница GetAppList/v1 (все типы, кроме DLC, или только DLC).
+    """Одна страница GetAppList/v1 выбранных типов.
 
     Возвращает (appids, have_more_results, следующий last_appid).
     """
     url = (
         f"{BASE_URL}/IStoreService/GetAppList/v1/?key={api_key}"
-        f"{_type_params(dlc)}"
+        f"{_type_params(types)}"
         f"&max_results={max_results}&last_appid={last_appid}"
     )
     data = _api_get(url)
@@ -58,18 +61,25 @@ def _fetch_universe_page(
 
 
 def discover_universe(
-    api_key: str, *, dlc: bool = False, max_pages: int = 200
+    api_key: str,
+    *,
+    types: frozenset[str] = ALL_TYPES,
+    max_pages: int = 200,
 ) -> list[int]:
-    """Пагинирует GetAppList/v1 до конца каталога (типы — см. _type_params).
+    """Пагинирует GetAppList/v1 до конца каталога выбранных типов.
 
+    Без единого типа GetAppList не зовётся: со всеми include_*=0 Steam
+    отдаёт весь каталог без фильтра (живая проба 19.10.2026, 332 587 appid).
     max_pages — защита от зависания, если Steam когда-либо вернёт
     have_more_results=True с незменяющимся курсором.
     """
+    if not types & set(APPLIST_TYPES):
+        return []
     out: list[int] = []
     last_appid = 0
     for _page in range(max_pages):
         appids, have_more, last_appid = _fetch_universe_page(
-            api_key, last_appid=last_appid, dlc=dlc
+            api_key, last_appid=last_appid, types=types
         )
         if not appids:
             break
@@ -89,9 +99,13 @@ def fetch_wishlist_ids(steam_id: str) -> set[int]:
 
 
 def discover_candidates(
-    *, api_key: str, steam_id: str, dlc: bool = False
+    *, api_key: str, steam_id: str, types: frozenset[str] = ALL_TYPES
 ) -> list[int]:
-    """Вселенная минус owned минус wishlisted (dlc — только DLC, B-14).
+    """Вселенная выбранных типов минус owned минус wishlisted (B-14).
+
+    Демо приходят из поиска витрины (`app.demos.discovery`), остальное — из
+    GetAppList. Сбой витрины обрезает список демо, но не бросает: пропущенные
+    демо найдутся следующим прогоном, added/refused не теряются.
 
     Устойчив к сбою owned/wishlisted: недоступны → просто не вычитаются
     (WARNING в лог, лишнее появление отсеется как refused при add —
@@ -103,10 +117,17 @@ def discover_candidates(
     накопленный прогресс. Пробрасывая исключение, caller (run()) ловит его
     честным status="error" и НЕ вызывает save_candidates() вовсе.
     """
-    universe = discover_universe(api_key, dlc=dlc)
+    universe = discover_universe(api_key, types=types)
+    if "demos" in types:
+        universe.extend(
+            demos_discovery.discover_candidates(
+                target_count=_DEMOS_TARGET, max_pages=_DEMOS_MAX_PAGES
+            )
+        )
+        universe = list(dict.fromkeys(universe))
     log.info(
-        "Wishlist: вселенная кандидатов (GetAppList, %s): %d",
-        "только DLC" if dlc else "все типы, кроме DLC",
+        "Wishlist: вселенная кандидатов (%s): %d",
+        label(types),
         len(universe),
     )
 

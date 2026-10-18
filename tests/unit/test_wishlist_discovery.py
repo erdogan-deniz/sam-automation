@@ -7,6 +7,14 @@ import pytest
 from app.wishlist import discovery
 
 
+@pytest.fixture(autouse=True)
+def _no_store_demos(monkeypatch):  # type: ignore[no-untyped-def]
+    # Демо по умолчанию входят в «все типы» — витрину в тестах не трогаем.
+    monkeypatch.setattr(
+        discovery.demos_discovery, "discover_candidates", lambda **_k: []
+    )
+
+
 def _apps_page(appids: list[int]) -> list[dict]:
     return [{"appid": a, "name": f"app{a}"} for a in appids]
 
@@ -53,16 +61,15 @@ def _capture_url(monkeypatch) -> dict:  # type: ignore[no-untyped-def]
     return captured
 
 
-def test_fetch_universe_page_default_requests_everything_but_dlc(
+def test_fetch_universe_page_default_requests_all_applist_types(
     monkeypatch,
 ) -> None:
-    # B-14: без --dls — игры, софт, видео и железо, но не DLC.
     captured = _capture_url(monkeypatch)
     discovery._fetch_universe_page("mykey", last_appid=5)
     for flag in (
         "key=mykey",
         "include_games=1",
-        "include_dlc=0",
+        "include_dlc=1",
         "include_software=1",
         "include_videos=1",
         "include_hardware=1",
@@ -72,30 +79,41 @@ def test_fetch_universe_page_default_requests_everything_but_dlc(
 
 
 def test_fetch_universe_page_dlc_requests_only_dlc(monkeypatch) -> None:
-    # include_games у GetAppList по умолчанию true — выключать явно.
+    # B-14. include_games у GetAppList по умолчанию true — выключать явно.
     captured = _capture_url(monkeypatch)
-    discovery._fetch_universe_page("mykey", last_appid=5, dlc=True)
+    discovery._fetch_universe_page(
+        "mykey", last_appid=5, types=frozenset({"dlc"})
+    )
     for flag in (
         "include_games=0",
         "include_dlc=1",
         "include_software=0",
         "include_videos=0",
         "include_hardware=0",
-        "last_appid=5",
     ):
         assert flag in captured["url"]
 
 
-def test_discover_universe_passes_dlc_to_every_page(monkeypatch) -> None:
-    seen: list[bool] = []
+def test_discover_universe_passes_types_to_every_page(monkeypatch) -> None:
+    seen: list[frozenset[str]] = []
 
-    def fake_page(api_key, *, last_appid, dlc=False, **_kw):
-        seen.append(dlc)
+    def fake_page(api_key, *, last_appid, types, **_kw):
+        seen.append(types)
         return [1], len(seen) < 2, len(seen)
 
     monkeypatch.setattr(discovery, "_fetch_universe_page", fake_page)
-    assert discovery.discover_universe("key", dlc=True) == [1, 1]
-    assert seen == [True, True]
+    games = frozenset({"games"})
+    assert discovery.discover_universe("key", types=games) == [1, 1]
+    assert seen == [games, games]
+
+
+def test_discover_universe_demos_only_skips_applist(monkeypatch) -> None:
+    # Со всеми include_*=0 GetAppList отдаёт весь каталог без фильтра.
+    def _boom(*_a, **_k):
+        raise AssertionError("GetAppList не должен вызываться")
+
+    monkeypatch.setattr(discovery, "_fetch_universe_page", _boom)
+    assert discovery.discover_universe("k", types=frozenset({"demos"})) == []
 
 
 def test_fetch_universe_page_missing_response_returns_empty(
@@ -220,11 +238,11 @@ def test_discover_candidates_subtracts_owned_and_wishlisted(
     assert out == [1, 4, 5]
 
 
-def test_discover_candidates_passes_dlc_to_universe(monkeypatch) -> None:
+def test_discover_candidates_passes_types_to_universe(monkeypatch) -> None:
     captured = {}
 
-    def fake_universe(_key, *, dlc=False, **_kw):
-        captured["dlc"] = dlc
+    def fake_universe(_key, *, types, **_kw):
+        captured["types"] = types
         return []
 
     monkeypatch.setattr(discovery, "discover_universe", fake_universe)
@@ -232,9 +250,43 @@ def test_discover_candidates_passes_dlc_to_universe(monkeypatch) -> None:
     monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: set())
 
     discovery.discover_candidates(
-        api_key="key", steam_id="76561198190468628", dlc=True
+        api_key="key", steam_id="76561198190468628", types=frozenset({"dlc"})
     )
-    assert captured["dlc"] is True
+    assert captured["types"] == frozenset({"dlc"})
+
+
+def test_discover_candidates_demos_come_from_store(monkeypatch) -> None:
+    monkeypatch.setattr(
+        discovery, "discover_universe", lambda _k, **_kw: [1, 2]
+    )
+    monkeypatch.setattr(
+        discovery.demos_discovery,
+        "discover_candidates",
+        lambda **_k: [2, 50, 60],
+    )
+    monkeypatch.setattr(discovery, "fetch_owned_games", lambda _k, _s: [])
+    monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: {60})
+
+    out = discovery.discover_candidates(api_key="key", steam_id="s")
+
+    assert out == [1, 2, 50]
+
+
+def test_discover_candidates_without_demos_skips_store(monkeypatch) -> None:
+    monkeypatch.setattr(discovery, "discover_universe", lambda _k, **_kw: [1])
+
+    def _boom(**_k):
+        raise AssertionError("витрина демо не должна вызываться")
+
+    monkeypatch.setattr(discovery.demos_discovery, "discover_candidates", _boom)
+    monkeypatch.setattr(discovery, "fetch_owned_games", lambda _k, _s: [])
+    monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: set())
+
+    out = discovery.discover_candidates(
+        api_key="key", steam_id="s", types=frozenset({"games"})
+    )
+
+    assert out == [1]
 
 
 def test_discover_candidates_universe_failure_propagates(
