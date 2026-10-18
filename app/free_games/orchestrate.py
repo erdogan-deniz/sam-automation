@@ -14,7 +14,7 @@ from app.steam.steam_local import find_steam_path
 log = logging.getLogger("sam_automation")
 
 
-def discover(*, include_demos: bool = True) -> list[int]:
+def discover() -> list[int]:
     """Фаза discover: витрина free → candidates.txt минус owned/added/refused.
 
     owned вычисляется из client.licenses живой CM-сессии (authoritative для
@@ -24,7 +24,7 @@ def discover(*, include_demos: bool = True) -> list[int]:
     на фазе add как DuplicateRequest/refused).
     """
     log.info(SEPARATOR)
-    discovered = discovery.discover_candidates(include_demos=include_demos)
+    discovered = discovery.discover_candidates()
     log.info("Store search: всего обнаружено кандидатов: %d", len(discovered))
 
     steam_path = find_steam_path()
@@ -61,7 +61,15 @@ def discover(*, include_demos: bool = True) -> list[int]:
 
 
 def add(*, limit: int | None = None) -> licenses.AddResult:
-    """Фаза add: request_free_license батчами по candidates.txt (resume-aware)."""
+    """Фаза add: request_free_license батчами по candidates.txt (resume-aware).
+
+    persist инкрементально — по мере решения каждого батча в add_licenses —
+    переживает жёсткий килл процесса посреди многоминутного retry-шторма
+    (см. licenses.add_licenses.persist). Финальный проход по result.* после
+    возврата избыточен на успешном пути (все appid уже персистнуты через
+    persist), но остаётся страховкой — тот же паттерн, что в
+    app.wishlist.orchestrate.add.
+    """
     candidates = state.load_candidates()
     already_added = state.load_added_ids()
     already_refused = state.load_refused_ids()
@@ -83,13 +91,21 @@ def add(*, limit: int | None = None) -> licenses.AddResult:
     log.info(SEPARATOR)
     log.info("Добавление бесплатных лицензий: %d кандидатов", len(pending))
 
+    def _persist(appid: int, outcome: str) -> None:
+        if outcome == "added":
+            state.mark_added(appid)
+        elif outcome == "refused":
+            state.mark_refused(appid)
+        else:
+            state.mark_error(appid)
+
     with cm_session() as client:
         if client is None:
             log.error("Steam CM: вход не удался — добавление невозможно")
             for appid in pending:
                 state.mark_error(appid)
             return licenses.AddResult(error=list(pending))
-        result = licenses.add_licenses(client, pending)
+        result = licenses.add_licenses(client, pending, persist=_persist)
 
     for appid in result.added:
         state.mark_added(appid)
@@ -106,7 +122,6 @@ def run(
     do_add: bool,
     list_only: bool,
     limit: int | None,
-    include_demos: bool,
     cfg: Any,
 ) -> None:
     """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True.
@@ -127,7 +142,7 @@ def run(
     candidates: list[int] = []
     result = licenses.AddResult()
     try:
-        candidates = discover(include_demos=include_demos)
+        candidates = discover()
         if do_add:
             result = add(limit=limit)
     except KeyboardInterrupt:

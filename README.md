@@ -78,9 +78,9 @@ python scripts/playtime/boost.py
 
 ### Growing the library (CLI)
 
-Both scripts are **dry-run by default** — they only report what they found.
-The account is modified only when you pass `--add`. Both are resumable: state
-lives in `data/games/ids/` and a re-run picks up where it stopped.
+All three scripts are **dry-run by default** — they only report what they
+found. The account is modified only when you pass `--add`. All are resumable:
+state lives in `data/games/ids/` and a re-run picks up where it stopped.
 
 ```bash
 # Add every free Steam game/app to your library (CM request_free_license)
@@ -91,7 +91,15 @@ python scripts/library/add_free.py --add      # actually add
 #    --reset         wipe resume state
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
-#    --no-demos      skip demos during discovery
+
+# Add every demo to your library (same CM mechanism, separate from add_free.py)
+python scripts/library/add_demos.py           # dry-run: how many candidates
+python scripts/library/add_demos.py --add     # actually add
+
+#    --list          show current candidates and exit
+#    --reset         wipe resume state
+#    --retry-errors  retry transient failures (clears error.txt)
+#    --limit N       cap how many are added per run
 
 # Add the Steam catalog to your wishlist (IWishlistService/AddToWishlist)
 python scripts/library/wishlist_add.py         # dry-run: how many candidates
@@ -104,10 +112,27 @@ python scripts/library/wishlist_add.py --add   # actually add
 #    --interval SEC  pause between adds (default 1.0; 0 = full speed)
 ```
 
-Both stop honestly rather than pretending to finish: `add_free.py` stops when
-the account hits its free-license ceiling, and `wishlist_add.py` backs off on
-Steam's rate limit and stops after five consecutive throttles. Neither reports
-success when it stopped early.
+All three stop honestly rather than pretending to finish: `add_free.py` and
+`add_demos.py` stop when the account hits its free-license ceiling, and
+`wishlist_add.py` backs off on Steam's rate limit and stops after five
+consecutive throttles. None report success when they stopped early.
+
+### Checking the records against Steam (CLI)
+
+The library scripts record what they added in `added.txt`. `ground_truth.py`
+checks those records against the account itself: every App ID in the free-games
+and demos `added.txt` must be owned, every one in the wishlist `added.txt` must
+be on the wishlist. A mismatch usually means a run was killed before Steam's
+answer was saved. Read-only: it changes nothing in Steam or in `data/`, and needs
+neither SAM nor the run lock.
+
+```bash
+python scripts/verify/ground_truth.py
+
+# exit 0  everything matches
+# exit 1  mismatches found — listed in the log
+# exit 2  no mismatches, but some checks could not run (Steam API error) — retry later
+```
 
 ## Configuration (`config.yaml`)
 
@@ -162,6 +187,7 @@ sam-automation/
 │   ├── auth/               # Steam authentication (TOTP, JWT, keyring)
 │   ├── cards/              # Card drop tracking and farming logic
 │   ├── cookies/            # Steam web cookie extraction
+│   ├── demos/              # Demo discovery and granting (CM, mirrors free_games/)
 │   ├── free_games/         # Free-license discovery and granting (CM)
 │   ├── sam/                # SAM process automation (launcher, UI)
 │   ├── steam/              # Steam data access (API, CM, local files)
@@ -185,9 +211,12 @@ sam-automation/
 │   │   └── farm.py         # Idle games to collect card drops
 │   ├── library/
 │   │   ├── add_free.py     # Add every free Steam game/app to the library
+│   │   ├── add_demos.py    # Add every demo to the library
 │   │   └── wishlist_add.py # Add the Steam catalog to the wishlist
-│   └── playtime/
-│       └── boost.py        # Boost low-playtime games via short SAM sessions
+│   ├── playtime/
+│   │   └── boost.py        # Boost low-playtime games via short SAM sessions
+│   └── verify/
+│       └── ground_truth.py # Check added.txt records against the Steam account
 ├── .github/
 │   ├── workflows/ci.yml    # CI: version check, pre-commit, tests
 │   └── scripts/
@@ -200,6 +229,7 @@ sam-automation/
 │           ├── all.txt             # Master list of App IDs (from scan.py)
 │           ├── achievements/       # unlocked, error, without
 │           ├── cards/              # done.txt
+│           ├── demos/              # candidates, added, refused, error
 │           ├── free/               # candidates, added, refused, error
 │           ├── playtime/           # done.txt, skip.txt
 │           └── wishlist/           # candidates, added, refused, error
@@ -236,8 +266,8 @@ Delete or edit them manually if needed.
 | --- | --- |
 | `done.txt` | Games with no remaining card drops |
 
-**Free games** (`data/games/ids/free/`) and **Wishlist**
-(`data/games/ids/wishlist/`) share the same four-file layout:
+**Free games** (`data/games/ids/free/`), **Demos** (`data/games/ids/demos/`)
+and **Wishlist** (`data/games/ids/wishlist/`) share the same four-file layout:
 
 | File | Purpose |
 | --- | --- |
@@ -260,6 +290,9 @@ Steam API returned no owned games at all) persists neither `done.txt` nor
 `done.txt`, or `--retry-skips` to clear `skip.txt` and retry skipped games.
 
 Session logs are written to `logs/` with timestamps (`YYYY-MM-DD_HH-MM-SS.log`).
+Each script keeps its last 5 log files; older ones are deleted on start. A log
+that grows past 20 MB continues in `YYYY-MM-DD_HH-MM-SS_part02.log` and so on,
+and those parts count toward the five.
 
 ## Password storage
 

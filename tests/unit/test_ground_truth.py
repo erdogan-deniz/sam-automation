@@ -111,6 +111,48 @@ def test_check_wishlist_reports_missing_from_live_wishlist(
     assert gt._check_wishlist(_STEAM_ID) == [20]
 
 
+# ── _check_demos ─────────────────────────────────────────────────────────
+
+
+def test_check_demos_no_added_skips_api_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gt.demos_state, "load_added_ids", lambda: set())
+
+    def _boom(api_key, steam_id):
+        raise AssertionError("не должен звать API без added.txt")
+
+    monkeypatch.setattr(gt, "fetch_owned_games", _boom)
+
+    assert gt._check_demos("key", _STEAM_ID) == []
+
+
+def test_check_demos_all_owned_no_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gt.demos_state, "load_added_ids", lambda: {228980})
+    monkeypatch.setattr(
+        gt,
+        "fetch_owned_games",
+        lambda api_key, steam_id: [{"appid": 228980}],
+    )
+
+    assert gt._check_demos("key", _STEAM_ID) == []
+
+
+def test_check_demos_reports_missing_from_owned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gt.demos_state, "load_added_ids", lambda: {228980, 999})
+    monkeypatch.setattr(
+        gt,
+        "fetch_owned_games",
+        lambda api_key, steam_id: [{"appid": 228980}],
+    )
+
+    assert gt._check_demos("key", _STEAM_ID) == [999]
+
+
 # ── main() — коды выхода ────────────────────────────────────────────────
 
 
@@ -120,6 +162,7 @@ def test_main_returns_normally_when_everything_matches(
     _setup(monkeypatch)
     monkeypatch.setattr(gt, "_check_free_games", lambda key, sid: [])
     monkeypatch.setattr(gt, "_check_wishlist", lambda sid: [])
+    monkeypatch.setattr(gt, "_check_demos", lambda key, sid: [])
 
     gt.main()  # не должен звать sys.exit вовсе — успешное завершение
 
@@ -130,6 +173,7 @@ def test_main_exits_one_when_free_games_mismatch(
     _setup(monkeypatch)
     monkeypatch.setattr(gt, "_check_free_games", lambda key, sid: [999])
     monkeypatch.setattr(gt, "_check_wishlist", lambda sid: [])
+    monkeypatch.setattr(gt, "_check_demos", lambda key, sid: [])
 
     with pytest.raises(SystemExit) as exc:
         gt.main()
@@ -142,6 +186,66 @@ def test_main_exits_one_when_wishlist_mismatch(
     _setup(monkeypatch)
     monkeypatch.setattr(gt, "_check_free_games", lambda key, sid: [])
     monkeypatch.setattr(gt, "_check_wishlist", lambda sid: [20])
+    monkeypatch.setattr(gt, "_check_demos", lambda key, sid: [])
+
+    with pytest.raises(SystemExit) as exc:
+        gt.main()
+    assert exc.value.code == 1
+
+
+def _boom_runtime(*_a: object) -> list[int]:
+    raise RuntimeError("Steam API: game_count=5, но список games пуст")
+
+
+def test_main_failed_check_exits_two_and_still_runs_others(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # B-6: сбой Steam API в одной проверке — это «не удалось проверить», а не
+    # сырой traceback и не «всё в порядке». Остальные проверки отрабатывают.
+    _setup(monkeypatch)
+    ran: list[str] = []
+    monkeypatch.setattr(gt, "_check_free_games", _boom_runtime)
+    monkeypatch.setattr(
+        gt, "_check_wishlist", lambda sid: ran.append("wishlist") or []
+    )
+    monkeypatch.setattr(
+        gt, "_check_demos", lambda key, sid: ran.append("demos") or []
+    )
+
+    with (
+        caplog.at_level("INFO", logger="sam_automation"),
+        pytest.raises(SystemExit) as exc,
+    ):
+        gt.main()
+
+    assert exc.value.code == 2
+    assert ran == ["wishlist", "demos"]
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "соответствует Steam" not in logged
+    assert "НЕ ЗАВЕРШЕНА" in logged
+
+
+def test_main_mismatch_wins_over_failed_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Найденное расхождение важнее «не удалось проверить» — код 1.
+    _setup(monkeypatch)
+    monkeypatch.setattr(gt, "_check_free_games", _boom_runtime)
+    monkeypatch.setattr(gt, "_check_wishlist", lambda sid: [20])
+    monkeypatch.setattr(gt, "_check_demos", lambda key, sid: [])
+
+    with pytest.raises(SystemExit) as exc:
+        gt.main()
+    assert exc.value.code == 1
+
+
+def test_main_exits_one_when_demos_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _setup(monkeypatch)
+    monkeypatch.setattr(gt, "_check_free_games", lambda key, sid: [])
+    monkeypatch.setattr(gt, "_check_wishlist", lambda sid: [])
+    monkeypatch.setattr(gt, "_check_demos", lambda key, sid: [228980])
 
     with pytest.raises(SystemExit) as exc:
         gt.main()

@@ -137,6 +137,14 @@ def test_flush_pause_between_kill_and_recheck() -> None:
     )
 
 
+def test_flush_pause_at_least_30_seconds() -> None:
+    """Решение владельца 18.10.2026 по многолетнему опыту фарма: после
+    закрытия всех игр ждать не меньше 30 с — подвисшие (особенно последние)
+    карты выпадают как раз в этот момент."""
+    farm = _load()
+    assert farm._FLUSH_PAUSE_SECONDS >= 30
+
+
 def test_survivors_requeued_and_done_marked() -> None:
     """Игра с 0 остатком — done; с остатком >0 — перезапуск в след. цикле."""
     events = _run(

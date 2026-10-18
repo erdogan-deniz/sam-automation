@@ -276,16 +276,50 @@ def test_fetch_owned_games_missing_games_key_returns_empty(
     assert steam_api.fetch_owned_games("key", _VALID_ID) == []
 
 
-def test_fetch_owned_games_warns_on_count_positive_empty_games(
+# B-6: game_count>0 при пустом games — битый/частичный ответ. Раньше это был
+# тот же [], что и «у аккаунта нет игр», и вызывающий не мог их различить:
+# ground_truth.py видел owned=∅ и объявлял ВСЕ added.txt потерянными. Теперь
+# — несколько повторов, и если ответ не исправился, RuntimeError (все
+# вызывающие уже обрабатывают его как «источник недоступен»).
+
+
+def test_fetch_owned_games_count_positive_empty_games_raises(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr(
-        steam_api,
-        "_api_get",
-        lambda url: {"response": {"game_count": 5, "games": []}},
-    )
-    with caplog.at_level(logging.WARNING, logger="sam_automation"):
-        result = steam_api.fetch_owned_games("key", _VALID_ID)
+    calls = {"n": 0}
 
-    assert result == []
+    def fake_api_get(url: str) -> dict:
+        calls["n"] += 1
+        return {"response": {"game_count": 5, "games": []}}
+
+    monkeypatch.setattr(steam_api, "_api_get", fake_api_get)
+    monkeypatch.setattr(steam_api.time, "sleep", lambda *_a: None)
+
+    with (
+        caplog.at_level(logging.WARNING, logger="sam_automation"),
+        pytest.raises(RuntimeError, match="game_count"),
+    ):
+        steam_api.fetch_owned_games("key", _VALID_ID)
+
+    assert calls["n"] == 1 + steam_api._AMBIGUOUS_OWNED_RETRIES
     assert any("game_count" in r.getMessage() for r in caplog.records)
+
+
+def test_fetch_owned_games_count_positive_empty_games_recovers_on_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = [
+        {"response": {"game_count": 2, "games": []}},
+        {
+            "response": {
+                "game_count": 2,
+                "games": [{"appid": 10}, {"appid": 20}],
+            }
+        },
+    ]
+    monkeypatch.setattr(steam_api, "_api_get", lambda url: responses.pop(0))
+    monkeypatch.setattr(steam_api.time, "sleep", lambda *_a: None)
+
+    result = steam_api.fetch_owned_games("key", _VALID_ID)
+
+    assert [g["appid"] for g in result] == [10, 20]
