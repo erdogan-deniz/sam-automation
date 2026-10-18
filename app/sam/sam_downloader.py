@@ -210,9 +210,12 @@ def ensure_sam(exe_path: str) -> str:
     Returns:
         Актуальный путь к SAM.Game.exe
     """
-    if not Path(exe_path).exists():
-        log.warning("SAM.Game.exe не найден по пути: %s", exe_path)
+    # is_file, не exists: папка (и пустой путь — это ".") не SAM.Game.exe.
+    if not Path(exe_path).is_file():
         sam_dir = Path(exe_path).parent
+        log.info(
+            "SAM.Game.exe не найден — скачиваю автоматически в %s", sam_dir
+        )
         return download_sam(str(sam_dir))
 
     try:
