@@ -61,9 +61,9 @@ limit, cfg)`.
   licenses`) — pending = candidates минус added/refused/error (срез по
   `limit`); пустой pending → `AddResult()` без захода в CM; иначе
   `with cm_session() as client:` (None → ВСЕ pending сразу в `error.txt`,
-  восстановимо `--retry-errors`) → `licenses.add_licenses(client, pending)`
-  → персист батчем ПОСЛЕ полного возврата (тот же паттерн и тот же класс
-  риска, что в add_free.py — см. ЗНАЧИМЫЕ ПОВЕДЕНИЯ).
+  восстановимо `--retry-errors`) → `licenses.add_licenses(client, pending,
+  persist=_persist)` — state пишется сразу после каждого батча (см.
+  ЗНАЧИМЫЕ ПОВЕДЕНИЯ); финальный проход по `result.*` — страховка.
 - `run(...)` — `discover()`+`add()` под ОБЩИМ try/except (KeyboardInterrupt→
   interrupted, Exception→error); dry-run (`not do_add`) печатает статус
   `dry_run` с `added=len(candidates)`; иначе `report.report_result(status,
@@ -86,12 +86,14 @@ limit, cfg)`.
   модуль `app.steam.store_search` (вынесен 2026-09-12) — сетевой баг чинится
   в одном месте для обоих скриптов, не дублируется.
 - `app/free_games/licenses.py` (ПЕРЕИСПОЛЬЗУЕТСЯ, не свой модуль) —
-  `add_licenses(client, appids, *, batch_size=BATCH_SIZE=20) -> AddResult`.
+  `add_licenses(client, appids, *, batch_size=BATCH_SIZE=20, persist=None)
+  -> AddResult`.
   Классификация `EResult`: `LimitExceeded(25)` → `hit_cap=True`, СТЕНА,
   немедленный стоп; `RateLimitExceeded(84)` ИЛИ `granted_appids is None` →
   ретрай через `_TRANSIENT_RETRY_DELAY=30.0`с БЕЗ ограничения попыток; прочее
   → `refused`; исключение → `error`. Подробности констант — `add-free.md`
-  (та же реализация, тот же баг-фикс закрывает оба скрипта разом).
+  (та же реализация: фикс в `licenses.py` действует на оба скрипта, но
+  `persist` каждый вызывающий передаёт сам).
 - `app/demos/orchestrate.py` — `discover`/`add`/`run` (см. выше).
 - `app/demos/state.py` — `load_candidates/save_candidates/load_added_ids/
   load_refused_ids/load_error_ids/mark_added/mark_refused/mark_error/
@@ -123,13 +125,12 @@ limit, cfg)`.
 - `discover()` УСТОЙЧИВ к отсутствию Steam/неуспеху CM-логина (просто не
   вычитает owned — WARNING, не сбой); `add()` НЕ устойчив: неуспех логина →
   ВСЕ pending разом в `error.txt` (per-appid `--retry-errors` их вернёт).
-- Персист `add()` — БАТЧЕМ после полного возврата `add_licenses()`, НЕ
-  инкрементально по appid — ТОТ ЖЕ класс риска, что открытая находка B-1 в
-  `docs/backlog.md` для free_games (Ctrl+C/исключение посреди
-  многоминутного retry-шторма теряет уже выданные лицензии из `added.txt`).
-  Если/когда B-1 будет закрыт (persist-callback в `app.free_games.licenses.
-  add_licenses`), `app/demos/orchestrate.py::add()` унаследует фикс
-  автоматически — модуль переиспользуется, не дублирован.
+- Персист `add()` — по каждому батчу через `persist`-колбэк
+  `add_licenses` (FG-1/B-1, закрыто 2026-10-18): килл посреди многоминутного
+  retry-шторма теряет максимум текущий батч (≤20 appid). Колбэк передаёт
+  САМ `app/demos/orchestrate.add()` — общий `licenses.py` без `persist`
+  работает по-старому, так что при правке `add()` не потеряй аргумент
+  (страхует `test_add_wires_working_persist_callback_to_add_licenses`).
 - `ground_truth.py::_check_demos` сверяет `added.txt` (demos) с
   `GetOwnedGames` тем же способом, что `_check_free_games` — тот же слепой
   участок B-6 (неоднозначный пустой ответ Steam API) относится и сюда.
@@ -142,8 +143,8 @@ limit, cfg)`.
 - Реальный сетевой путь (store-search HTML-парсинг, CM
   `request_free_license`) не тестируется — ожидаемо, фейки покрывают только
   логику (то же ограничение, что у add_free.py).
-- Батчевый (не инкрементальный) персист в `add()` не проверен на «жёсткий
-  килл посреди многочасового прогона» — см. B-1 в backlog, тот же риск.
+- Пер-батчевый персист покрыт юнит-тестами с имитацией килла, но живьём на
+  реальном retry-шторме не проверялся.
 - Живой e2e-прогон (сколько demo реально находится/добавляется на реальном
   аккаунте) НЕ проводился — discovery только юнит-тестирован на фейковом
   HTTP.
