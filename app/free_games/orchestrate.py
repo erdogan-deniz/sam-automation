@@ -61,7 +61,15 @@ def discover() -> list[int]:
 
 
 def add(*, limit: int | None = None) -> licenses.AddResult:
-    """Фаза add: request_free_license батчами по candidates.txt (resume-aware)."""
+    """Фаза add: request_free_license батчами по candidates.txt (resume-aware).
+
+    persist инкрементально — по мере решения каждого батча в add_licenses —
+    переживает жёсткий килл процесса посреди многоминутного retry-шторма
+    (см. licenses.add_licenses.persist). Финальный проход по result.* после
+    возврата избыточен на успешном пути (все appid уже персистнуты через
+    persist), но остаётся страховкой — тот же паттерн, что в
+    app.wishlist.orchestrate.add.
+    """
     candidates = state.load_candidates()
     already_added = state.load_added_ids()
     already_refused = state.load_refused_ids()
@@ -83,13 +91,21 @@ def add(*, limit: int | None = None) -> licenses.AddResult:
     log.info(SEPARATOR)
     log.info("Добавление бесплатных лицензий: %d кандидатов", len(pending))
 
+    def _persist(appid: int, outcome: str) -> None:
+        if outcome == "added":
+            state.mark_added(appid)
+        elif outcome == "refused":
+            state.mark_refused(appid)
+        else:
+            state.mark_error(appid)
+
     with cm_session() as client:
         if client is None:
             log.error("Steam CM: вход не удался — добавление невозможно")
             for appid in pending:
                 state.mark_error(appid)
             return licenses.AddResult(error=list(pending))
-        result = licenses.add_licenses(client, pending)
+        result = licenses.add_licenses(client, pending, persist=_persist)
 
     for appid in result.added:
         state.mark_added(appid)
