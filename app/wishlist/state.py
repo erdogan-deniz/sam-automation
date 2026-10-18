@@ -3,10 +3,10 @@
 Зеркало app/free_games/state.py, свой каталог data/games/ids/wishlist/ (не
 пересекается с free/achievements/cards/playtime).
 
-  candidates.txt     — universe минус owned/wishlisted/added/refused
-                       (все типы, кроме DLC)
-  candidates_dlc.txt — то же для DLC (--dls, B-14); отдельный файл, чтобы
-                       --list одного режима не показывал кандидатов другого
+  candidates.txt — universe минус owned/wishlisted/added/refused (все типы)
+  candidates_<типы>.txt — то же для выбранных флагами типов (B-14), напр.
+                   candidates_dlc.txt; отдельный файл, чтобы --list одного
+                   набора типов не показывал кандидатов другого
   added.txt      — успешно добавлено (x-eresult=1) — skip
   refused.txt    — терминально (owned/уже-в-вишлисте/invalid) — skip
   error.txt      — транзиентная сетевая ошибка — восстановим --retry-errors
@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from app.cache import GAMES_DIR
@@ -23,29 +24,37 @@ from app.id_file import (
     load_ids_file,
     read_ids_ordered,
 )
+from app.wishlist.content import ALL_TYPES, ordered
 
 _WISHLIST_DIR = GAMES_DIR / "ids" / "wishlist"
 
 CANDIDATES_FILE = _WISHLIST_DIR / "candidates.txt"
-CANDIDATES_DLC_FILE = _WISHLIST_DIR / "candidates_dlc.txt"
 ADDED_FILE = _WISHLIST_DIR / "added.txt"
 REFUSED_FILE = _WISHLIST_DIR / "refused.txt"
 ERROR_FILE = _WISHLIST_DIR / "error.txt"
 
 
-def _candidates_file(dlc: bool) -> Path:
-    return CANDIDATES_DLC_FILE if dlc else CANDIDATES_FILE
+def candidates_file(types: Iterable[str] = ALL_TYPES) -> Path:
+    """candidates.txt для всех типов, иначе candidates_<типы>.txt."""
+    chosen = frozenset(types)
+    if chosen == ALL_TYPES:
+        return CANDIDATES_FILE
+    return CANDIDATES_FILE.with_name(
+        f"candidates_{'_'.join(ordered(chosen))}.txt"
+    )
 
 
-def load_candidates(*, dlc: bool = False) -> list[int]:
+def load_candidates(types: Iterable[str] = ALL_TYPES) -> list[int]:
     """candidates с сохранением порядка обнаружения (дедуп первых вхождений)."""
-    return read_ids_ordered(_candidates_file(dlc))
+    return read_ids_ordered(candidates_file(types))
 
 
-def save_candidates(appids: list[int], *, dlc: bool = False) -> None:
+def save_candidates(
+    appids: list[int], types: Iterable[str] = ALL_TYPES
+) -> None:
     """Атомарно перезаписывает candidates (числовая сортировка, дедуп)."""
     _atomic_write_text(
-        _candidates_file(dlc),
+        candidates_file(types),
         "\n".join(str(i) for i in sorted(set(appids))) + "\n",
     )
 
@@ -81,13 +90,14 @@ def clear_error_ids() -> None:
 
 
 def clear_state() -> None:
-    """Удаляет ВСЁ resume-состояние (--reset) обоих режимов."""
-    for path in (
+    """Удаляет ВСЁ resume-состояние (--reset), кандидатов всех наборов типов."""
+    paths = [
         CANDIDATES_FILE,
-        CANDIDATES_DLC_FILE,
+        *CANDIDATES_FILE.parent.glob("candidates_*.txt"),
         ADDED_FILE,
         REFUSED_FILE,
         ERROR_FILE,
-    ):
+    ]
+    for path in paths:
         if path.exists():
             path.unlink()
