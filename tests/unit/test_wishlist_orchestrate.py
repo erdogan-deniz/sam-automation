@@ -15,9 +15,6 @@ def _patch_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         state_mod, "CANDIDATES_FILE", tmp_path / "candidates.txt"
     )
-    monkeypatch.setattr(
-        state_mod, "CANDIDATES_DLC_FILE", tmp_path / "candidates_dlc.txt"
-    )
     monkeypatch.setattr(state_mod, "ADDED_FILE", tmp_path / "added.txt")
     monkeypatch.setattr(state_mod, "REFUSED_FILE", tmp_path / "refused.txt")
     monkeypatch.setattr(state_mod, "ERROR_FILE", tmp_path / "error.txt")
@@ -46,7 +43,7 @@ def test_discover_passes_api_key_and_steam_id_through(
     _patch_state(monkeypatch, tmp_path)
     captured = {}
 
-    def fake_discover_candidates(*, api_key, steam_id, dlc=False):
+    def fake_discover_candidates(*, api_key, steam_id, types):
         captured["api_key"] = api_key
         captured["steam_id"] = steam_id
         return []
@@ -79,12 +76,14 @@ def test_discover_failure_propagates_without_overwriting_candidates(
     assert state_mod.load_candidates() == [100, 200, 300]
 
 
-def test_discover_dlc_saves_into_dlc_candidates(monkeypatch, tmp_path) -> None:
+def test_discover_types_saves_into_own_candidates(
+    monkeypatch, tmp_path
+) -> None:
     _patch_state(monkeypatch, tmp_path)
     captured = {}
 
-    def fake_discover_candidates(*, api_key, steam_id, dlc=False):
-        captured["dlc"] = dlc
+    def fake_discover_candidates(*, api_key, steam_id, types):
+        captured["types"] = types
         return [7, 8]
 
     monkeypatch.setattr(
@@ -92,17 +91,17 @@ def test_discover_dlc_saves_into_dlc_candidates(monkeypatch, tmp_path) -> None:
     )
     state_mod.save_candidates([1])
 
-    orch.discover(api_key="k", steam_id="s", dlc=True)
+    orch.discover(api_key="k", steam_id="s", types=frozenset({"dlc"}))
 
-    assert captured["dlc"] is True
-    assert state_mod.load_candidates(dlc=True) == [7, 8]
+    assert captured["types"] == frozenset({"dlc"})
+    assert state_mod.load_candidates({"dlc"}) == [7, 8]
     assert state_mod.load_candidates() == [1]
 
 
-def test_add_dlc_takes_dlc_candidates(monkeypatch, tmp_path) -> None:
+def test_add_types_takes_own_candidates(monkeypatch, tmp_path) -> None:
     _patch_state(monkeypatch, tmp_path)
     state_mod.save_candidates([1, 2])
-    state_mod.save_candidates([9], dlc=True)
+    state_mod.save_candidates([9], {"dlc"})
     monkeypatch.setattr(
         orch, "get_web_cookies", lambda *a, **k: {"steamLoginSecure": "x||tok"}
     )
@@ -114,7 +113,7 @@ def test_add_dlc_takes_dlc_candidates(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(orch.wishlist_api, "add_pending", fake_add_pending)
 
-    orch.add(dlc=True)
+    orch.add(types=frozenset({"dlc"}))
 
     assert seen["pending"] == [9]
 
@@ -483,12 +482,12 @@ def test_run_list_only_does_not_call_discover(monkeypatch, tmp_path) -> None:
     )
 
 
-def test_run_list_only_dlc_prints_dlc_candidates(
+def test_run_list_only_prints_candidates_of_chosen_types(
     monkeypatch, tmp_path, capsys
 ) -> None:
     _patch_state(monkeypatch, tmp_path)
     state_mod.save_candidates([1, 2])
-    state_mod.save_candidates([9], dlc=True)
+    state_mod.save_candidates([9], {"dlc"})
 
     orch.run(
         do_add=False,
@@ -498,27 +497,28 @@ def test_run_list_only_dlc_prints_dlc_candidates(
         api_key="k",
         steam_id="s",
         cfg=SimpleNamespace(),
-        dlc=True,
+        types=frozenset({"dlc"}),
     )
 
     assert capsys.readouterr().out.split() == ["9"]
 
 
-def test_run_passes_dlc_to_discover_and_add(monkeypatch, tmp_path) -> None:
+def test_run_passes_types_to_discover_and_add(monkeypatch, tmp_path) -> None:
     _patch_state(monkeypatch, tmp_path)
     seen: dict = {}
 
     def fake_discover(**kw):
-        seen["discover"] = kw.get("dlc")
+        seen["discover"] = kw.get("types")
         return []
 
     def fake_add(**kw):
-        seen["add"] = kw.get("dlc")
+        seen["add"] = kw.get("types")
         return orch.wishlist_api.AddResult()
 
     monkeypatch.setattr(orch, "discover", fake_discover)
     monkeypatch.setattr(orch, "add", fake_add)
     monkeypatch.setattr(orch.report, "report_result", lambda **kw: None)
+    games = frozenset({"games"})
 
     orch.run(
         do_add=True,
@@ -528,10 +528,10 @@ def test_run_passes_dlc_to_discover_and_add(monkeypatch, tmp_path) -> None:
         api_key="k",
         steam_id="s",
         cfg=SimpleNamespace(),
-        dlc=True,
+        types=games,
     )
 
-    assert seen == {"discover": True, "add": True}
+    assert seen == {"discover": games, "add": games}
 
 
 def test_run_dry_run_reports_without_adding(monkeypatch, tmp_path) -> None:

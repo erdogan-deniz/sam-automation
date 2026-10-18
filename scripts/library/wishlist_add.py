@@ -1,7 +1,7 @@
 """Auto-add Wishlist — добавляет позиции каталога Steam в вишлист аккаунта.
 
-Игры и DLC добавляются раздельно: без флага — все типы, кроме DLC (игры,
-софт, видео, железо), с --dls — только DLC.
+Без флагов типа — все типы контента. Флаги --games, --dlc, --demos,
+--software, --videos, --hardware сужают выбор и складываются.
 
 Две фазы: discover (GetAppList минус owned/wishlisted → candidates.txt) и add
 (добавление по одному через IWishlistService, resume-aware, адаптивный
@@ -11,7 +11,8 @@ backoff на rate-limit). По умолчанию — dry-run (только disc
 Использование:
     python scripts/library/wishlist_add.py              # dry-run: сколько найдено
     python scripts/library/wishlist_add.py --add         # реально добавить
-    python scripts/library/wishlist_add.py --add --dls   # то же, только DLC
+    python scripts/library/wishlist_add.py --add --dlc   # то же, только DLC
+    python scripts/library/wishlist_add.py --add --games --demos
     python scripts/library/wishlist_add.py --list        # показать candidates.txt
     python scripts/library/wishlist_add.py --add --limit 100
     python scripts/library/wishlist_add.py --add --retry-errors
@@ -38,6 +39,7 @@ from app.steam import resolve_steam_id
 from app.validator import validate
 from app.wishlist import run
 from app.wishlist import state as wishlist_state
+from app.wishlist.content import ALL_TYPES, CONTENT_TYPES
 
 log = logging.getLogger("sam_automation")
 
@@ -51,13 +53,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Реально добавить в вишлист (по умолчанию — dry-run, только discover)",
     )
-    parser.add_argument(
-        "--dls",
-        "--DLS",
-        dest="dlc",
-        action="store_true",
-        help="Только DLC (по умолчанию — все типы, кроме DLC)",
+    types = parser.add_argument_group(
+        "типы контента (без флагов — все; флаги складываются)"
     )
+    types.add_argument("--games", action="store_true", help="Игры")
+    types.add_argument(
+        "--dlc", "--DLC", "--dls", "--DLS", action="store_true", help="DLC"
+    )
+    types.add_argument("--demos", action="store_true", help="Демо")
+    types.add_argument("--software", action="store_true", help="Софт")
+    types.add_argument("--videos", action="store_true", help="Видео")
+    types.add_argument("--hardware", action="store_true", help="Железо")
     parser.add_argument(
         "--list",
         action="store_true",
@@ -86,6 +92,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Пауза между добавлениями в секундах (0 = максимальная скорость)",
     )
     return parser
+
+
+def _selected_types(args: argparse.Namespace) -> frozenset[str]:
+    """Типы из флагов; ни одного флага — все типы."""
+    chosen = frozenset(t for t in CONTENT_TYPES if getattr(args, t))
+    return chosen or ALL_TYPES
 
 
 def main() -> None:
@@ -127,7 +139,7 @@ def main() -> None:
         api_key=cfg.steam_api_key,
         steam_id=cfg.steam_id,
         cfg=cfg,
-        dlc=args.dlc,
+        types=_selected_types(args),
     )
 
 

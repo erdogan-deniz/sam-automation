@@ -26,10 +26,11 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
 Две фазы. **Discover**: вселенная через `IStoreService/GetAppList/v1`
-(пагинация по `last_appid`; без флага — games/software/videos/hardware,
-с `--dls` — только DLC, B-14 от 19.10.2026) минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
+(пагинация по `last_appid`) плюс демо из поиска витрины
+(`app.demos.discovery`: у GetAppList фильтра демо нет); типы выбираются
+флагами, без флагов — все (B-14 от 19.10.2026); минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
 (`IWishlistService/GetWishlist/v1`, keyless) минус added/refused →
-`candidates.txt` (`candidates_dlc.txt` при `--dls`). **Add**: по одному appid (batch-эндпоинта у Steam нет)
+`state.candidates_file(types)`. **Add**: по одному appid (batch-эндпоинта у Steam нет)
 через `POST IWishlistService/AddToWishlist/v1` с community-JWT. Дефолт —
 dry-run (только discover + отчёт); реальное добавление — только по `--add`.
 
@@ -50,10 +51,10 @@ args.add, list_only=args.list, limit=args.limit, interval=args.interval,
 api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 
 `app/wishlist/orchestrate.py`:
-- `discover(*, api_key, steam_id, dlc=False) -> list[int]` — `discovery.discover_candidates`
+- `discover(*, api_key, steam_id, types=ALL_TYPES) -> list[int]` — `discovery.discover_candidates`
   (universe минус owned минус wishlisted, оба через Web API — см. КЛЮЧЕВЫЕ
   ФАЙЛЫ) минус added/refused → `state.save_candidates`.
-- `add(*, limit=None, interval=1.0, dlc=False) -> wishlist_api.AddResult` — pending =
+- `add(*, limit=None, interval=1.0, types=ALL_TYPES) -> wishlist_api.AddResult` — pending =
   candidates минус added/refused/error (срез по `limit`); пустой pending →
   `AddResult()`; `cookies = get_web_cookies("", interactive=False)` — `None`
   → `AddResult(auth_fail=True)` БЕЗ пометки appid в error (сбой СЕССИИ, не
@@ -74,9 +75,10 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   refused, error, hit_wall=result.hit_wall, cfg)`.
 
 # CLI-ФЛАГИ
-`--add` (реально добавить, иначе dry-run) · `--dls`/`--DLS` (только
-DLC; без него — все типы, кроме DLC) · `--list` (показать кандидатов
-текущего режима и выйти) · `--reset` (стереть весь state) ·
+`--add` (реально добавить, иначе dry-run) · типы `--games`, `--dlc`
+(он же `--DLC`/`--dls`/`--DLS`), `--demos`, `--software`, `--videos`,
+`--hardware` — складываются, без них все типы · `--list` (показать
+кандидатов выбранных типов и выйти) · `--reset` (стереть весь state) ·
 `--retry-errors` (стереть только `error.txt`) · `--limit N` (потолок
 добавлений за прогон) · `--interval SEC` (пауза между добавлениями, дефолт
 1.0; 0 = максимальная скорость).
@@ -84,14 +86,18 @@ DLC; без него — все типы, кроме DLC) · `--list` (пока�
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - `scripts/library/wishlist_add.py` — CLI, разбор флагов, resolve→validate,
   wiring в `app.wishlist.run`.
-- `app/wishlist/discovery.py` — `discover_universe(api_key, *, dlc=False,
+- `app/wishlist/content.py` — типы контента: `APPLIST_TYPES` (пять фильтров
+  GetAppList), `CONTENT_TYPES` (плюс `demos`), `ALL_TYPES`.
+- `app/wishlist/discovery.py` — `discover_universe(api_key, *, types=ALL_TYPES,
   max_pages=200) -> list[int]`: пагинация `IStoreService/GetAppList/v1`
-  (`_MAX_RESULTS=50000`/страница; `_type_params(dlc)` ставит все пять
-  `include_*` явно, потому что `include_games` по умолчанию включён) через `last_appid`-курсор
+  (`_MAX_RESULTS=50000`/страница; `_type_params(types)` ставит все пять
+  `include_*` явно, потому что `include_games` по умолчанию включён; без
+  единого типа GetAppList не зовётся — со всеми нулями отдаёт весь каталог) через `last_appid`-курсор
   до `have_more_results=False` или пустой страницы. `fetch_wishlist_ids(
   steam_id) -> set[int]`: `IWishlistService/GetWishlist/v1` (keyless), снято
   вживую на 24 253 позициях ОДНИМ ответом — пагинация читателю НЕ нужна.
-  `discover_candidates(*, api_key, steam_id, dlc=False) -> list[int]`: universe минус
+  `discover_candidates(*, api_key, steam_id, types=ALL_TYPES) -> list[int]`:
+  universe (+ демо витрины, если `demos` в types) минус
   owned (`fetch_owned_games`) минус wishlisted; ОБА сбоя owned/wishlisted
   ПРОГЛАТЫВАЮТСЯ (WARNING, не вычитается — самоисцеление: лишнее появление
   отсеется как refused при add); сбой САМОГО universe (`GetAppList`) НЕ
@@ -128,9 +134,10 @@ DLC; без него — все типы, кроме DLC) · `--list` (пока�
 
 # STATE-ФАЙЛЫ (data/games/ids/wishlist/)
 - `candidates.txt` — universe минус owned/wishlisted/added/refused
-  (все типы, кроме DLC).
-- `candidates_dlc.txt` — то же для `--dls`. `added`/`refused`/`error` общие
-  для обоих режимов: appid у игры и DLC не совпадают.
+  (все типы).
+- `candidates_<типы>.txt` — то же для выбранных флагами типов, имя в
+  каноническом порядке (`candidates_dlc.txt`, `candidates_games_demos.txt`).
+  `added`/`refused`/`error` общие: appid у разных типов не совпадают.
 - `added.txt` — успешно добавлено (x-eresult=1).
 - `refused.txt` — терминально (owned/уже-в-вишлисте/delisted) — только `--reset` вернёт.
 - `error.txt` — транзиентная сетевая ошибка — восстановимо `--retry-errors`.
@@ -161,6 +168,10 @@ DLC; без него — все типы, кроме DLC) · `--list` (пока�
   оправдано). Не «исправляй» это на импорт enum без веской причины.
 
 # ПРОБЕЛЫ В ТЕСТАХ (если правишь — закрой TDD)
+- **Демо (19.10.2026):** не проверено, принимает ли `AddToWishlist` демо.
+  Поиск витрины ловит 429 примерно на 22-й странице (~2100 из 36 185 демо)
+  и после трёх попыток по 2 с обрывает выборку; следующий прогон начнёт с
+  тех же первых страниц.
 > Проверено 2026-08-10: фича построена через TDD (75 тестов в
 > test_wishlist_{api,discovery,orchestrate,report,state}.py) и живьём
 > e2e-верифицирована (234 955 кандидатов dry-run, 24 281 добавлено за
