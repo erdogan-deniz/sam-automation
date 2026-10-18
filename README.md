@@ -40,6 +40,8 @@ steam_id:      "YOUR_STEAM_ID"
 
 ## Usage
 
+Flag names are case-insensitive in every script: `--RESET` is `--reset`.
+
 ### Achievements (CLI)
 
 ```bash
@@ -105,10 +107,9 @@ python scripts/library/add_demos.py --add     # actually add
 python scripts/library/wishlist_add.py         # dry-run: how many candidates
 python scripts/library/wishlist_add.py --add   # actually add
 
-#    --games --dlc --software --videos --hardware
+#    --games --software --videos --hardware
 #                    only these types, flags combine (default: all);
-#                    demos go to the library via add_demos.py instead
-#    flag names are case-insensitive: --DLC is --dlc
+#                    no DLC or demos (demos go to the library via add_demos.py)
 #    --list          show current candidates and exit
 #    --reset         wipe resume state
 #    --retry-errors  retry transient failures (clears error.txt)
@@ -281,7 +282,7 @@ and **Wishlist** (`data/games/ids/wishlist/`) share the same four-file layout:
 | `error.txt` | Transient failures; cleared and retried with `--retry-errors` |
 
 The wishlist keeps candidates of each type selection apart, e.g.
-`candidates_dlc.txt` for `--dlc` or `candidates_games_software.txt`.
+`candidates_games.txt` for `--games` or `candidates_games_software.txt`.
 
 **Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
 API reports playtime for are gated on the **actual** `playtime_forever`: those at

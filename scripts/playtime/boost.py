@@ -34,6 +34,7 @@ from app.cache import (
     mark_playtime_done,
     mark_playtime_skip,
 )
+from app.cli import casefold_options
 from app.config import load_config
 from app.id_file import read_ids_ordered
 from app.logging_setup import SEPARATOR, setup_logging
@@ -359,7 +360,7 @@ def _boost_loop(games: list[dict], cfg: Any, persist_done: bool = True) -> None:
 
 def main() -> None:
     """Точка входа: парсит аргументы CLI и запускает цикл набивки playtime."""
-    args = _build_parser().parse_args()
+    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
     setup_logging(name="boost_playtime", category="playtime/boost")
     cfg = load_config()

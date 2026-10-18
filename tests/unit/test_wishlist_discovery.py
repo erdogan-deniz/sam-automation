@@ -53,7 +53,7 @@ def _capture_url(monkeypatch) -> dict:  # type: ignore[no-untyped-def]
     return captured
 
 
-def test_fetch_universe_page_default_requests_all_applist_types(
+def test_fetch_universe_page_default_requests_all_but_dlc(
     monkeypatch,
 ) -> None:
     captured = _capture_url(monkeypatch)
@@ -61,7 +61,7 @@ def test_fetch_universe_page_default_requests_all_applist_types(
     for flag in (
         "key=mykey",
         "include_games=1",
-        "include_dlc=1",
+        "include_dlc=0",
         "include_software=1",
         "include_videos=1",
         "include_hardware=1",
@@ -70,16 +70,18 @@ def test_fetch_universe_page_default_requests_all_applist_types(
         assert flag in captured["url"]
 
 
-def test_fetch_universe_page_dlc_requests_only_dlc(monkeypatch) -> None:
+def test_fetch_universe_page_software_requests_only_software(
+    monkeypatch,
+) -> None:
     # B-14. include_games у GetAppList по умолчанию true — выключать явно.
     captured = _capture_url(monkeypatch)
     discovery._fetch_universe_page(
-        "mykey", last_appid=5, types=frozenset({"dlc"})
+        "mykey", last_appid=5, types=frozenset({"software"})
     )
     for flag in (
         "include_games=0",
-        "include_dlc=1",
-        "include_software=0",
+        "include_dlc=0",
+        "include_software=1",
         "include_videos=0",
         "include_hardware=0",
     ):
@@ -242,9 +244,11 @@ def test_discover_candidates_passes_types_to_universe(monkeypatch) -> None:
     monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: set())
 
     discovery.discover_candidates(
-        api_key="key", steam_id="76561198190468628", types=frozenset({"dlc"})
+        api_key="key",
+        steam_id="76561198190468628",
+        types=frozenset({"software"}),
     )
-    assert captured["types"] == frozenset({"dlc"})
+    assert captured["types"] == frozenset({"software"})
 
 
 def test_discover_candidates_universe_failure_propagates(
