@@ -193,6 +193,52 @@ def test_main_exits_one_when_wishlist_mismatch(
     assert exc.value.code == 1
 
 
+def _boom_runtime(*_a: object) -> list[int]:
+    raise RuntimeError("Steam API: game_count=5, но список games пуст")
+
+
+def test_main_failed_check_exits_two_and_still_runs_others(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # B-6: сбой Steam API в одной проверке — это «не удалось проверить», а не
+    # сырой traceback и не «всё в порядке». Остальные проверки отрабатывают.
+    _setup(monkeypatch)
+    ran: list[str] = []
+    monkeypatch.setattr(gt, "_check_free_games", _boom_runtime)
+    monkeypatch.setattr(
+        gt, "_check_wishlist", lambda sid: ran.append("wishlist") or []
+    )
+    monkeypatch.setattr(
+        gt, "_check_demos", lambda key, sid: ran.append("demos") or []
+    )
+
+    with (
+        caplog.at_level("INFO", logger="sam_automation"),
+        pytest.raises(SystemExit) as exc,
+    ):
+        gt.main()
+
+    assert exc.value.code == 2
+    assert ran == ["wishlist", "demos"]
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "соответствует Steam" not in logged
+    assert "НЕ ЗАВЕРШЕНА" in logged
+
+
+def test_main_mismatch_wins_over_failed_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Найденное расхождение важнее «не удалось проверить» — код 1.
+    _setup(monkeypatch)
+    monkeypatch.setattr(gt, "_check_free_games", _boom_runtime)
+    monkeypatch.setattr(gt, "_check_wishlist", lambda sid: [20])
+    monkeypatch.setattr(gt, "_check_demos", lambda key, sid: [])
+
+    with pytest.raises(SystemExit) as exc:
+        gt.main()
+    assert exc.value.code == 1
+
+
 def test_main_exits_one_when_demos_mismatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

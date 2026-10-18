@@ -13,6 +13,10 @@ GetPlayerAchievements не имеет batch-варианта (по игре за
 Ничего не чинит и не пишет в data/ — только сообщает расхождения. Не требует
 SAM/run-lock (как scan.py) — чистый Steam API read-only отчёт.
 
+Коды выхода: 0 — всё сверено, расхождений нет; 1 — найдены расхождения;
+2 — расхождений не найдено, но часть проверок не выполнилась (сбой Steam API,
+битый ответ) — «не проверено», а не «всё в порядке» и не «всё потеряно».
+
 Использование:
     python scripts/verify/ground_truth.py
 """
@@ -20,6 +24,7 @@ SAM/run-lock (как scan.py) — чистый Steam API read-only отчёт.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -76,8 +81,34 @@ def _check_wishlist(steam_id: str) -> list[int]:
     return sorted(added - live)
 
 
+def _run_check(
+    title: str,
+    check: Callable[[], list[int]],
+    mismatch_msg: str,
+    ok_msg: str,
+) -> list[int] | None:
+    """Одна сверка; None — проверку выполнить не удалось.
+
+    Сбой Steam API (RuntimeError из _api_get, битый ответ GetOwnedGames) —
+    это «не проверено», а не «всё потеряно» и не сырой traceback: остальные
+    проверки должны отработать.
+    """
+    log.info(SEPARATOR)
+    log.info(title)
+    try:
+        mismatched = check()
+    except Exception as e:
+        log.error("Проверка НЕ выполнена: %s", e)
+        return None
+    if mismatched:
+        log.warning(mismatch_msg, len(mismatched), mismatched)
+    else:
+        log.info(ok_msg)
+    return mismatched
+
+
 def main() -> None:
-    """Сверяет added.txt free_games и wishlist с реальным состоянием Steam."""
+    """Сверяет added.txt free_games, wishlist и demos с реальным Steam."""
     print()
     setup_logging(name="ground_truth", category="verify/ground_truth")
     log.info("Сверка bookkeeping с реальным состоянием Steam")
@@ -93,48 +124,42 @@ def main() -> None:
 
     validate(cfg)
 
-    log.info(SEPARATOR)
-    log.info("Free games: added.txt vs GetOwnedGames")
-    mismatched_free = _check_free_games(cfg.steam_api_key, cfg.steam_id)
-    if mismatched_free:
-        log.warning(
+    key, sid = cfg.steam_api_key, cfg.steam_id
+    results = {
+        "free games": _run_check(
+            "Free games: added.txt vs GetOwnedGames",
+            lambda: _check_free_games(key, sid),
             "%d appid в added.txt НЕ найдены среди owned (потерянный "
             "персист?): %s",
-            len(mismatched_free),
-            mismatched_free,
-        )
-    else:
-        log.info("Расхождений нет — все added.txt реально owned")
-
-    log.info(SEPARATOR)
-    log.info("Wishlist: added.txt vs GetWishlist")
-    mismatched_wishlist = _check_wishlist(cfg.steam_id)
-    if mismatched_wishlist:
-        log.warning(
+            "Расхождений нет — все added.txt реально owned",
+        ),
+        "wishlist": _run_check(
+            "Wishlist: added.txt vs GetWishlist",
+            lambda: _check_wishlist(sid),
             "%d appid в added.txt НЕ найдены в реальном вишлисте: %s",
-            len(mismatched_wishlist),
-            mismatched_wishlist,
-        )
-    else:
-        log.info("Расхождений нет — все added.txt реально в вишлисте")
-
-    log.info(SEPARATOR)
-    log.info("Demos: added.txt vs GetOwnedGames")
-    mismatched_demos = _check_demos(cfg.steam_api_key, cfg.steam_id)
-    if mismatched_demos:
-        log.warning(
+            "Расхождений нет — все added.txt реально в вишлисте",
+        ),
+        "demos": _run_check(
+            "Demos: added.txt vs GetOwnedGames",
+            lambda: _check_demos(key, sid),
             "%d appid в added.txt (demos) НЕ найдены среди owned "
             "(потерянный персист?): %s",
-            len(mismatched_demos),
-            mismatched_demos,
-        )
-    else:
-        log.info("Расхождений нет — все added.txt (demos) реально owned")
+            "Расхождений нет — все added.txt (demos) реально owned",
+        ),
+    }
 
     log.info(SEPARATOR)
-    if mismatched_free or mismatched_wishlist or mismatched_demos:
+    if any(results.values()):
         log.warning("Сверка завершена С РАСХОЖДЕНИЯМИ — см. выше")
         sys.exit(1)
+    failed = [name for name, r in results.items() if r is None]
+    if failed:
+        log.error(
+            "Сверка НЕ ЗАВЕРШЕНА — не удалось проверить: %s. Расхождений "
+            "в остальном не найдено; повтори позже.",
+            ", ".join(failed),
+        )
+        sys.exit(2)
     log.info("Сверка завершена — bookkeeping соответствует Steam")
 
 
