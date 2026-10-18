@@ -1,5 +1,8 @@
 """Auto-add Wishlist — добавляет позиции каталога Steam в вишлист аккаунта.
 
+Игры и DLC добавляются раздельно: без флага — все типы, кроме DLC (игры,
+софт, видео, железо), с --dls — только DLC.
+
 Две фазы: discover (GetAppList минус owned/wishlisted → candidates.txt) и add
 (добавление по одному через IWishlistService, resume-aware, адаптивный
 backoff на rate-limit). По умолчанию — dry-run (только discover + отчёт),
@@ -8,6 +11,7 @@ backoff на rate-limit). По умолчанию — dry-run (только disc
 Использование:
     python scripts/library/wishlist_add.py              # dry-run: сколько найдено
     python scripts/library/wishlist_add.py --add         # реально добавить
+    python scripts/library/wishlist_add.py --add --dls   # то же, только DLC
     python scripts/library/wishlist_add.py --list        # показать candidates.txt
     python scripts/library/wishlist_add.py --add --limit 100
     python scripts/library/wishlist_add.py --add --retry-errors
@@ -48,9 +52,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Реально добавить в вишлист (по умолчанию — dry-run, только discover)",
     )
     parser.add_argument(
+        "--dls",
+        "--DLS",
+        dest="dlc",
+        action="store_true",
+        help="Только DLC (по умолчанию — все типы, кроме DLC)",
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
-        help="Показать текущих кандидатов из candidates.txt и выйти",
+        help="Показать кандидатов текущего режима и выйти",
     )
     parser.add_argument(
         "--reset",
@@ -116,6 +127,7 @@ def main() -> None:
         api_key=cfg.steam_api_key,
         steam_id=cfg.steam_id,
         cfg=cfg,
+        dlc=args.dlc,
     )
 
 

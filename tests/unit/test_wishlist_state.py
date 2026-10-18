@@ -13,6 +13,9 @@ def _patch_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         state_mod, "CANDIDATES_FILE", tmp_path / "candidates.txt"
     )
+    monkeypatch.setattr(
+        state_mod, "CANDIDATES_DLC_FILE", tmp_path / "candidates_dlc.txt"
+    )
     monkeypatch.setattr(state_mod, "ADDED_FILE", tmp_path / "added.txt")
     monkeypatch.setattr(state_mod, "REFUSED_FILE", tmp_path / "refused.txt")
     monkeypatch.setattr(state_mod, "ERROR_FILE", tmp_path / "error.txt")
@@ -74,11 +77,24 @@ def test_clear_state_removes_everything(
 ) -> None:
     _patch_all(monkeypatch, tmp_path)
     state_mod.save_candidates([730])
+    state_mod.save_candidates([731], dlc=True)
     state_mod.mark_added(730)
     state_mod.mark_refused(10)
     state_mod.mark_error(20)
     state_mod.clear_state()
     assert state_mod.load_candidates() == []
+    assert state_mod.load_candidates(dlc=True) == []
     assert state_mod.load_added_ids() == set()
     assert state_mod.load_refused_ids() == set()
     assert state_mod.load_error_ids() == set()
+
+
+def test_dlc_candidates_kept_apart_from_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # B-14: --list без --dls не должен показывать DLC прошлого прогона.
+    _patch_all(monkeypatch, tmp_path)
+    state_mod.save_candidates([10, 20])
+    state_mod.save_candidates([30], dlc=True)
+    assert state_mod.load_candidates() == [10, 20]
+    assert state_mod.load_candidates(dlc=True) == [30]

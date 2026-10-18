@@ -36,8 +36,8 @@ def test_fetch_universe_page_parses_appids_have_more_and_cursor(
     assert last_appid == 30
 
 
-def test_fetch_universe_page_requests_all_content_types(monkeypatch) -> None:
-    captured = {}
+def _capture_url(monkeypatch) -> dict:  # type: ignore[no-untyped-def]
+    captured: dict = {}
 
     def fake_api_get(url: str) -> dict:
         captured["url"] = url
@@ -50,17 +50,52 @@ def test_fetch_universe_page_requests_all_content_types(monkeypatch) -> None:
         }
 
     monkeypatch.setattr(discovery, "_api_get", fake_api_get)
+    return captured
+
+
+def test_fetch_universe_page_default_requests_everything_but_dlc(
+    monkeypatch,
+) -> None:
+    # B-14: без --dls — игры, софт, видео и железо, но не DLC.
+    captured = _capture_url(monkeypatch)
     discovery._fetch_universe_page("mykey", last_appid=5)
     for flag in (
         "key=mykey",
         "include_games=1",
-        "include_dlc=1",
+        "include_dlc=0",
         "include_software=1",
         "include_videos=1",
         "include_hardware=1",
         "last_appid=5",
     ):
         assert flag in captured["url"]
+
+
+def test_fetch_universe_page_dlc_requests_only_dlc(monkeypatch) -> None:
+    # include_games у GetAppList по умолчанию true — выключать явно.
+    captured = _capture_url(monkeypatch)
+    discovery._fetch_universe_page("mykey", last_appid=5, dlc=True)
+    for flag in (
+        "include_games=0",
+        "include_dlc=1",
+        "include_software=0",
+        "include_videos=0",
+        "include_hardware=0",
+        "last_appid=5",
+    ):
+        assert flag in captured["url"]
+
+
+def test_discover_universe_passes_dlc_to_every_page(monkeypatch) -> None:
+    seen: list[bool] = []
+
+    def fake_page(api_key, *, last_appid, dlc=False, **_kw):
+        seen.append(dlc)
+        return [1], len(seen) < 2, len(seen)
+
+    monkeypatch.setattr(discovery, "_fetch_universe_page", fake_page)
+    assert discovery.discover_universe("key", dlc=True) == [1, 1]
+    assert seen == [True, True]
 
 
 def test_fetch_universe_page_missing_response_returns_empty(
@@ -183,6 +218,23 @@ def test_discover_candidates_subtracts_owned_and_wishlisted(
         api_key="key", steam_id="76561198190468628"
     )
     assert out == [1, 4, 5]
+
+
+def test_discover_candidates_passes_dlc_to_universe(monkeypatch) -> None:
+    captured = {}
+
+    def fake_universe(_key, *, dlc=False, **_kw):
+        captured["dlc"] = dlc
+        return []
+
+    monkeypatch.setattr(discovery, "discover_universe", fake_universe)
+    monkeypatch.setattr(discovery, "fetch_owned_games", lambda _k, _s: [])
+    monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: set())
+
+    discovery.discover_candidates(
+        api_key="key", steam_id="76561198190468628", dlc=True
+    )
+    assert captured["dlc"] is True
 
 
 def test_discover_candidates_universe_failure_propagates(
