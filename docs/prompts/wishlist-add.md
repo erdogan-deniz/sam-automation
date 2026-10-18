@@ -161,12 +161,10 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 > e2e-верифицирована (234 955 кандидатов dry-run, 24 281 добавлено за
 > несколько прогонов), но НИКОГДА не проходила формальный многоосевой аудит
 > после релиза (в отличие от scan.py/boost.py).
-- `scripts/library/wishlist_add.py::main()` — ЦЕЛИКОМ без покрытия: нет
-  `test_wishlist_add.py`/`test_wishlist_add_main.py`. Разбор флагов
-  (включая `--interval`), порядок resolve→validate, guard `--list` vs
-  `--reset`/`--retry-errors`, wiring в `run()` не тестируются напрямую (в
-  отличие от `test_boost_main.py`/`test_farm_main.py`/
-  `test_cards_farm_main.py`).
+- ~~`scripts/library/wishlist_add.py::main()` — целиком без покрытия.~~
+  ЗАКРЫТО 2026-10-19 (B-2): `tests/unit/test_wishlist_add_main.py` — то же,
+  что у add_free, плюс `--interval` (дефолт 1.0) и то, что в `run()` уходит
+  резолвнутый ID64 и `api_key`.
 - Реальный сетевой путь (`IWishlistService`, `GetAppList` пагинация) не
   тестируется — ожидаемо, фейки покрывают только логику классификации/backoff.
 - Долгий (многочасовой/многодневный) реальный прогон против устойчивого

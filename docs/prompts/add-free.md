@@ -152,11 +152,10 @@ limit, cfg)`.
 > test_free_games_{discovery,licenses,orchestrate,report,state}.py) и
 > живьём e2e-верифицирована (3441 кандидат dry-run), но НИКОГДА не проходила
 > формальный многоосевой аудит после релиза (в отличие от scan.py/boost.py).
-- `scripts/library/add_free.py::main()` — ЦЕЛИКОМ без покрытия: нет
-  `test_add_free.py`/`test_add_free_main.py`. Ни разбор флагов, ни порядок
-  resolve→validate, ни guard `--list` vs `--reset`/`--retry-errors`, ни
-  wiring в `run()` не тестируются напрямую (в отличие от `test_boost_main.py`/
-  `test_farm_main.py`/`test_cards_farm_main.py`).
+- ~~`scripts/library/add_free.py::main()` — целиком без покрытия.~~ ЗАКРЫТО
+  2026-10-19 (B-2): `tests/unit/test_add_free_main.py` — порядок
+  resolve→validate, пустой/битый steam_id, guard `--list` vs `--reset`,
+  `--reset`/`--retry-errors`, wiring `--add`/`--limit` в `run()`.
 - Пер-батчевый персист покрыт юнит-тестами с имитацией килла
   (`SystemExit` на втором батче), но живьём на реальном retry-шторме не
   проверялся.
