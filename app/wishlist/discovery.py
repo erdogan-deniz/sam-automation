@@ -19,17 +19,33 @@ log = logging.getLogger("sam_automation")
 _MAX_RESULTS = 50000  # максимум GetAppList/v1 на страницу
 
 
+def _type_params(dlc: bool) -> str:
+    """Фильтр типов GetAppList (B-14): DLC — отдельным прогоном.
+
+    Без dlc — игры, софт, видео и железо; с dlc — только DLC. Все пять
+    флагов явные: include_games у GetAppList по умолчанию включён.
+    """
+    on, off = ("0", "1") if dlc else ("1", "0")
+    return (
+        f"&include_games={on}&include_dlc={off}&include_software={on}"
+        f"&include_videos={on}&include_hardware={on}"
+    )
+
+
 def _fetch_universe_page(
-    api_key: str, *, last_appid: int, max_results: int = _MAX_RESULTS
+    api_key: str,
+    *,
+    last_appid: int,
+    dlc: bool = False,
+    max_results: int = _MAX_RESULTS,
 ) -> tuple[list[int], bool, int]:
-    """Одна страница GetAppList/v1 (все типы контента).
+    """Одна страница GetAppList/v1 (все типы, кроме DLC, или только DLC).
 
     Возвращает (appids, have_more_results, следующий last_appid).
     """
     url = (
         f"{BASE_URL}/IStoreService/GetAppList/v1/?key={api_key}"
-        f"&include_games=1&include_dlc=1&include_software=1"
-        f"&include_videos=1&include_hardware=1"
+        f"{_type_params(dlc)}"
         f"&max_results={max_results}&last_appid={last_appid}"
     )
     data = _api_get(url)
@@ -41,8 +57,10 @@ def _fetch_universe_page(
     return appids, have_more, next_last_appid
 
 
-def discover_universe(api_key: str, *, max_pages: int = 200) -> list[int]:
-    """Пагинирует GetAppList/v1 до конца каталога (games+dlc+software+videos+hardware).
+def discover_universe(
+    api_key: str, *, dlc: bool = False, max_pages: int = 200
+) -> list[int]:
+    """Пагинирует GetAppList/v1 до конца каталога (типы — см. _type_params).
 
     max_pages — защита от зависания, если Steam когда-либо вернёт
     have_more_results=True с незменяющимся курсором.
@@ -51,7 +69,7 @@ def discover_universe(api_key: str, *, max_pages: int = 200) -> list[int]:
     last_appid = 0
     for _page in range(max_pages):
         appids, have_more, last_appid = _fetch_universe_page(
-            api_key, last_appid=last_appid
+            api_key, last_appid=last_appid, dlc=dlc
         )
         if not appids:
             break
@@ -70,8 +88,10 @@ def fetch_wishlist_ids(steam_id: str) -> set[int]:
     return {int(it["appid"]) for it in items if it.get("appid") is not None}
 
 
-def discover_candidates(*, api_key: str, steam_id: str) -> list[int]:
-    """Вселенная минус owned минус wishlisted.
+def discover_candidates(
+    *, api_key: str, steam_id: str, dlc: bool = False
+) -> list[int]:
+    """Вселенная минус owned минус wishlisted (dlc — только DLC, B-14).
 
     Устойчив к сбою owned/wishlisted: недоступны → просто не вычитаются
     (WARNING в лог, лишнее появление отсеется как refused при add —
@@ -83,9 +103,10 @@ def discover_candidates(*, api_key: str, steam_id: str) -> list[int]:
     накопленный прогресс. Пробрасывая исключение, caller (run()) ловит его
     честным status="error" и НЕ вызывает save_candidates() вовсе.
     """
-    universe = discover_universe(api_key)
+    universe = discover_universe(api_key, dlc=dlc)
     log.info(
-        "Wishlist: вселенная кандидатов (GetAppList, все типы): %d",
+        "Wishlist: вселенная кандидатов (GetAppList, %s): %d",
+        "только DLC" if dlc else "все типы, кроме DLC",
         len(universe),
     )
 

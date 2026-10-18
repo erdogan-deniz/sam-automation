@@ -12,12 +12,12 @@ from app.wishlist import discovery, report, state, wishlist_api
 log = logging.getLogger("sam_automation")
 
 
-def discover(*, api_key: str, steam_id: str) -> list[int]:
+def discover(*, api_key: str, steam_id: str, dlc: bool = False) -> list[int]:
     """Фаза discover: universe (GetAppList) минус owned/wishlisted (Web API)
-    минус added/refused (state) → candidates.txt."""
+    минус added/refused (state) → candidates.txt (candidates_dlc.txt при dlc)."""
     log.info(SEPARATOR)
     discovered = discovery.discover_candidates(
-        api_key=api_key, steam_id=steam_id
+        api_key=api_key, steam_id=steam_id, dlc=dlc
     )
     log.info(
         "Wishlist: обнаружено кандидатов (минус owned/wishlisted): %d",
@@ -31,7 +31,7 @@ def discover(*, api_key: str, steam_id: str) -> list[int]:
         for a in discovered
         if a not in already_added and a not in already_refused
     ]
-    state.save_candidates(candidates)
+    state.save_candidates(candidates, dlc=dlc)
     log.info(
         "Кандидатов к добавлению (минус added/refused): %d", len(candidates)
     )
@@ -39,7 +39,7 @@ def discover(*, api_key: str, steam_id: str) -> list[int]:
 
 
 def add(
-    *, limit: int | None = None, interval: float = 1.0
+    *, limit: int | None = None, interval: float = 1.0, dlc: bool = False
 ) -> wishlist_api.AddResult:
     """Фаза add: добавляет pending appid по одному (resume-aware).
 
@@ -50,7 +50,7 @@ def add(
     метит ВСЕ pending как error — там сессия внутри cm_session() ближе к
     per-run ресурсу, не хранится между запусками).
     """
-    candidates = state.load_candidates()
+    candidates = state.load_candidates(dlc=dlc)
     already_added = state.load_added_ids()
     already_refused = state.load_refused_ids()
     already_error = state.load_error_ids()
@@ -134,10 +134,14 @@ def run(
     api_key: str,
     steam_id: str,
     cfg: Any,
+    dlc: bool = False,
 ) -> None:
-    """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True."""
+    """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True.
+
+    dlc=True (флаг --dls) — только DLC, иначе все типы, кроме DLC (B-14).
+    """
     if list_only:
-        listed_candidates = state.load_candidates()
+        listed_candidates = state.load_candidates(dlc=dlc)
         for appid in listed_candidates:
             print(appid)
         log.info("Кандидатов в candidates.txt: %d", len(listed_candidates))
@@ -147,9 +151,9 @@ def run(
     candidates: list[int] = []
     result = wishlist_api.AddResult()
     try:
-        candidates = discover(api_key=api_key, steam_id=steam_id)
+        candidates = discover(api_key=api_key, steam_id=steam_id, dlc=dlc)
         if do_add:
-            result = add(limit=limit, interval=interval)
+            result = add(limit=limit, interval=interval, dlc=dlc)
     except KeyboardInterrupt:
         status = "interrupted"
         log.info("Прервано (Ctrl+C).")
