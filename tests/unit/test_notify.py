@@ -112,3 +112,23 @@ def test_send_telegram_silent_on_error() -> None:
         "app.notify.urllib.request.urlopen", side_effect=OSError("network")
     ):
         send_telegram("hi", cfg)  # должно молча проглотить
+
+
+def test_send_telegram_error_log_never_contains_token(caplog) -> None:  # type: ignore[no-untyped-def]
+    """B-7: исключения urllib (напр. http.client.InvalidURL) включают URL с
+    токеном в __str__ — в лог он попасть не должен ни при какой причине."""
+    token = "123456:SECRET-token_value"
+    cfg = Config(telegram_bot_token=token, telegram_chat_id="CHAT")
+    err = ValueError(
+        f"URL can't contain control characters. "
+        f"'/bot{token}/sendMessage' (found at least '\\n')"
+    )
+    with (
+        caplog.at_level("WARNING", logger="sam_automation"),
+        patch("app.notify.urllib.request.urlopen", side_effect=err),
+    ):
+        send_telegram("hi", cfg)
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert "Telegram" in logged  # предупреждение есть
+    assert token not in logged
+    assert "SECRET" not in logged
