@@ -117,6 +117,23 @@ All three stop honestly rather than pretending to finish: `add_free.py` and
 `wishlist_add.py` backs off on Steam's rate limit and stops after five
 consecutive throttles. None report success when they stopped early.
 
+### Checking the records against Steam (CLI)
+
+The library scripts record what they added in `added.txt`. `ground_truth.py`
+checks those records against the account itself: every App ID in the free-games
+and demos `added.txt` must be owned, every one in the wishlist `added.txt` must
+be on the wishlist. A mismatch usually means a run was killed before Steam's
+answer was saved. Read-only: it changes nothing in Steam or in `data/`, and needs
+neither SAM nor the run lock.
+
+```bash
+python scripts/verify/ground_truth.py
+
+# exit 0  everything matches
+# exit 1  mismatches found — listed in the log
+# exit 2  no mismatches, but some checks could not run (Steam API error) — retry later
+```
+
 ## Configuration (`config.yaml`)
 
 | Parameter | Default | Description |
@@ -196,8 +213,10 @@ sam-automation/
 │   │   ├── add_free.py     # Add every free Steam game/app to the library
 │   │   ├── add_demos.py    # Add every demo to the library
 │   │   └── wishlist_add.py # Add the Steam catalog to the wishlist
-│   └── playtime/
-│       └── boost.py        # Boost low-playtime games via short SAM sessions
+│   ├── playtime/
+│   │   └── boost.py        # Boost low-playtime games via short SAM sessions
+│   └── verify/
+│       └── ground_truth.py # Check added.txt records against the Steam account
 ├── .github/
 │   ├── workflows/ci.yml    # CI: version check, pre-commit, tests
 │   └── scripts/
@@ -210,6 +229,7 @@ sam-automation/
 │           ├── all.txt             # Master list of App IDs (from scan.py)
 │           ├── achievements/       # unlocked, error, without
 │           ├── cards/              # done.txt
+│           ├── demos/              # candidates, added, refused, error
 │           ├── free/               # candidates, added, refused, error
 │           ├── playtime/           # done.txt, skip.txt
 │           └── wishlist/           # candidates, added, refused, error
@@ -246,8 +266,8 @@ Delete or edit them manually if needed.
 | --- | --- |
 | `done.txt` | Games with no remaining card drops |
 
-**Free games** (`data/games/ids/free/`) and **Wishlist**
-(`data/games/ids/wishlist/`) share the same four-file layout:
+**Free games** (`data/games/ids/free/`), **Demos** (`data/games/ids/demos/`)
+and **Wishlist** (`data/games/ids/wishlist/`) share the same four-file layout:
 
 | File | Purpose |
 | --- | --- |
