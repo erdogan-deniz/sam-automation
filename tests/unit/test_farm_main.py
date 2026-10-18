@@ -169,6 +169,73 @@ def test_main_prevents_idle_sleep_before_main_loop(monkeypatch) -> None:  # type
     assert calls.count("execstate") == 1
 
 
+# B-9: между launch_picker и try/finally с _teardown_picker стояли
+# prevent_idle_sleep() и load_game_names() — исключение в любом из них
+# оставляло запущенный SAM.Picker.exe висеть.
+
+
+def _stub_through_picker(monkeypatch, calls) -> None:  # type: ignore[no-untyped-def]
+    cfg = _cfg(max_consecutive_errors=5, between_games_delay=0)
+    _stub_main_deps_through_launch(monkeypatch, cfg, calls)
+    monkeypatch.setattr(
+        farm, "launch_picker", lambda path, launch_delay=0: ("proc", "session")
+    )
+    monkeypatch.setattr(
+        farm, "_teardown_picker", lambda proc: calls.append(("teardown", proc))
+    )
+    monkeypatch.setattr(farm, "load_game_names", lambda: {})
+
+
+def test_main_idle_sleep_failure_still_tears_down_picker(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[object] = []
+    _stub_through_picker(monkeypatch, calls)
+
+    def boom() -> bool:
+        raise OSError("kernel32 недоступен")
+
+    monkeypatch.setattr(farm, "prevent_idle_sleep", boom)
+
+    with pytest.raises(OSError):
+        farm.main()
+
+    assert ("teardown", "proc") in calls
+
+
+def test_main_ctrl_c_during_setup_reports_interrupted(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Ctrl+C до первой игры: окно закрыто, отчёт честный «interrupted», а не
+    # NameError на счётчиках итогов (total/results/tracker заведены до try).
+    calls: list[object] = []
+    _stub_through_picker(monkeypatch, calls)
+
+    def ctrl_c() -> bool:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(farm, "prevent_idle_sleep", ctrl_c)
+    monkeypatch.setattr(
+        farm, "_report_result", lambda status, *a: calls.append(status)
+    )
+
+    farm.main()
+
+    assert ("teardown", "proc") in calls
+    assert "interrupted" in calls
+
+
+def test_main_game_names_failure_still_tears_down_picker(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[object] = []
+    _stub_through_picker(monkeypatch, calls)
+
+    def boom() -> dict:
+        raise OSError("names.json не читается")
+
+    monkeypatch.setattr(farm, "load_game_names", boom)
+
+    with pytest.raises(OSError):
+        farm.main()
+
+    assert ("teardown", "proc") in calls
+
+
 def test_main_resolve_failure_exits_cleanly(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     # Сбой резолва (сеть/неуспех vanity) → чистый sys.exit(1), не сырой
     # трейсбек, и до validate НЕ доходим.
