@@ -80,10 +80,12 @@ def test_file_paths_steam_path_empty_string_skipped() -> None:
     assert _check_file_paths(cfg) == []
 
 
-def test_file_paths_sam_exe_missing(tmp_path: Path) -> None:
+def test_file_paths_sam_exe_missing_is_not_an_error(tmp_path: Path) -> None:
+    # Отсутствующий SAM.Game.exe скачивает ensure_sam (README: «downloaded
+    # automatically if missing»). validate() вызывается РАНЬШЕ ensure_sam во
+    # всех трёх SAM-скриптах — ошибка тут обрывала первый запуск до скачивания.
     cfg = Config(sam_game_exe_path=str(tmp_path / "SAM.Game.exe"))
-    errors = _check_file_paths(cfg)
-    assert any("sam_game_exe_path not found" in e for e in errors)
+    assert _check_file_paths(cfg) == []
 
 
 def test_file_paths_sam_exe_exists(tmp_path: Path) -> None:

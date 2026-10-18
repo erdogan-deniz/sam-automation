@@ -53,7 +53,7 @@ def test_discover_subtracts_owned_added_refused(
     state_mod.mark_added(3)
     state_mod.mark_refused(4)
 
-    result = orch.discover(include_demos=True)
+    result = orch.discover()
 
     assert result == [1, 5]  # 2=owned, 3=added, 4=refused исключены
     assert state_mod.load_candidates() == [1, 5]
@@ -70,7 +70,7 @@ def test_discover_no_steam_path_skips_owned_subtraction(
     )
     monkeypatch.setattr(orch, "find_steam_path", lambda: "")
 
-    result = orch.discover(include_demos=True)
+    result = orch.discover()
 
     assert result == [1, 2]  # ничего не вычтено — Steam не найден
 
@@ -85,7 +85,7 @@ def test_discover_cm_login_failed_skips_owned_subtraction(
     monkeypatch.setattr(orch, "find_steam_path", lambda: "C:/steam")
     monkeypatch.setattr(orch, "cm_session", _fake_cm_session(None))
 
-    result = orch.discover(include_demos=True)
+    result = orch.discover()
 
     assert result == [1, 2]  # логин не удался — owned не вычтен, не падаем
 
@@ -168,6 +168,36 @@ def test_add_cm_login_failed_marks_all_pending_as_error(
     assert state_mod.load_error_ids() == {1, 2}
 
 
+def test_add_wires_working_persist_callback_to_add_licenses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Живая находка (аудит 2026-08-10, №1): батч-персист ПОСЛЕ add_licenses()
+    # терял всё накопленное при жёстком килле процесса посреди многоминутного
+    # retry-шторма (Steam-то лицензию уже выдал, а added.txt — нет).
+    # add_licenses теперь зовёт persist инкрементально по каждому решённому
+    # appid батча; здесь проверяем, что orch.add() передаёт ему РАБОЧИЙ
+    # callback, реально пишущий в id-файлы, а не заглушку.
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2, 3])
+    captured = {}
+
+    def fake_add_licenses(client, appids, **kw):
+        captured["persist"] = kw["persist"]
+        # Симулируем жёсткий килл ДО возврата add_licenses: persist уже был
+        # вызван для appid=1, но функция никогда не вернёт AddResult.
+        kw["persist"](1, "added")
+        raise SystemExit("имитация жёсткого килла процесса")
+
+    monkeypatch.setattr(orch.licenses, "add_licenses", fake_add_licenses)
+    monkeypatch.setattr(orch, "cm_session", _fake_cm_session(_FakeClient({})))
+
+    with pytest.raises(SystemExit):
+        orch.add()
+
+    # appid=1 пережил "килл" — persist успел записать его ДО исключения.
+    assert state_mod.load_added_ids() == {1}
+
+
 # ── run(): dry-run / --add / --list ветвление ────────────────────────────────
 
 
@@ -186,7 +216,6 @@ def test_run_list_only_does_not_call_discover(
         do_add=False,
         list_only=True,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -213,7 +242,6 @@ def test_run_dry_run_reports_without_adding(
         do_add=False,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -241,7 +269,6 @@ def test_run_add_reports_ok(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -272,7 +299,6 @@ def test_run_add_session_dead_propagates_to_report(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -299,7 +325,6 @@ def test_run_add_exception_reports_error(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -326,7 +351,6 @@ def test_run_add_keyboard_interrupt_reports_interrupted(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -352,7 +376,6 @@ def test_run_dry_run_discover_keyboard_interrupt_reports_interrupted(
         do_add=False,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -383,7 +406,6 @@ def test_run_add_discover_exception_reports_error_without_calling_add(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )
 
@@ -417,7 +439,6 @@ def test_run_add_report_result_raises_does_not_crash(
         do_add=True,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )  # не должно поднять исключение
 
@@ -437,6 +458,5 @@ def test_run_dry_run_report_result_raises_does_not_crash(
         do_add=False,
         list_only=False,
         limit=None,
-        include_demos=True,
         cfg=SimpleNamespace(),
     )  # не должно поднять исключение

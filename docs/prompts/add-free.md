@@ -15,8 +15,8 @@ CM). Только Windows, Python 3.12, venv в `.venv`. Отвечай коро
 `ruff format --check .`, `mypy app`, `pytest tests/unit -q` (line-length 80,
 target py312; mypy scoped ТОЛЬКО на `app/`, `scripts/` не типизируется).
 git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты conventional,
-тело на русском, заканчивать `Co-Authored-By: Claude Opus 4.8
-<noreply@anthropic.com>`.
+тело на русском, БЕЗ футеров-атрибуций (ни `Co-Authored-By`, ни
+«Generated with …») — ни в коммитах, ни в PR-боди.
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: фича/баг/вопрос. Если баг — приложи реальный вывод
@@ -26,14 +26,19 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
 Две фазы. **Discover**: неофициальный store-search API
-(`store.steampowered.com/search/results/`) собирает кандидатов из трёх
+(`store.steampowered.com/search/results/`) собирает кандидатов из двух
 категорий (F2P-игры `category1=998`+`maxprice=free`, бесплатный софт
-`994`+`maxprice=free`, демо `10` — без `maxprice`, всегда бесплатны), минус
-owned (развёрнутые через `packageinfo.vdf` пакеты живой CM-сессии), минус
-уже added/refused → `candidates.txt`. **Add**: `client.request_free_license`
-батчами по 20 поверх переиспользуемого `cm_session()`. Дефолт — dry-run
-(только discover + отчёт); реальное добавление лицензий необратимо на
-аккаунте (штатными средствами Steam не убрать) — только по `--add`.
+`994`+`maxprice=free`), минус owned (развёрнутые через `packageinfo.vdf`
+пакеты живой CM-сессии), минус уже added/refused → `candidates.txt`.
+**Add**: `client.request_free_license` батчами по 20 поверх переиспользуемого
+`cm_session()`. Дефолт — dry-run (только discover + отчёт); реальное
+добавление лицензий необратимо на аккаунте (штатными средствами Steam не
+убрать) — только по `--add`.
+
+> **Демо (category1=10) больше НЕ входят сюда** (2026-09-12, B-11) — своим
+> отдельным скриптом `scripts/library/add_demos.py`/`app/demos/`, см.
+> `docs/prompts/add-demos.md`. Раньше были частью этого скрипта
+> (`include_demos=True`) — история в git, не здесь.
 
 # ТОЧКА ВХОДА: scripts/library/add_free.py
 `main()`: `_build_parser().parse_args()` → `setup_logging(category="library/
@@ -43,10 +48,10 @@ add_free")` → `load_config()` → если `cfg.steam_id` непусто:
 правильно с самого начала, см. add_free.py:88-97) → `validate(cfg)` → guard
 `--list` vs `--reset`/`--retry-errors` (варнинг, не ошибка) → применяет
 `--reset`/`--retry-errors` к state → `app.free_games.run(do_add, list_only,
-limit, include_demos, cfg)`.
+limit, cfg)`.
 
 `app/free_games/orchestrate.py`:
-- `discover(*, include_demos=True) -> list[int]` — `discovery.discover_candidates`
+- `discover() -> list[int]` — `discovery.discover_candidates`
   → `with cm_session() as client:` (None при неуспехе логина — WARNING, owned
   НЕ вычитается, discover НЕ падает) → `expand_packages_to_apps(steam_path,
   client.licenses.keys())` → кандидаты минус owned/added/refused →
@@ -55,9 +60,10 @@ limit, include_demos, cfg)`.
   added/refused/error (срез по `limit`); пустой pending → `AddResult()` без
   захода в CM; иначе `with cm_session() as client:` (None → ВСЕ pending сразу
   в `error.txt`, НЕ retryable-тихо — восстановимо `--retry-errors`) →
-  `licenses.add_licenses(client, pending)` → персист батчем ПОСЛЕ полного
-  возврата (НЕ инкрементально по appid, в отличие от `app/wishlist/`
-  — см. ПРОБЕЛЫ).
+  `licenses.add_licenses(client, pending, persist=_persist)` — `_persist`
+  пишет `mark_added/refused/error` сразу после каждого батча (FG-1/B-1,
+  2026-10-18); финальный проход по `result.*` после возврата — страховка
+  (`_append_id` идемпотентен).
 - `run(...)` — `discover()`+`add()` под ОБЩИМ try/except (KeyboardInterrupt→
   interrupted, Exception→error); dry-run (`not do_add`) печатает статус
   `dry_run` с `added=len(candidates)`; иначе `report.report_result(status,
@@ -67,21 +73,23 @@ limit, include_demos, cfg)`.
 `--add` (реально добавить, иначе dry-run) · `--list` (показать
 `candidates.txt` и выйти) · `--reset` (стереть весь state) ·
 `--retry-errors` (стереть только `error.txt` — `refused.txt` терминален,
-не трогается) · `--limit N` (потолок добавлений за прогон) · `--no-demos`
-(пропустить демо-подфазу discovery).
+не трогается) · `--limit N` (потолок добавлений за прогон).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
 - `scripts/library/add_free.py` — CLI, разбор флагов, resolve→validate,
   wiring в `app.free_games.run`.
-- `app/free_games/discovery.py` — `discover_candidates(*, include_demos=True,
-  target_count=3000, page_size=100, max_pages=200) -> list[int]`. Свой
-  ретрай на 429/сеть (`_RETRY_ATTEMPTS=3`, `_RETRY_DELAY=2.0`,
-  `_PAGE_DELAY=0.5`) — НЕ через `app.steam.steam_api._api_get` (другой хост
+- `app/free_games/discovery.py` — `discover_candidates(*, target_count=3000,
+  page_size=100, max_pages=200) -> list[int]`. Пагинация (`search_page`/
+  `collect_category`, ретрай на 429/сеть) вынесена в
+  `app.steam.store_search` (2026-09-12) — общий с `app/demos/discovery.py`
+  Store-API примитив, НЕ через `app.steam.steam_api._api_get` (другой хост
   и форма ответа: `results_html`, не типизированный JSON). Не гарантирует
   полноту каталога (Games+free даёт ~20k по `total_count`) — набирает
   кандидатов с запасом относительно потолка лицензий (~1000-2000).
 - `app/free_games/licenses.py` — `add_licenses(client, appids, *,
-  batch_size=BATCH_SIZE=20) -> AddResult`. `BATCH_SIZE=20` — живой A/B на
+  batch_size=BATCH_SIZE=20, persist=None) -> AddResult` (`persist(appid,
+  "added"|"refused"|"error")` — сразу после каждого батча, FG-1).
+  `BATCH_SIZE=20` — живой A/B на
   реальном аккаунте: 50 давало систематический `Timeout` за 10.2с (жёсткий
   `send_job_and_wait`-таймаут библиотеки), 20 — успех за 0.3с (33x запас).
   Классификация `EResult`: `LimitExceeded(25)` → `hit_cap=True`, СТЕНА,
@@ -128,12 +136,12 @@ limit, include_demos, cfg)`.
 - `run()` оборачивает `discover()+add()` ОДНИМ try/except — Ctrl+C/исключение
   внутри `discover()` (включая сам CM-логин) даёт честный `interrupted`/
   `error`, не сырой трейсбек мимо отчёта.
-- Персист `add()` — БАТЧЕМ после полного возврата `add_licenses()`, НЕ
-  инкрементально по appid (сравни с `app/wishlist/orchestrate.add()`, где
-  инкрементальный персист был добавлен именно из-за живой находки о потере
-  прогресса при жёстком килле). **ПОДТВЕРЖДЕНО аудитом 2026-08-10** (было
-  теоретическим риском, теперь CONFIRMED статическим анализом — см. находку
-  №1 ниже): это реальный, воспроизводимый баг, не гипотеза.
+- Персист `add()` — по каждому батчу через `persist`-колбэк `add_licenses`
+  (FG-1/B-1, закрыто 2026-10-18): килл посреди многоминутного retry-шторма
+  теряет максимум текущий батч (≤20 appid), уже решённые батчи в state.
+  Тот же паттерн, что `app/wishlist/orchestrate.add()`. Колбэк живёт в
+  `add_licenses`, поэтому каждый новый вызывающий (как `app/demos/`) обязан
+  передать свой `persist` — без него вернётся старое поведение.
 - `BATCH_SIZE=20` и `_TRANSIENT_RETRY_DELAY=30.0` — живые, не гаданные
   константы (см. licenses.py docstring), но снятые на ОДНОМ конкретном
   аккаунте в ОДНОЙ сессии — не исключено, что для другого аккаунта/момента
@@ -144,52 +152,37 @@ limit, include_demos, cfg)`.
 > test_free_games_{discovery,licenses,orchestrate,report,state}.py) и
 > живьём e2e-верифицирована (3441 кандидат dry-run), но НИКОГДА не проходила
 > формальный многоосевой аудит после релиза (в отличие от scan.py/boost.py).
-- `scripts/library/add_free.py::main()` — ЦЕЛИКОМ без покрытия: нет
-  `test_add_free.py`/`test_add_free_main.py`. Ни разбор флагов, ни порядок
-  resolve→validate, ни guard `--list` vs `--reset`/`--retry-errors`, ни
-  wiring в `run()` не тестируются напрямую (в отличие от `test_boost_main.py`/
-  `test_farm_main.py`/`test_cards_farm_main.py`).
-- Батчевый (не инкрементальный) персист в `add()` не проверен на
-  «жёсткий килл посреди многочасового прогона» — живой сценарий, который
-  ВЫЯВИЛ баг в wishlist (см. ФИЧУ wishlist — если тут есть тот же риск,
-  скорее всего есть и тот же баг).
+- ~~`scripts/library/add_free.py::main()` — целиком без покрытия.~~ ЗАКРЫТО
+  2026-10-19 (B-2): `tests/unit/test_add_free_main.py` — порядок
+  resolve→validate, пустой/битый steam_id, guard `--list` vs `--reset`,
+  `--reset`/`--retry-errors`, wiring `--add`/`--limit` в `run()`.
+- Пер-батчевый персист покрыт юнит-тестами с имитацией килла
+  (`SystemExit` на втором батче), но живьём на реальном retry-шторме не
+  проверялся.
 - Реальный сетевой путь (store-search HTML-парсинг, CM `request_free_license`)
   не тестируется — ожидаемо, фейки покрывают только логику.
 
-# НАЙДЕНО АУДИТОМ 2026-08-10 (открытые баги, TDD-фикс)
+# НАЙДЕНО АУДИТОМ 2026-08-10 (ВСЕ 3 ИСПРАВЛЕНЫ — сверено 2026-10-18)
 > Полный проектный аудит (46 агентов), первый формальный проход. Все
 > CONFIRMED адверсариальной верификацией по коду. Полные evidence — память
 > `project_full_audit_2026_08_10`.
 
-1. **[High] `app/free_games/orchestrate.py:92` — data-loss на interrupt.**
-   `result = licenses.add_licenses(client, pending)` персистит в state
-   (`mark_added`/`refused`/`error`) только ПОСЛЕ полного возврата.
-   `add_licenses` копит `AddResult` в памяти через многоминутные retry-штормы
-   (`_TRANSIENT_RETRY_DELAY=30s`, unbounded — наблюдалось ~4.5 мин подряд).
-   KeyboardInterrupt/исключение ВО ВРЕМЯ шторма теряет уже выданные Steam
-   лицензии из `added.txt` НАСОВСЕМ (appid реально получен, но нигде не
-   записан). `cm_session()`'s finally только disconnect'ит клиента, исключение
-   не глотает. Фикс: тот же паттерн, что уже в `app/wishlist/wishlist_api.py`
-   — прокинуть `persist: Callable[[int, str], None] | None` в
-   `add_licenses`/`_request_batch_with_backoff`, звать `state.mark_added/
-   refused/error` сразу по каждому решённому appid (или хотя бы по батчу),
-   не одним махом в конце.
-2. **[Medium] `app/free_games/state.py:37` — `save_candidates` теряет
-   приоритет.** Пишет `sorted(set(appids))` (числовой порядок), а
-   `discovery.discover_candidates` специально строит порядок
-   games→software→demos (демо — в конец, едят потолок лицензий). После
-   круглого рейс через save/load приоритет стирается: `--limit N` режет по
-   числовому appid, а не по намеренному приоритету — обесценивает саму цель
-   упорядочивания. Фикс: сохранять порядок (dict.fromkeys для дедупа вместо
-   sorted(set(...))), либо явно задокументировать, что порядок не сохраняется
-   (и убрать ложное утверждение из докстринга `load_candidates`).
-3. **[Medium] `app/free_games/orchestrate.py:151` — финальный
-   `report.report_result(...)` не переживает BaseException.** В отличие от
-   `scripts/playtime/boost.py` (полиш v1.14.1: `try: _report_result(...)
-   except BaseException: log.exception(...)`), здесь вызов — голый
-   top-level statement. Ctrl+C ровно на этапе отчёта (напр. внутри
-   `toast()`/`send_telegram()`) даёт сырой трейсбек вместо уже честно
-   посчитанного статуса. Фикс: обернуть тем же `try/except BaseException`.
+1. ~~**[High]** `app/free_games/orchestrate.py:92` — data-loss на interrupt.
+   `add_licenses` копил `AddResult` в памяти через многоминутные
+   retry-штормы, state писался только ПОСЛЕ полного возврата — Ctrl+C/килл
+   во время шторма насовсем терял уже выданные лицензии из `added.txt`.~~
+   ИСПРАВЛЕНО 2026-10-18 (FG-1/B-1): `add_licenses(..., persist=...)` зовёт
+   колбэк по каждому решённому appid сразу после батча; `orchestrate.add()`
+   (и `app/demos/orchestrate.add()`) передают рабочий `_persist`. Тесты:
+   `test_add_licenses_persist_survives_kill_during_later_batch`,
+   `test_add_wires_working_persist_callback_to_add_licenses`.
+2. ~~**[Medium]** `app/free_games/state.py:37` — `save_candidates` писал
+   `sorted(set(appids))` и стирал порядок приоритета обнаружения, `--limit N`
+   резал по числовому appid.~~ ИСПРАВЛЕНО: дедуп через `dict.fromkeys`,
+   порядок сохраняется.
+3. ~~**[Medium]** `app/free_games/orchestrate.py:151` — финальный
+   `report.report_result(...)` не переживал BaseException.~~ ИСПРАВЛЕНО:
+   оба вызова отчёта обёрнуты в `try/except BaseException`.
 
 Скрипт использует `cm_session()` (полный интерактивный CM-логин) — 2 High
 находки по самому логину (credentials.py данные, playwright.py неверный

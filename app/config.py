@@ -51,11 +51,26 @@ def _parse_int_list(raw_list: list, field: str) -> list[int]:
     return out
 
 
+def _clean_secret(value: Any) -> str:
+    """Секрет без ЛЮБЫХ пробельных/управляющих символов, не только по краям.
+
+    Секреты (ключ Steam API, токен и chat_id Telegram) уезжают прямо в URL.
+    Перенос строки ВНУТРИ значения после копипаста роняет urllib с
+    http.client.InvalidURL, чей __str__ содержит URL целиком — секрет в
+    cleartext уходит в log.warning и живёт в logs/ бессрочно. В этих
+    значениях пробельным символам законно взяться неоткуда.
+    """
+    return "".join(
+        ch for ch in str(value) if ch.isprintable() and not ch.isspace()
+    )
+
+
 @dataclass
 class Config:
     """Конфигурация SAM Automation, загружаемая из config.yaml."""
 
-    sam_game_exe_path: str = ""
+    # Как в README и config.example.yaml; отсутствующий файл скачивает ensure_sam.
+    sam_game_exe_path: str = "./external/SAM/SAM.Game.exe"
 
     # Steam API
     steam_api_key: str = ""
@@ -108,13 +123,16 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     cfg = Config()
 
-    if "sam_game_exe_path" in raw:
-        cfg.sam_game_exe_path = raw["sam_game_exe_path"]
+    # Пустое значение — тот же дефолт: "" ensure_sam принял бы за найденный SAM
+    # (Path("") — это ".") и не скачал бы его при первом запуске.
+    if raw.get("sam_game_exe_path"):
+        cfg.sam_game_exe_path = str(raw["sam_game_exe_path"])
 
     # strip: скопированные из браузера ключ/ID часто несут хвостовой пробел или
     # перевод строки — они уезжают прямо в URL Web API и ломают КАЖДЫЙ запрос
-    # ложной «невалидной» ошибкой на верных значениях.
-    cfg.steam_api_key = str(raw.get("steam_api_key", "")).strip()
+    # ложной «невалидной» ошибкой на верных значениях. Ключ — секрет, поэтому
+    # чистится целиком (_clean_secret), не только по краям.
+    cfg.steam_api_key = _clean_secret(raw.get("steam_api_key", ""))
     cfg.steam_id = str(raw.get("steam_id", "")).strip()
     cfg.steam_path = raw.get("steam_path", "")
 
@@ -158,12 +176,8 @@ def load_config(config_path: str = "config.yaml") -> Config:
     ):
         setattr(cfg, int_key, _num(raw, int_key, int, getattr(cfg, int_key)))
 
-    # strip: хвостовой пробел/перевод строки от копипаста уезжал прямо в URL
-    # send_telegram() (f"...bot{token}/sendMessage") — управляющий символ там
-    # роняет urllib с http.client.InvalidURL, чей __str__ включает URL
-    # ЦЕЛИКОМ (токен в cleartext) в log.warning, живущий в logs/ вечно plaintext.
-    cfg.telegram_bot_token = str(raw.get("telegram_bot_token", "")).strip()
-    cfg.telegram_chat_id = str(raw.get("telegram_chat_id", "")).strip()
+    cfg.telegram_bot_token = _clean_secret(raw.get("telegram_bot_token", ""))
+    cfg.telegram_chat_id = _clean_secret(raw.get("telegram_chat_id", ""))
 
     # Резолвим относительный путь к exe от директории конфига
     if cfg.sam_game_exe_path and not os.path.isabs(cfg.sam_game_exe_path):

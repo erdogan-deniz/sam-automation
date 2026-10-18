@@ -15,8 +15,8 @@ Wishlist (авто-добавление каталога Steam в вишлист
 `ruff format --check .`, `mypy app`, `pytest tests/unit -q` (line-length 80,
 target py312; mypy scoped ТОЛЬКО на `app/`, `scripts/` не типизируется).
 git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты conventional,
-тело на русском, заканчивать `Co-Authored-By: Claude Opus 4.8
-<noreply@anthropic.com>`.
+тело на русском, БЕЗ футеров-атрибуций (ни `Co-Authored-By`, ни
+«Generated with …») — ни в коммитах, ни в PR-боди.
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: фича/баг/вопрос. Если баг — приложи реальный вывод
@@ -161,34 +161,33 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 > e2e-верифицирована (234 955 кандидатов dry-run, 24 281 добавлено за
 > несколько прогонов), но НИКОГДА не проходила формальный многоосевой аудит
 > после релиза (в отличие от scan.py/boost.py).
-- `scripts/library/wishlist_add.py::main()` — ЦЕЛИКОМ без покрытия: нет
-  `test_wishlist_add.py`/`test_wishlist_add_main.py`. Разбор флагов
-  (включая `--interval`), порядок resolve→validate, guard `--list` vs
-  `--reset`/`--retry-errors`, wiring в `run()` не тестируются напрямую (в
-  отличие от `test_boost_main.py`/`test_farm_main.py`/
-  `test_cards_farm_main.py`).
+- ~~`scripts/library/wishlist_add.py::main()` — целиком без покрытия.~~
+  ЗАКРЫТО 2026-10-19 (B-2): `tests/unit/test_wishlist_add_main.py` — то же,
+  что у add_free, плюс `--interval` (дефолт 1.0) и то, что в `run()` уходит
+  резолвнутый ID64 и `api_key`.
 - Реальный сетевой путь (`IWishlistService`, `GetAppList` пагинация) не
   тестируется — ожидаемо, фейки покрывают только логику классификации/backoff.
 - Долгий (многочасовой/многодневный) реальный прогон против устойчивого
   IP soft-ban НЕ воспроизведён — 429-поведение проверено только логически
   (моки), не живым долблением до реального бана.
 
-# НАЙДЕНО АУДИТОМ 2026-08-10 (открытые баги, TDD-фикс)
+# НАЙДЕНО АУДИТОМ 2026-08-10 (ИСПРАВЛЕНО, подтверждено повторным аудитом
+2026-09-04)
 > Полный проектный аудит (46 агентов), первый формальный проход. CONFIRMED
 > адверсариальной верификацией по коду. Полные evidence — память
 > `project_full_audit_2026_08_10`.
 
-1. **[Medium] `app/wishlist/orchestrate.py:174` — финальный
-   `report.report_result(...)` не переживает BaseException.** Голый
+1. ~~**[Medium]** `app/wishlist/orchestrate.py:174` — финальный
+   `report.report_result(...)` не переживает BaseException. Голый
    top-level statement, не обёрнутый в try/except — в отличие от
    `scripts/playtime/boost.py` (полиш v1.14.1:
    `try: _report_result(...) except BaseException: log.exception(...)`).
    Ctrl+C ровно на этапе отчёта (напр. внутри `toast()`/`send_telegram()`)
    даёт сырой трейсбек вместо уже честно посчитанного статуса, вместо
-   отчёта, ради которого весь `run()` и считал результат. Тот же баг
-   независимо найден и в `app/free_games/orchestrate.py` (см. add-free.md)
-   — фиксить обоих одним паттерном. Фикс: обернуть вызов в
-   `try/except BaseException: log.exception(...)`.
+   отчёта, ради которого весь `run()` и считал результат.~~ ИСПРАВЛЕНО:
+   вызов обёрнут в `try/except BaseException: log.exception(...)`. Тот же
+   баг независимо найден и закрыт в `app/free_games/orchestrate.py` (см.
+   add-free.md) тем же паттерном.
 
 Скрипт использует `get_web_cookies(interactive=False)` — находки по самой
 fallback-цепочке (playwright.py неверный файл токена, web_refresh.py без

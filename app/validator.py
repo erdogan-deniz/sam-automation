@@ -42,8 +42,9 @@ def _check_file_paths(cfg: Config) -> list[str]:
         errors.append(f"game_ids_file not found: {cfg.game_ids_file}")
     if cfg.steam_path and not Path(cfg.steam_path).exists():
         errors.append(f"steam_path not found: {cfg.steam_path}")
-    if cfg.sam_game_exe_path and not Path(cfg.sam_game_exe_path).exists():
-        errors.append(f"sam_game_exe_path not found: {cfg.sam_game_exe_path}")
+    # sam_game_exe_path сюда не входит: отсутствующий SAM.Game.exe скачивает
+    # ensure_sam, а validate() вызывается раньше него — ошибка здесь обрывала
+    # первый запуск до скачивания.
     return errors
 
 

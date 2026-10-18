@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -153,7 +154,11 @@ def _request_batch_with_backoff(
 
 
 def add_licenses(
-    client: Any, appids: list[int], *, batch_size: int = BATCH_SIZE
+    client: Any,
+    appids: list[int],
+    *,
+    batch_size: int = BATCH_SIZE,
+    persist: Callable[[int, str], None] | None = None,
 ) -> AddResult:
     """Запрашивает бесплатные лицензии батчами на живом CM-клиенте.
 
@@ -165,6 +170,16 @@ def add_licenses(
     по числу попыток. Прочие неуспехи — refused (appid из батча, которого нет
     в granted_appids). Исключение при вызове — error (appid из батча,
     транзиент — восстановим --retry-errors).
+
+    persist (опционально) вызывается СРАЗУ по каждому решённому appid батча
+    ("added"/"refused"/"error"), ДО перехода к следующему батчу. Живая
+    находка (аудит 2026-08-10): AddResult копился в памяти и персистился
+    ОДНИМ батчем ПОСЛЕ полного возврата этой функции — KeyboardInterrupt/
+    жёсткий килл во время многоминутного retry-шторма
+    (_TRANSIENT_RETRY_DELAY, без ограничения по числу попыток — наблюдался
+    шторм ~4.5 мин подряд) НАСОВСЕМ терял уже выданные Steam лицензии
+    предыдущих батчей. Тот же паттерн, что в
+    app.wishlist.wishlist_api.add_pending.
     """
     from steam.enums import EResult
 
@@ -189,6 +204,13 @@ def add_licenses(
                 len(result.added),
             )
             break
+        if persist is not None:
+            for appid in outcome.added:
+                persist(appid, "added")
+            for appid in outcome.refused:
+                persist(appid, "refused")
+            for appid in outcome.error:
+                persist(appid, "error")
         result.added.extend(outcome.added)
         result.refused.extend(outcome.refused)
         result.error.extend(outcome.error)

@@ -10,7 +10,8 @@ boost playtime (набивка времени в играх). Только Windo
 (systematic-debugging). TDD обязателен (тест ПЕРЕД кодом, RED→GREEN). Гейты
 перед каждым коммитом: pytest, ruff check, ruff format, mypy app (line-length 80,
 target py312). git-flow: feature/* от develop через merge --no-ff. Коммиты
-conventional, тело на русском, заканчивать Co-Authored-By.
+conventional, тело на русском, БЕЗ футеров-атрибуций (ни Co-Authored-By,
+ни «Generated with …»).
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: что нужно — фича/баг/вопрос. Если баг — приложи реальный вывод
@@ -98,10 +99,13 @@ API (`playtime_forever`); локальный прогресс для «изве�
 - Детект провалившихся запусков — idle_and_split_survivors (поллинг весь idle):
   успех = процесс пережил весь idle без окна ошибки; провал → on_failed→skip
   (unknown). (Старый гоночный drop_failed_launches заменён.)
-- Пустой owned-games API при непустой all.txt (приватные Game details ИЛИ
-  транзиентно-битый ответ) → warning + blind=True: ВСЕ игры считаются unknown и
+- Пустой owned-games API при непустой all.txt (приватные Game details,
+  `game_count=0`) → warning + blind=True: ВСЕ игры считаются unknown и
   набиваются вслепую, но done НЕ персистится (иначе один сбой API навсегда
   пометил бы done всю библиотеку). Не абортим (all-Family-Share легитимен).
+  Битый ответ (`game_count>0`, `games` пуст) — с 2026-10-18 (B-6) не blind:
+  `fetch_owned_games` после 2 повторов бросает `RuntimeError`, `main()` пишет
+  «Не удалось собрать список игр» и выходит с кодом 1.
 - Честный отчёт: ✅-тост/Telegram только при полном прогоне без провалов; Ctrl+C,
   ошибка и наличие провалов → ⚠️ и честный текст (не «✅ обработано»).
 - Ctrl+C безопасен (resume по done.txt), но текущий батч не зачтётся.
