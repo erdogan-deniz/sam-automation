@@ -71,7 +71,7 @@ write-only, очередь строится из живого скрейпа bad
 > ОБНОВЛЕНО 2026-07-02 (Fast-mode + hardening): цикл больше НЕ делает per-game reopen. Механика дропа — коллапс аккаунта в «ноль игр» сбрасывает накопленные карты (zero-transition flush). Номера строк ниже могли сдвинуться — сверяйся с кодом.
 
 - Модель работы = Fast-mode коллапс в ноль. `_open_next` запускает игры пока очередь непуста И `len(active) < cfg.max_concurrent_games`. Stagger: `time.sleep(_PAUSE_BETWEEN_GAMES=3s)` перед каждым `launch_game`. Idle: цикл спит `cfg.card_check_interval*60` сек.
-- `_farm_loop` за цикл: (1) идлит пачку `cfg.card_check_interval` мин; (2) убивает ВСЕ активные разом (`batch = list(active.items())` → `_kill_game` → `active.clear()`); (3) спит `_FLUSH_PAUSE_SECONDS=20` (сброс карт); (4) перечитывает остатки по каждой закрытой игре, `time.sleep(1.0)` между запросами; (5) `_open_next` запускает следующую пачку (включая выживших).
+- `_farm_loop` за цикл: (1) идлит пачку `cfg.card_check_interval` мин; (2) убивает ВСЕ активные разом (`batch = list(active.items())` → `_kill_game` → `active.clear()`); (3) спит `_FLUSH_PAUSE_SECONDS=30` (сброс карт); (4) перечитывает остатки по каждой закрытой игре, `time.sleep(1.0)` между запросами; (5) `_open_next` запускает следующую пачку (включая выживших).
   - `remaining==0` → лог, `mark_card_done(appid)` (единственный путь в done; НЕ перезапускается).
   - `remaining>0` → requeue + `check_failures[appid]=0`. Stall-guard: остаток не убывает `_MAX_NO_PROGRESS=10` циклов → игра БРОСАЕТСЯ в список `stalled` (НЕ `mark_card_done` — честность отчёта).
   - `remaining<0` (=-1, «неизвестно») → инкремент `check_failures[appid]`; `>= _MAX_CHECK_FAILURES`(5) → игра БРОСАЕТСЯ в список `unverified` (НЕ `mark_card_done`); иначе requeue.
@@ -82,9 +82,9 @@ write-only, очередь строится из живого скрейпа bad
 - Пагинация badges (`fetch_games_with_card_drops`) устойчива: ретрай каждой страницы (`_fetch_page_with_retry`), пропуск стойкого отказа (сброс `prev_html_size=-1`), обрыв после `_MAX_CONSEC_PAGE_FAILURES=3` подряд ИЛИ `_MAX_BADGE_PAGES=40`. Стоп по content: `badge_row==0`/приватный/равная байт-длина соседних.
 - KeyboardInterrupt ловится ТОЛЬКО внутри `_farm_loop` (включая начальный `_open_next` — он ВНУТРИ try, ставит `interrupted=True`); `finally` убивает оставшиеся active через `_kill_game` (каждый в своём try/except) + `kill_all_sam_games()` как страховка. Ctrl+C во время setup-фазы опирается на atexit-релиз лока.
 - Run-lock один общий (`data/.sam_run.lock`): farm/boost/cards нельзя запускать параллельно. Числовые границы конфига — `validator._check_numeric_bounds` (max_concurrent_games/playtime_concurrent_games ∈ [1,20], card_check_interval≥1).
-- Константы: `_MAX_CHECK_FAILURES=5`, `_FLUSH_PAUSE_SECONDS=20`, `_PAUSE_BETWEEN_GAMES=3s`, `_MAX_NO_PROGRESS=10`. Финальный тост честный: «прерван» / «с оговорками: не запущено N, застряло M, не проверено K» / «Card farming завершён».
+- Константы: `_MAX_CHECK_FAILURES=5`, `_FLUSH_PAUSE_SECONDS=30`, `_PAUSE_BETWEEN_GAMES=3s`, `_MAX_NO_PROGRESS=10`. Финальный тост честный: «прерван» / «с оговорками: не запущено N, застряло M, не проверено K» / «Card farming завершён».
 - Приватный профиль даёт пустой результат с одним warning-логом, НЕ error. Требуется 17-значный steamid64 + валидные web-cookies.
-- НЕ проверено e2e: сам факт, что коллапс в ноль сбрасывает дроп за 20с — гипотеза (документирован Idle Master Fast mode + наблюдение юзера), не подтверждена реальным прогоном. `_FLUSH_PAUSE_SECONDS=20` — неизмеренная константа; если мало — дроп увидится следующим циклом (не потеря).
+- Коллапс в ноль + пауза `_FLUSH_PAUSE_SECONDS=30` — решение владельца 18.10.2026 по многолетнему опыту фарма: подвисшие (особенно последние) карты выпадают сразу после закрытия SAM. Проверки: e2e 03.07.2026 (фарм роняет карты, 774241: 5→4) и A/B 04–07.07.2026 на 9 играх — закрыт «скорее H0, строго не доказано»: дизайн не различил «коллапс выдаёт карты» и «коллапс показывает уже выданные» (подробности — память `project_card_drop_mechanics`). Для фарма разница неважна; механизм не снимать без нового честного A/B (случайные армы, серверная метка выдачи, пул ≥40 карт).
 
 # ПРОБЕЛЫ В ТЕСТАХ (если правишь — закрой TDD)
 > Проверено 2026-08-10 систематическим прогоном по стабильности всех
@@ -96,9 +96,9 @@ write-only, очередь строится из живого скрейпа bad
   RA-B, закрыт 2026-08-10) — остальной main() (check_steam_running/ensure_sam/
   get_web_cookies/fetch_games_with_card_drops сбои и их exit-коды, пустая
   очередь) БЕЗ покрытия.
-- Zero-transition flush (`_FLUSH_PAUSE_SECONDS=20`) остаётся неподтверждённой
-  гипотезой — см. выше. Если беритесь за фичу глубоко, это первый кандидат на
-  живую e2e-проверку, не на TDD.
+- Zero-transition flush (`_FLUSH_PAUSE_SECONDS=30`) юнит-тестами покрыт только
+  как порядок «kill всех → пауза ≥30 с → check»; сам эффект на Steam — см.
+  ЗНАЧИМЫЕ ПОВЕДЕНИЯ выше.
 
 # НАЙДЕНО АУДИТОМ 2026-08-10 (№1 ИСПРАВЛЕН, №2 ОТКРЫТ — сверено 2026-09-09)
 > Полный проектный аудит (46 агентов). Прежний аудит (82 агента, 2026-07-02)
