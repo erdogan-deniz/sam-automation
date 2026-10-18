@@ -3,13 +3,18 @@
 Зеркало app/free_games/state.py, свой каталог data/games/ids/wishlist/ (не
 пересекается с free/achievements/cards/playtime).
 
-  candidates.txt — universe минус owned/wishlisted/added/refused
+  candidates.txt     — universe минус owned/wishlisted/added/refused
+                       (все типы, кроме DLC)
+  candidates_dlc.txt — то же для DLC (--dls, B-14); отдельный файл, чтобы
+                       --list одного режима не показывал кандидатов другого
   added.txt      — успешно добавлено (x-eresult=1) — skip
   refused.txt    — терминально (owned/уже-в-вишлисте/invalid) — skip
   error.txt      — транзиентная сетевая ошибка — восстановим --retry-errors
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from app.cache import GAMES_DIR
 from app.id_file import (
@@ -22,20 +27,26 @@ from app.id_file import (
 _WISHLIST_DIR = GAMES_DIR / "ids" / "wishlist"
 
 CANDIDATES_FILE = _WISHLIST_DIR / "candidates.txt"
+CANDIDATES_DLC_FILE = _WISHLIST_DIR / "candidates_dlc.txt"
 ADDED_FILE = _WISHLIST_DIR / "added.txt"
 REFUSED_FILE = _WISHLIST_DIR / "refused.txt"
 ERROR_FILE = _WISHLIST_DIR / "error.txt"
 
 
-def load_candidates() -> list[int]:
-    """candidates.txt с сохранением порядка обнаружения (дедуп первых вхождений)."""
-    return read_ids_ordered(CANDIDATES_FILE)
+def _candidates_file(dlc: bool) -> Path:
+    return CANDIDATES_DLC_FILE if dlc else CANDIDATES_FILE
 
 
-def save_candidates(appids: list[int]) -> None:
-    """Атомарно перезаписывает candidates.txt (числовая сортировка, дедуп)."""
+def load_candidates(*, dlc: bool = False) -> list[int]:
+    """candidates с сохранением порядка обнаружения (дедуп первых вхождений)."""
+    return read_ids_ordered(_candidates_file(dlc))
+
+
+def save_candidates(appids: list[int], *, dlc: bool = False) -> None:
+    """Атомарно перезаписывает candidates (числовая сортировка, дедуп)."""
     _atomic_write_text(
-        CANDIDATES_FILE, "\n".join(str(i) for i in sorted(set(appids))) + "\n"
+        _candidates_file(dlc),
+        "\n".join(str(i) for i in sorted(set(appids))) + "\n",
     )
 
 
@@ -70,7 +81,13 @@ def clear_error_ids() -> None:
 
 
 def clear_state() -> None:
-    """Удаляет ВСЁ resume-состояние (--reset): candidates/added/refused/error."""
-    for path in (CANDIDATES_FILE, ADDED_FILE, REFUSED_FILE, ERROR_FILE):
+    """Удаляет ВСЁ resume-состояние (--reset) обоих режимов."""
+    for path in (
+        CANDIDATES_FILE,
+        CANDIDATES_DLC_FILE,
+        ADDED_FILE,
+        REFUSED_FILE,
+        ERROR_FILE,
+    ):
         if path.exists():
             path.unlink()
