@@ -85,4 +85,7 @@ def send_telegram(text: str, cfg: Config) -> None:
     try:
         urllib.request.urlopen(req, timeout=10)
     except Exception as e:
-        log.warning("Telegram уведомление не отправлено: %s", e)
+        # Токен — часть URL, а исключения urllib (напр. InvalidURL) включают
+        # URL в __str__: вырезаем токен из текста при любой причине сбоя.
+        detail = str(e).replace(token, "<token>")
+        log.warning("Telegram уведомление не отправлено: %s", detail)

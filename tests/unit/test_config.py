@@ -174,6 +174,37 @@ def test_load_config_strips_telegram_chat_id_whitespace(
     assert cfg.telegram_chat_id == "42"
 
 
+# B-7: .strip() снимал только края. Управляющий символ ВНУТРИ секрета
+# (перенос строки при копипасте) доезжал до URL → http.client.InvalidURL,
+# чей __str__ содержит URL целиком (токен/ключ в cleartext) → в логи навечно.
+# В токене, chat_id и ключе Steam API пробельным/управляющим символам законно
+# взяться неоткуда — вычищаются все, не только по краям.
+
+
+def test_load_config_removes_interior_control_chars_from_telegram_token(
+    write_config: Callable[..., str],
+) -> None:
+    path = write_config(telegram_bot_token="123:ABC\n456\t789\r")
+    cfg = load_config(path)
+    assert cfg.telegram_bot_token == "123:ABC456789"
+
+
+def test_load_config_removes_interior_whitespace_from_telegram_chat_id(
+    write_config: Callable[..., str],
+) -> None:
+    path = write_config(telegram_chat_id="-100 123\n456")
+    cfg = load_config(path)
+    assert cfg.telegram_chat_id == "-100123456"
+
+
+def test_load_config_removes_interior_control_chars_from_steam_api_key(
+    write_config: Callable[..., str],
+) -> None:
+    path = write_config(steam_api_key="ABC123\nDEF456\x00")
+    cfg = load_config(path)
+    assert cfg.steam_api_key == "ABC123DEF456"
+
+
 # ── load_config — базовые поля ────────────────────────────────────────────
 
 
