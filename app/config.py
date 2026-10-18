@@ -69,7 +69,8 @@ def _clean_secret(value: Any) -> str:
 class Config:
     """Конфигурация SAM Automation, загружаемая из config.yaml."""
 
-    sam_game_exe_path: str = ""
+    # Как в README и config.example.yaml; отсутствующий файл скачивает ensure_sam.
+    sam_game_exe_path: str = "./external/SAM/SAM.Game.exe"
 
     # Steam API
     steam_api_key: str = ""
@@ -122,8 +123,10 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     cfg = Config()
 
-    if "sam_game_exe_path" in raw:
-        cfg.sam_game_exe_path = raw["sam_game_exe_path"]
+    # Пустое значение — тот же дефолт: "" ensure_sam принял бы за найденный SAM
+    # (Path("") — это ".") и не скачал бы его при первом запуске.
+    if raw.get("sam_game_exe_path"):
+        cfg.sam_game_exe_path = str(raw["sam_game_exe_path"])
 
     # strip: скопированные из браузера ключ/ID часто несут хвостовой пробел или
     # перевод строки — они уезжают прямо в URL Web API и ломают КАЖДЫЙ запрос
