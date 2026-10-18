@@ -6,6 +6,7 @@ import os
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+import pytest  # noqa: E402
 from steam.enums import EResult  # noqa: E402
 
 from app.free_games import licenses  # noqa: E402
@@ -46,6 +47,72 @@ def test_add_licenses_multiple_batches(monkeypatch):
     result = licenses.add_licenses(client, [1, 2, 3, 4], batch_size=2)
     assert result.added == [1, 2, 3, 4]
     assert client.calls == [[1, 2], [3, 4]]
+
+
+# ── add_licenses: persist-callback (крэш-safety, аудит 2026-08-10 №1) ──────
+# Живая находка: AddResult копился в памяти и персистился ОДНИМ батчем ПОСЛЕ
+# полного возврата add_licenses() — KeyboardInterrupt/жёсткий килл во время
+# многоминутного retry-шторма (_TRANSIENT_RETRY_DELAY, без ограничения по
+# числу попыток) НАСОВСЕМ терял уже выданные Steam лицензии предыдущих
+# батчей (appid реально получен, а added.txt — нет). persist зовётся сразу
+# по каждому решённому appid батча, ДО перехода к следующему. Тот же
+# паттерн, что в app.wishlist.wishlist_api.add_pending.
+
+
+def test_add_licenses_calls_persist_per_batch_incrementally(monkeypatch):
+    monkeypatch.setattr(licenses.time, "sleep", lambda *_a: None)
+    client = _FakeClient([(EResult.OK, [1, 2], []), (EResult.OK, [3], [])])
+    calls: list[tuple[int, str]] = []
+    licenses.add_licenses(
+        client,
+        [1, 2, 3, 4],
+        batch_size=2,
+        persist=lambda appid, outcome: calls.append((appid, outcome)),
+    )
+    assert calls == [
+        (1, "added"),
+        (2, "added"),
+        (3, "added"),
+        (4, "refused"),
+    ]
+
+
+def test_add_licenses_persist_survives_kill_during_later_batch(monkeypatch):
+    # Батч 1 резолвится и ПЕРСИСТИТСЯ; батч 2 "убивает" процесс (SystemExit —
+    # BaseException, не Exception — не глотается _request_batch_with_backoff).
+    # persist для батча 1 должен УЖЕ случиться к моменту падения — прямое
+    # доказательство инкрементальности, не просто верного порядка в списке.
+    monkeypatch.setattr(licenses.time, "sleep", lambda *_a: None)
+
+    class _KillOnSecondCall:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def request_free_license(self, app_ids):
+            self.calls += 1
+            if self.calls == 1:
+                return (EResult.OK, [1, 2], [])
+            raise SystemExit("имитация жёсткого килла процесса")
+
+    persisted: list[tuple[int, str]] = []
+    with pytest.raises(SystemExit):
+        licenses.add_licenses(
+            _KillOnSecondCall(),
+            [1, 2, 3, 4],
+            batch_size=2,
+            persist=lambda appid, outcome: persisted.append((appid, outcome)),
+        )
+
+    assert persisted == [(1, "added"), (2, "added")]  # батч 1 пережил килл
+
+
+def test_add_licenses_without_persist_still_works(monkeypatch):
+    # persist опционален (default None) — обратная совместимость с caller'ами,
+    # не передающими его.
+    monkeypatch.setattr(licenses.time, "sleep", lambda *_a: None)
+    client = _FakeClient([(EResult.OK, [1], [])])
+    result = licenses.add_licenses(client, [1], batch_size=50)
+    assert result.added == [1]
 
 
 def test_add_licenses_limit_exceeded_stops_immediately(monkeypatch):
