@@ -290,6 +290,9 @@ Steam API returned no owned games at all) persists neither `done.txt` nor
 `done.txt`, or `--retry-skips` to clear `skip.txt` and retry skipped games.
 
 Session logs are written to `logs/` with timestamps (`YYYY-MM-DD_HH-MM-SS.log`).
+Each script keeps its last 5 log files; older ones are deleted on start. A log
+that grows past 20 MB continues in `YYYY-MM-DD_HH-MM-SS_part02.log` and so on,
+and those parts count toward the five.
 
 ## Password storage
 
