@@ -154,8 +154,10 @@ def _fetch_targets(cfg: Any, steam_id: str) -> tuple[list[dict], bool]:
     blind = not played
     if all_ids and blind:
         # Owned-games API пуст при непустой библиотеке — приватные Game details
-        # ЛИБО транзиентно-битый ответ (validate дёргает GetPlayerSummaries, не
-        # GetOwnedGames, и это пропускает). Тогда ВСЕ игры считаются unknown.
+        # (validate дёргает GetPlayerSummaries, не GetOwnedGames, и это
+        # пропускает). Битый ответ (game_count>0, games пуст) сюда не доходит:
+        # fetch_owned_games бросает RuntimeError → main() честно выходит (B-6).
+        # Тогда ВСЕ игры считаются unknown.
         # Не абортим (аккаунт может быть полностью на Family Share), но громко
         # предупреждаем И не персистим done (blind=True) — иначе один слепой
         # прогон навсегда пометил бы done всю библиотеку (RA-A).

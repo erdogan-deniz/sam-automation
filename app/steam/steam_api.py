@@ -27,6 +27,11 @@ _RATE_LIMIT_DELAY_CAP = 10.0  # потолок паузы (не ждём час�
 # короткая пауза, в отличие от 429 (тот уважает заголовок).
 _NETWORK_RETRY_DELAY = 2.0
 
+# GetOwnedGames изредка отдаёт game_count>0 с пустым списком games (битый/
+# частичный ответ). Повторяем запрос, прежде чем считать источник недоступным.
+_AMBIGUOUS_OWNED_RETRIES = 2
+_AMBIGUOUS_OWNED_RETRY_DELAY = 5.0
+
 
 class _RateLimitError(RuntimeError):
     """Исключение при превышении лимита запросов к Steam API (HTTP 429)."""
@@ -127,6 +132,14 @@ def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
 
     Returns:
         Список словарей с ключами: appid, name, playtime_forever, ...
+        Пустой список — только когда Steam сообщил, что игр нет
+        (game_count=0 или ответ без данных — приватный профиль).
+
+    Raises:
+        RuntimeError: сетевой/HTTP-сбой (из _api_get) ИЛИ ответ с
+            game_count>0 и пустым games, не исправившийся за
+            _AMBIGUOUS_OWNED_RETRIES повторов. Такой ответ нельзя выдавать за
+            «игр нет»: ground_truth.py сочтёт потерянными все added.txt.
     """
     url = (
         f"{BASE_URL}/IPlayerService/GetOwnedGames/v1/"
@@ -136,25 +149,35 @@ def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
         f"&format=json"
     )
 
-    data = _api_get(url)
-    resp = data.get("response", {})
-    games = resp.get("games", [])
-
-    if not games:
+    games: list[dict] = []
+    count = 0
+    for attempt in range(_AMBIGUOUS_OWNED_RETRIES + 1):
+        resp = _api_get(url).get("response", {})
+        games = resp.get("games", [])
+        if games:
+            break
         count = resp.get("game_count", 0)
         if count == 0:
             log.warning(
                 "У аккаунта %s нет игр (или профиль приватный)", steam_id
             )
-        else:
-            # Steam изредка отдаёт game_count>0 с пустым списком games
-            # (частичный/битый ответ) — раньше это был тихий return [].
-            log.warning(
-                "Steam API: game_count=%d, но список games пуст для %s",
-                count,
-                steam_id,
-            )
-        return []
+            return []
+        log.warning(
+            "Steam API: game_count=%d, но список games пуст для %s "
+            "(попытка %d/%d)",
+            count,
+            steam_id,
+            attempt + 1,
+            _AMBIGUOUS_OWNED_RETRIES + 1,
+        )
+        if attempt < _AMBIGUOUS_OWNED_RETRIES:
+            time.sleep(_AMBIGUOUS_OWNED_RETRY_DELAY)
+
+    if not games:
+        raise RuntimeError(
+            f"Steam API: game_count={count}, но список games пуст — "
+            f"битый ответ GetOwnedGames, список игр недоступен"
+        )
 
     # Одна запись без валидного appid не должна ронять источник: потребитель
     # (scan/boost) обращается к g["appid"] напрямую → иначе KeyError на прогоне.
