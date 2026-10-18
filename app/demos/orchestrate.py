@@ -67,7 +67,12 @@ def discover() -> list[int]:
 
 
 def add(*, limit: int | None = None) -> licenses.AddResult:
-    """Фаза add: request_free_license батчами по candidates.txt (resume-aware)."""
+    """Фаза add: request_free_license батчами по candidates.txt (resume-aware).
+
+    persist инкрементально (по каждому батчу add_licenses) переживает килл
+    посреди многоминутного retry-шторма; финальный проход по result.* —
+    страховка (_append_id идемпотентен). Тот же паттерн, что free_games.
+    """
     candidates = state.load_candidates()
     already_added = state.load_added_ids()
     already_refused = state.load_refused_ids()
@@ -89,13 +94,21 @@ def add(*, limit: int | None = None) -> licenses.AddResult:
     log.info(SEPARATOR)
     log.info("Добавление demo-лицензий: %d кандидатов", len(pending))
 
+    def _persist(appid: int, outcome: str) -> None:
+        if outcome == "added":
+            state.mark_added(appid)
+        elif outcome == "refused":
+            state.mark_refused(appid)
+        else:
+            state.mark_error(appid)
+
     with cm_session() as client:
         if client is None:
             log.error("Steam CM: вход не удался — добавление невозможно")
             for appid in pending:
                 state.mark_error(appid)
             return licenses.AddResult(error=list(pending))
-        result = licenses.add_licenses(client, pending)
+        result = licenses.add_licenses(client, pending, persist=_persist)
 
     for appid in result.added:
         state.mark_added(appid)

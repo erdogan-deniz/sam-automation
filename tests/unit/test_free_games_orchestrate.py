@@ -168,6 +168,36 @@ def test_add_cm_login_failed_marks_all_pending_as_error(
     assert state_mod.load_error_ids() == {1, 2}
 
 
+def test_add_wires_working_persist_callback_to_add_licenses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Живая находка (аудит 2026-08-10, №1): батч-персист ПОСЛЕ add_licenses()
+    # терял всё накопленное при жёстком килле процесса посреди многоминутного
+    # retry-шторма (Steam-то лицензию уже выдал, а added.txt — нет).
+    # add_licenses теперь зовёт persist инкрементально по каждому решённому
+    # appid батча; здесь проверяем, что orch.add() передаёт ему РАБОЧИЙ
+    # callback, реально пишущий в id-файлы, а не заглушку.
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2, 3])
+    captured = {}
+
+    def fake_add_licenses(client, appids, **kw):
+        captured["persist"] = kw["persist"]
+        # Симулируем жёсткий килл ДО возврата add_licenses: persist уже был
+        # вызван для appid=1, но функция никогда не вернёт AddResult.
+        kw["persist"](1, "added")
+        raise SystemExit("имитация жёсткого килла процесса")
+
+    monkeypatch.setattr(orch.licenses, "add_licenses", fake_add_licenses)
+    monkeypatch.setattr(orch, "cm_session", _fake_cm_session(_FakeClient({})))
+
+    with pytest.raises(SystemExit):
+        orch.add()
+
+    # appid=1 пережил "килл" — persist успел записать его ДО исключения.
+    assert state_mod.load_added_ids() == {1}
+
+
 # ── run(): dry-run / --add / --list ветвление ────────────────────────────────
 
 

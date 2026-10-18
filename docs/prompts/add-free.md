@@ -60,9 +60,10 @@ limit, cfg)`.
   added/refused/error (срез по `limit`); пустой pending → `AddResult()` без
   захода в CM; иначе `with cm_session() as client:` (None → ВСЕ pending сразу
   в `error.txt`, НЕ retryable-тихо — восстановимо `--retry-errors`) →
-  `licenses.add_licenses(client, pending)` → персист батчем ПОСЛЕ полного
-  возврата (НЕ инкрементально по appid, в отличие от `app/wishlist/`
-  — см. ПРОБЕЛЫ).
+  `licenses.add_licenses(client, pending, persist=_persist)` — `_persist`
+  пишет `mark_added/refused/error` сразу после каждого батча (FG-1/B-1,
+  2026-10-18); финальный проход по `result.*` после возврата — страховка
+  (`_append_id` идемпотентен).
 - `run(...)` — `discover()`+`add()` под ОБЩИМ try/except (KeyboardInterrupt→
   interrupted, Exception→error); dry-run (`not do_add`) печатает статус
   `dry_run` с `added=len(candidates)`; иначе `report.report_result(status,
@@ -86,7 +87,9 @@ limit, cfg)`.
   полноту каталога (Games+free даёт ~20k по `total_count`) — набирает
   кандидатов с запасом относительно потолка лицензий (~1000-2000).
 - `app/free_games/licenses.py` — `add_licenses(client, appids, *,
-  batch_size=BATCH_SIZE=20) -> AddResult`. `BATCH_SIZE=20` — живой A/B на
+  batch_size=BATCH_SIZE=20, persist=None) -> AddResult` (`persist(appid,
+  "added"|"refused"|"error")` — сразу после каждого батча, FG-1).
+  `BATCH_SIZE=20` — живой A/B на
   реальном аккаунте: 50 давало систематический `Timeout` за 10.2с (жёсткий
   `send_job_and_wait`-таймаут библиотеки), 20 — успех за 0.3с (33x запас).
   Классификация `EResult`: `LimitExceeded(25)` → `hit_cap=True`, СТЕНА,
@@ -133,12 +136,12 @@ limit, cfg)`.
 - `run()` оборачивает `discover()+add()` ОДНИМ try/except — Ctrl+C/исключение
   внутри `discover()` (включая сам CM-логин) даёт честный `interrupted`/
   `error`, не сырой трейсбек мимо отчёта.
-- Персист `add()` — БАТЧЕМ после полного возврата `add_licenses()`, НЕ
-  инкрементально по appid (сравни с `app/wishlist/orchestrate.add()`, где
-  инкрементальный персист был добавлен именно из-за живой находки о потере
-  прогресса при жёстком килле). **ПОДТВЕРЖДЕНО аудитом 2026-08-10** (было
-  теоретическим риском, теперь CONFIRMED статическим анализом — см. находку
-  №1 ниже): это реальный, воспроизводимый баг, не гипотеза.
+- Персист `add()` — по каждому батчу через `persist`-колбэк `add_licenses`
+  (FG-1/B-1, закрыто 2026-10-18): килл посреди многоминутного retry-шторма
+  теряет максимум текущий батч (≤20 appid), уже решённые батчи в state.
+  Тот же паттерн, что `app/wishlist/orchestrate.add()`. Колбэк живёт в
+  `add_licenses`, поэтому каждый новый вызывающий (как `app/demos/`) обязан
+  передать свой `persist` — без него вернётся старое поведение.
 - `BATCH_SIZE=20` и `_TRANSIENT_RETRY_DELAY=30.0` — живые, не гаданные
   константы (см. licenses.py docstring), но снятые на ОДНОМ конкретном
   аккаунте в ОДНОЙ сессии — не исключено, что для другого аккаунта/момента
@@ -154,47 +157,33 @@ limit, cfg)`.
   resolve→validate, ни guard `--list` vs `--reset`/`--retry-errors`, ни
   wiring в `run()` не тестируются напрямую (в отличие от `test_boost_main.py`/
   `test_farm_main.py`/`test_cards_farm_main.py`).
-- Батчевый (не инкрементальный) персист в `add()` не проверен на
-  «жёсткий килл посреди многочасового прогона» — живой сценарий, который
-  ВЫЯВИЛ баг в wishlist (см. ФИЧУ wishlist — если тут есть тот же риск,
-  скорее всего есть и тот же баг).
+- Пер-батчевый персист покрыт юнит-тестами с имитацией килла
+  (`SystemExit` на втором батче), но живьём на реальном retry-шторме не
+  проверялся.
 - Реальный сетевой путь (store-search HTML-парсинг, CM `request_free_license`)
   не тестируется — ожидаемо, фейки покрывают только логику.
 
-# НАЙДЕНО АУДИТОМ 2026-08-10 (открытые баги, TDD-фикс)
+# НАЙДЕНО АУДИТОМ 2026-08-10 (ВСЕ 3 ИСПРАВЛЕНЫ — сверено 2026-10-18)
 > Полный проектный аудит (46 агентов), первый формальный проход. Все
 > CONFIRMED адверсариальной верификацией по коду. Полные evidence — память
 > `project_full_audit_2026_08_10`.
 
-1. **[High] `app/free_games/orchestrate.py:92` — data-loss на interrupt.**
-   `result = licenses.add_licenses(client, pending)` персистит в state
-   (`mark_added`/`refused`/`error`) только ПОСЛЕ полного возврата.
-   `add_licenses` копит `AddResult` в памяти через многоминутные retry-штормы
-   (`_TRANSIENT_RETRY_DELAY=30s`, unbounded — наблюдалось ~4.5 мин подряд).
-   KeyboardInterrupt/исключение ВО ВРЕМЯ шторма теряет уже выданные Steam
-   лицензии из `added.txt` НАСОВСЕМ (appid реально получен, но нигде не
-   записан). `cm_session()`'s finally только disconnect'ит клиента, исключение
-   не глотает. Фикс: тот же паттерн, что уже в `app/wishlist/wishlist_api.py`
-   — прокинуть `persist: Callable[[int, str], None] | None` в
-   `add_licenses`/`_request_batch_with_backoff`, звать `state.mark_added/
-   refused/error` сразу по каждому решённому appid (или хотя бы по батчу),
-   не одним махом в конце.
-2. **[Medium] `app/free_games/state.py:37` — `save_candidates` теряет
-   приоритет.** Пишет `sorted(set(appids))` (числовой порядок), а
-   `discovery.discover_candidates` специально строит порядок
-   games→software→demos (демо — в конец, едят потолок лицензий). После
-   круглого рейс через save/load приоритет стирается: `--limit N` режет по
-   числовому appid, а не по намеренному приоритету — обесценивает саму цель
-   упорядочивания. Фикс: сохранять порядок (dict.fromkeys для дедупа вместо
-   sorted(set(...))), либо явно задокументировать, что порядок не сохраняется
-   (и убрать ложное утверждение из докстринга `load_candidates`).
-3. **[Medium] `app/free_games/orchestrate.py:151` — финальный
-   `report.report_result(...)` не переживает BaseException.** В отличие от
-   `scripts/playtime/boost.py` (полиш v1.14.1: `try: _report_result(...)
-   except BaseException: log.exception(...)`), здесь вызов — голый
-   top-level statement. Ctrl+C ровно на этапе отчёта (напр. внутри
-   `toast()`/`send_telegram()`) даёт сырой трейсбек вместо уже честно
-   посчитанного статуса. Фикс: обернуть тем же `try/except BaseException`.
+1. ~~**[High]** `app/free_games/orchestrate.py:92` — data-loss на interrupt.
+   `add_licenses` копил `AddResult` в памяти через многоминутные
+   retry-штормы, state писался только ПОСЛЕ полного возврата — Ctrl+C/килл
+   во время шторма насовсем терял уже выданные лицензии из `added.txt`.~~
+   ИСПРАВЛЕНО 2026-10-18 (FG-1/B-1): `add_licenses(..., persist=...)` зовёт
+   колбэк по каждому решённому appid сразу после батча; `orchestrate.add()`
+   (и `app/demos/orchestrate.add()`) передают рабочий `_persist`. Тесты:
+   `test_add_licenses_persist_survives_kill_during_later_batch`,
+   `test_add_wires_working_persist_callback_to_add_licenses`.
+2. ~~**[Medium]** `app/free_games/state.py:37` — `save_candidates` писал
+   `sorted(set(appids))` и стирал порядок приоритета обнаружения, `--limit N`
+   резал по числовому appid.~~ ИСПРАВЛЕНО: дедуп через `dict.fromkeys`,
+   порядок сохраняется.
+3. ~~**[Medium]** `app/free_games/orchestrate.py:151` — финальный
+   `report.report_result(...)` не переживал BaseException.~~ ИСПРАВЛЕНО:
+   оба вызова отчёта обёрнуты в `try/except BaseException`.
 
 Скрипт использует `cm_session()` (полный интерактивный CM-логин) — 2 High
 находки по самому логину (credentials.py данные, playwright.py неверный
