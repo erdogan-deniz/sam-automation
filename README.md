@@ -103,13 +103,14 @@ python scripts/library/add_demos.py --add     # actually add
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
 
-# Add the Steam catalog to your wishlist (IWishlistService/AddToWishlist)
+# Add paid Steam content to your wishlist (IWishlistService/AddToWishlist);
+# free content is skipped — add_free.py puts it in the library instead
 python scripts/library/wishlist_add.py         # dry-run: how many candidates
 python scripts/library/wishlist_add.py --add   # actually add
 
-#    --games --software --videos --hardware
+#    --games --dlc --software --videos --hardware
 #                    only these types, flags combine (default: all);
-#                    no DLC or demos (demos go to the library via add_demos.py)
+#                    no demos (demos go to the library via add_demos.py)
 #    --list          show current candidates and exit
 #    --reset         wipe resume state
 #    --retry-errors  retry transient failures (clears error.txt)
