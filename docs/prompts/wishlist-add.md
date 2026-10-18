@@ -27,9 +27,12 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
 Две фазы. **Discover**: вселенная через `IStoreService/GetAppList/v1`
 (пагинация по `last_appid`; типы выбираются флагами, без флагов — все,
-B-14 от 19.10.2026; DLC и демо не входят — демо в библиотеку добавляет
+B-14 от 19.10.2026; демо не входят — их в библиотеку добавляет
 `add_demos.py`) минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
-(`IWishlistService/GetWishlist/v1`, keyless) минус added/refused →
+(`IWishlistService/GetWishlist/v1`, keyless) минус бесплатное
+(`IStoreBrowseService/GetItems`, `is_free`; в вишлист — только платное,
+бесплатное забирает `add_free.py`, решение владельца 19.10.2026) минус
+added/refused →
 `state.candidates_file(types)`. **Add**: по одному appid (batch-эндпоинта у Steam нет)
 через `POST IWishlistService/AddToWishlist/v1` с community-JWT. Дефолт —
 dry-run (только discover + отчёт); реальное добавление — только по `--add`.
@@ -75,9 +78,9 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   refused, error, hit_wall=result.hit_wall, cfg)`.
 
 # CLI-ФЛАГИ
-`--add` (реально добавить, иначе dry-run) · типы `--games`, `--software`,
-`--videos`, `--hardware` — складываются, без них все типы; DLC и демо в
-вишлист не идут (DLC фильтр `include_dlc=0` передаётся всегда) · регистр имён флагов не важен (`app.cli.casefold_options`:
+`--add` (реально добавить, иначе dry-run) · типы `--games`, `--dlc`,
+`--software`, `--videos`, `--hardware` — складываются, без них все типы;
+демо в вишлист не идут · регистр имён флагов не важен (`app.cli.casefold_options`:
 `--GAMES` = `--games`) · `--list` (показать
 кандидатов выбранных типов и выйти) · `--reset` (стереть весь state) ·
 `--retry-errors` (стереть только `error.txt`) · `--limit N` (потолок
@@ -104,6 +107,15 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   отсеется как refused при add); сбой САМОГО universe (`GetAppList`) НЕ
   проглатывается — пробрасывается (живая находка: тихий проглот тут стирал
   реальный `candidates.txt` из 211 032 записей пустым списком).
+  Затем `fetch_free_ids(candidates) -> set[int]`: `IStoreBrowseService/
+  GetItems/v1` пачками по 200 (`_ITEMS_BATCH`: GET с JSON в URL, на 300
+  appid Steam отвечает 400), `is_free: true` → бесплатно, отсекается. Нужен
+  `country_code` в context: без него Steam отдаёт пустой `response`, и
+  ответ без `store_items` поднимает `RuntimeError`, а не «ничего
+  бесплатного». Сбой проверки пробрасывается, как сбой universe.
+  429, не пережитый ретраем `_api_get`, — пауза `_ITEMS_COOLDOWN` 30 с и
+  повтор пачки (до 3 раз). Живой прогон 19.10.2026: 151 623 кандидата,
+  760 пачек, 15 минут, сотня 429; бесплатных 20 551, платных 131 072.
   Использует `app.steam.steam_api._api_get` (тот же хост/JSON-форма, что и
   api.steampowered.com, в отличие от `free_games/discovery.py` на
   store.steampowered.com — там свой ретрай, тут переиспользован чужой).
