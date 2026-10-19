@@ -6,14 +6,16 @@ import pytest
 
 from app.wishlist import discovery
 
-_REAL_FETCH_FREE_IDS = discovery.fetch_free_ids
+_REAL_FETCH_STORE_FLAGS = discovery.fetch_store_flags
 
 
 @pytest.fixture(autouse=True)
 def _no_free_check(monkeypatch):  # type: ignore[no-untyped-def]
-    # Проверка «бесплатно ли» ходит в Steam — в тестах discover_candidates
-    # по умолчанию ничего бесплатного нет; свои тесты подменяют сами.
-    monkeypatch.setattr(discovery, "fetch_free_ids", lambda _ids: set())
+    # Проверка магазина ходит в Steam — в тестах discover_candidates по
+    # умолчанию нет ни бесплатного, ни не вышедшего; свои тесты подменяют сами.
+    monkeypatch.setattr(
+        discovery, "fetch_store_flags", lambda _ids: discovery.StoreFlags()
+    )
 
 
 def _apps_page(appids: list[int]) -> list[dict]:
@@ -195,10 +197,10 @@ def test_discover_universe_respects_max_pages_on_stuck_cursor(
     assert out == [1, 1, 1]  # 3 страницы, затем max_pages останавливает
 
 
-# ── fetch_free_ids: GetItems пачками, is_free=true → бесплатно ────────────
+# ── fetch_store_flags: GetItems пачками → бесплатное и не вышедшее ───────
 
 
-def test_fetch_free_ids_batches_and_collects_free(monkeypatch) -> None:
+def test_fetch_store_flags_batches_and_collects(monkeypatch) -> None:
     urls: list[str] = []
 
     def fake_api_get(url: str) -> dict:
@@ -210,28 +212,31 @@ def test_fetch_free_ids_batches_and_collects_free(monkeypatch) -> None:
                     {"appid": 3},
                     {"appid": 450, "is_free": True},
                     {"appid": 7, "is_free": False},
+                    {"appid": 8, "is_coming_soon": True},
+                    {"appid": 9, "release": {"is_coming_soon": True}},
                 ]
             }
         }
 
     monkeypatch.setattr(discovery, "_api_get", fake_api_get)
 
-    out = _REAL_FETCH_FREE_IDS(list(range(1, 451)))
+    out = _REAL_FETCH_STORE_FLAGS(list(range(1, 451)))
 
-    assert out == {2, 450}
+    assert out.free == {2, 450}
+    assert out.coming_soon == {8, 9}
     assert len(urls) == 3  # 450 appid пачками по 200
     assert all("IStoreBrowseService/GetItems/v1" in u for u in urls)
 
 
-def test_fetch_free_ids_empty_input_makes_no_requests(monkeypatch) -> None:
+def test_fetch_store_flags_empty_input_makes_no_requests(monkeypatch) -> None:
     def _boom(url):
         raise AssertionError("без кандидатов запросов быть не должно")
 
     monkeypatch.setattr(discovery, "_api_get", _boom)
-    assert _REAL_FETCH_FREE_IDS([]) == set()
+    assert _REAL_FETCH_STORE_FLAGS([]) == discovery.StoreFlags()
 
 
-def test_fetch_free_ids_sends_country_code(monkeypatch) -> None:
+def test_fetch_store_flags_sends_country_code(monkeypatch) -> None:
     # Без country_code Steam отдаёт пустой response (живая проба 19.10.2026).
     urls: list[str] = []
 
@@ -240,18 +245,18 @@ def test_fetch_free_ids_sends_country_code(monkeypatch) -> None:
         return {"response": {"store_items": []}}
 
     monkeypatch.setattr(discovery, "_api_get", fake_api_get)
-    _REAL_FETCH_FREE_IDS([1])
+    _REAL_FETCH_STORE_FLAGS([1])
     assert "country_code" in urls[0]
 
 
-def test_fetch_free_ids_response_without_items_raises(monkeypatch) -> None:
+def test_fetch_store_flags_response_without_items_raises(monkeypatch) -> None:
     # Пустой response — не «ничего бесплатного», а непроверенная пачка.
     monkeypatch.setattr(discovery, "_api_get", lambda url: {"response": {}})
     with pytest.raises(RuntimeError, match="store_items"):
-        _REAL_FETCH_FREE_IDS([1, 2])
+        _REAL_FETCH_STORE_FLAGS([1, 2])
 
 
-def test_fetch_free_ids_cools_down_after_rate_limit(monkeypatch) -> None:
+def test_fetch_store_flags_cools_down_after_rate_limit(monkeypatch) -> None:
     # Живой прогон 19.10.2026: на 760 пачках Steam то и дело отвечал 429;
     # исчерпанный ретрай _api_get не должен ронять весь discover.
     calls = {"n": 0}
@@ -266,27 +271,27 @@ def test_fetch_free_ids_cools_down_after_rate_limit(monkeypatch) -> None:
     monkeypatch.setattr(discovery, "_api_get", flaky)
     monkeypatch.setattr(discovery.time, "sleep", sleeps.append)
 
-    assert _REAL_FETCH_FREE_IDS([1]) == {1}
+    assert _REAL_FETCH_STORE_FLAGS([1]).free == {1}
     assert sleeps == [discovery._ITEMS_COOLDOWN]
 
 
-def test_fetch_free_ids_gives_up_after_cooldowns(monkeypatch) -> None:
+def test_fetch_store_flags_gives_up_after_cooldowns(monkeypatch) -> None:
     def always_429(url: str) -> dict:
         raise discovery._RateLimitError("429", None)
 
     monkeypatch.setattr(discovery, "_api_get", always_429)
     monkeypatch.setattr(discovery.time, "sleep", lambda _s: None)
     with pytest.raises(RuntimeError):
-        _REAL_FETCH_FREE_IDS([1])
+        _REAL_FETCH_STORE_FLAGS([1])
 
 
-def test_fetch_free_ids_failure_propagates(monkeypatch) -> None:
+def test_fetch_store_flags_failure_propagates(monkeypatch) -> None:
     def _boom(url):
         raise RuntimeError("Steam API вернул 500")
 
     monkeypatch.setattr(discovery, "_api_get", _boom)
     with pytest.raises(RuntimeError, match="500"):
-        _REAL_FETCH_FREE_IDS([1, 2])
+        _REAL_FETCH_STORE_FLAGS([1, 2])
 
 
 # ── fetch_wishlist_ids: keyless GetWishlist, весь список одним ответом ──────
@@ -366,16 +371,32 @@ def test_discover_candidates_drops_free_content(monkeypatch) -> None:
     monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: {3})
     checked: list[list[int]] = []
 
-    def fake_free(ids):
+    def fake_flags(ids):
         checked.append(list(ids))
-        return {4}
+        return discovery.StoreFlags(free={4})
 
-    monkeypatch.setattr(discovery, "fetch_free_ids", fake_free)
+    monkeypatch.setattr(discovery, "fetch_store_flags", fake_flags)
 
     out = discovery.discover_candidates(api_key="k", steam_id="s")
 
     assert out == [1, 5]
     assert checked == [[1, 4, 5]]
+
+
+def test_discover_candidates_drops_coming_soon(monkeypatch) -> None:
+    # Решение владельца 19.10.2026: не вышедшее в вишлист не добавляем.
+    monkeypatch.setattr(
+        discovery, "discover_universe", lambda _k, **_kw: [1, 2, 3]
+    )
+    monkeypatch.setattr(discovery, "fetch_owned_games", lambda _k, _s: [])
+    monkeypatch.setattr(discovery, "fetch_wishlist_ids", lambda _sid: set())
+    monkeypatch.setattr(
+        discovery,
+        "fetch_store_flags",
+        lambda _ids: discovery.StoreFlags(free={1}, coming_soon={3}),
+    )
+
+    assert discovery.discover_candidates(api_key="k", steam_id="s") == [2]
 
 
 def test_discover_candidates_free_check_failure_propagates(monkeypatch) -> None:
@@ -388,7 +409,7 @@ def test_discover_candidates_free_check_failure_propagates(monkeypatch) -> None:
     def _boom(_ids):
         raise RuntimeError("GetItems упал")
 
-    monkeypatch.setattr(discovery, "fetch_free_ids", _boom)
+    monkeypatch.setattr(discovery, "fetch_store_flags", _boom)
     with pytest.raises(RuntimeError, match="GetItems"):
         discovery.discover_candidates(api_key="k", steam_id="s")
 

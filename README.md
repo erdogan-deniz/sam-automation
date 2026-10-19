@@ -103,8 +103,8 @@ python scripts/library/add_demos.py --add     # actually add
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
 
-# Add paid Steam content to your wishlist (IWishlistService/AddToWishlist);
-# free content is skipped — add_free.py puts it in the library instead
+# Add paid, released Steam content to your wishlist (IWishlistService/AddToWishlist);
+# free content is skipped (add_free.py puts it in the library), unreleased too
 python scripts/library/wishlist_add.py         # dry-run: how many candidates
 python scripts/library/wishlist_add.py --add   # actually add
 
