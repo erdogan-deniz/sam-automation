@@ -18,7 +18,7 @@ def discover() -> list[int]:
     """Фаза discover: витрина free → candidates.txt минус owned/added/refused.
 
     owned вычисляется из client.licenses живой CM-сессии (authoritative для
-    аккаунта) через expand_packages_to_apps — тот же путь, что и scan.py.
+    аккаунта) через expand_packages_to_apps — тот же путь, что и scan_library.py.
     Отсутствие Steam или неуспех CM-логина НЕ роняет discover — просто owned
     не вычитается (кандидаты могут включать уже имеющееся, лишнее отсеется
     на фазе add как DuplicateRequest/refused).
@@ -165,7 +165,7 @@ def run(
         except BaseException:
             # Отчёт — терминальный шаг: третий Ctrl+C ровно в этот момент
             # (BaseException) не должен пробрасываться из run() сырым
-            # трейсбеком — статус уже честно посчитан (см. boost.py).
+            # трейсбеком — статус уже честно посчитан (см. boost_playtime.py).
             log.exception("Не удалось сформировать финальный отчёт.")
         return
 

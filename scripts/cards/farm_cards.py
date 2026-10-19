@@ -7,7 +7,7 @@ Fast-mode цикл: идлит пачку игр, затем закрывает 
 пачку. Игра с 0 остатком помечается done.
 
 Использование:
-    python scripts/cards/farm.py
+    python scripts/cards/farm_cards.py
 """
 
 from __future__ import annotations
@@ -283,7 +283,7 @@ def _farm_loop(
 def main() -> None:
     """Точка входа: запускает цикл фарма trading cards."""
     print()
-    setup_logging(name="farm_cards", category="cards/farm")
+    setup_logging(name="farm_cards", category="cards/farm_cards")
     try:
         acquire_run_lock("cards/farm")
     except RuntimeError as e:
@@ -298,7 +298,7 @@ def main() -> None:
     # steam_id в GetPlayerSummaries, которому нужен числовой ID64 (сырой
     # vanity даёт ложное «API key invalid»). Пустой steam_id НЕ резолвим —
     # пусть validate выдаст локальную «missing». (RA-B; порядок resolve→
-    # validate выровнен со scan.py/boost.py/add_free.py/wishlist_add.py.)
+    # validate выровнен со scan_library.py/boost.py/add_free_games.py/fill_wishlist.py.)
     if cfg.steam_id:
         try:
             cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
@@ -330,7 +330,7 @@ def main() -> None:
     if not cookies:
         log.error(
             "Нет авторизации Steam. Запусти скрипт вручную один раз:\n"
-            "  python scripts/cards/farm.py\n"
+            "  python scripts/cards/farm_cards.py\n"
             "и введи 2FA код при запросе '[Steam JWT] Введи 2FA код'."
         )
         sys.exit(1)
@@ -347,7 +347,7 @@ def main() -> None:
             log.error(
                 "Не удалось обновить Steam-куки — сессия протухла, нужен "
                 "интерактивный вход:\n"
-                "  python scripts/cards/farm.py"
+                "  python scripts/cards/farm_cards.py"
             )
             sys.exit(1)
         cookies = fresh

@@ -38,7 +38,7 @@ def test_interval_negative_is_error() -> None:
 
 
 def test_playtime_concurrent_zero_is_error() -> None:
-    # 0 → ZeroDivisionError/range-error в boost.py
+    # 0 → ZeroDivisionError/range-error в boost_playtime.py
     assert validator._check_numeric_bounds(_cfg(playtime_concurrent_games=0))
 
 

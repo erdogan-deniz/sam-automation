@@ -10,7 +10,10 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 _BOOST_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "playtime" / "boost.py"
+    Path(__file__).resolve().parents[2]
+    / "scripts"
+    / "playtime"
+    / "boost_playtime.py"
 )
 
 
@@ -48,7 +51,7 @@ def _stub_main_deps(monkeypatch, cfg, order, seen) -> None:  # type: ignore[no-u
     _fetch_targets → пустые цели, поэтому main дойдёт до sys.exit(0) сразу после
     resolve/validate, не трогая run-loop.
     """
-    monkeypatch.setattr(sys, "argv", ["boost.py"])
+    monkeypatch.setattr(sys, "argv", ["boost_playtime.py"])
     monkeypatch.setattr(boost, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(boost, "load_config", lambda: cfg)
     monkeypatch.setattr(boost, "check_steam_running", lambda: True)

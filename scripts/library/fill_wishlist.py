@@ -1,6 +1,6 @@
 """Auto-add Wishlist — добавляет позиции каталога Steam в вишлист аккаунта.
 
-Добавляет только платное: бесплатное забирает в библиотеку add_free.py.
+Добавляет только платное: бесплатное забирает в библиотеку add_free_games.py.
 Без флагов типа — все типы. Флаги --games, --dlc, --software, --videos,
 --hardware сужают выбор и складываются. Регистр флагов не важен (--DLC =
 --dlc). Демо в вишлист не идут — их добавляет add_demos.py.
@@ -11,15 +11,15 @@ backoff на rate-limit). По умолчанию — dry-run (только disc
 реальное добавление — только по --add.
 
 Использование:
-    python scripts/library/wishlist_add.py              # dry-run: сколько найдено
-    python scripts/library/wishlist_add.py --add         # реально добавить
-    python scripts/library/wishlist_add.py --add --dlc   # то же, только DLC
-    python scripts/library/wishlist_add.py --add --games --software
-    python scripts/library/wishlist_add.py --list        # показать candidates.txt
-    python scripts/library/wishlist_add.py --add --limit 100
-    python scripts/library/wishlist_add.py --add --retry-errors
-    python scripts/library/wishlist_add.py --add --interval 0.2
-    python scripts/library/wishlist_add.py --reset
+    python scripts/library/fill_wishlist.py              # dry-run: сколько найдено
+    python scripts/library/fill_wishlist.py --add         # реально добавить
+    python scripts/library/fill_wishlist.py --add --dlc   # то же, только DLC
+    python scripts/library/fill_wishlist.py --add --games --software
+    python scripts/library/fill_wishlist.py --list        # показать candidates.txt
+    python scripts/library/fill_wishlist.py --add --limit 100
+    python scripts/library/fill_wishlist.py --add --retry-errors
+    python scripts/library/fill_wishlist.py --add --interval 0.2
+    python scripts/library/fill_wishlist.py --reset
 """
 
 from __future__ import annotations
@@ -103,10 +103,10 @@ def _selected_types(args: argparse.Namespace) -> frozenset[str]:
 def main() -> None:
     args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
-    setup_logging(name="wishlist_add", category="library/wishlist_add")
+    setup_logging(name="fill_wishlist", category="library/fill_wishlist")
     cfg = load_config()
 
-    # Резолвим Steam ID ДО валидации — как add_free.py/scan.py/boost.py:
+    # Резолвим Steam ID ДО валидации — как add_free_games.py/scan_library.py/boost.py:
     # validate шлёт steam_id в GetPlayerSummaries, которому нужен числовой ID64.
     if cfg.steam_id:
         try:

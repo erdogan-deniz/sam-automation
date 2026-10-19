@@ -696,7 +696,7 @@ def test_run_add_keyboard_interrupt_reports_interrupted(
 # Найдено формальным аудитом: голый top-level report.report_result(...) не
 # обёрнут в try/except — третий Ctrl+C (BaseException) ровно на этапе отчёта
 # (внутри toast()/send_telegram()) даёт сырой трейсбек вместо уже честно
-# посчитанного статуса. Тот же паттерн, что boost.py (полиш v1.14.1).
+# посчитанного статуса. Тот же паттерн, что boost_playtime.py (полиш v1.14.1).
 
 
 def test_run_add_report_result_raises_does_not_crash(

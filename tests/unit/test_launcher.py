@@ -293,7 +293,7 @@ def test_kill_all_sam_games_noop_when_none(monkeypatch):
 
 def test_prevent_idle_sleep_calls_set_thread_execution_state(monkeypatch):
     # Слепая зона аудита: заблокированный/уснувший по простою рабочий стол
-    # роняет pywinauto-клики в achievements/farm.py каждой следующей игрой.
+    # роняет pywinauto-клики в achievements/farm_achievements.py каждой следующей игрой.
     # ES_CONTINUOUS|ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRED закрывает
     # авто-сон/авто-выключение экрана по бездействию (не ручной Win+L).
     calls: list[int] = []
