@@ -41,6 +41,7 @@ def _load(rel: str) -> ModuleType:
         ("library/add_demos.py", "main"),
         ("library/wishlist_add.py", "main"),
         ("library/wishlist_clean.py", "main"),
+        ("library/inventory_sale.py", "main"),
         ("scan.py", "_parse_args"),
     ],
 )
