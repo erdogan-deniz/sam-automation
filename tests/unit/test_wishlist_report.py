@@ -24,6 +24,41 @@ def _capture(monkeypatch) -> dict:
     return calls
 
 
+def test_report_custom_labels_for_removal(monkeypatch) -> None:
+    calls = _capture(monkeypatch)
+    report_mod.report_result(
+        status="ok",
+        added=3,
+        refused=0,
+        error=0,
+        hit_wall=False,
+        cfg=_cfg(),
+        title="Чистка Wishlist",
+        done_word="удалено",
+    )
+    assert "удалено 3" in calls["tg"]
+    assert (
+        "Чистка Wishlist" in calls["toast"][0] or "удалено" in calls["toast"][1]
+    )
+
+
+def test_report_dry_run_label_for_removal(monkeypatch) -> None:
+    calls = _capture(monkeypatch)
+    report_mod.report_result(
+        status="dry_run",
+        added=7,
+        refused=0,
+        error=0,
+        hit_wall=False,
+        cfg=_cfg(),
+        title="Чистка Wishlist",
+        done_word="к удалению",
+        dry_head="dry-run (ничего не удалено)",
+    )
+    assert "ничего не удалено" in calls["tg"]
+    assert "к удалению 7" in calls["tg"]
+
+
 def test_report_ok_status_marks_success(monkeypatch) -> None:
     calls = _capture(monkeypatch)
     report_mod.report_result(

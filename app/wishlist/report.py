@@ -23,13 +23,18 @@ def report_result(
     error: int,
     hit_wall: bool,
     cfg: Any,
+    title: str = "Добавление в Wishlist",
+    done_word: str = "добавлено",
+    dry_head: str = "dry-run (ничего не добавлено)",
 ) -> None:
     """Честный финальный отчёт (лог + toast + Telegram).
 
-    status: "ok" | "interrupted" | "error" | "dry_run".
+    status: "ok" | "interrupted" | "error" | "dry_run". title/done_word/
+    dry_head — подписи; по умолчанию для добавления, чистка вишлиста
+    передаёт свои.
     """
     if status == "dry_run":
-        head, ok = "dry-run (ничего не добавлено)", True
+        head, ok = dry_head, True
     elif status == "interrupted":
         head, ok = "прервано (Ctrl+C)", False
     elif status == "error":
@@ -41,13 +46,13 @@ def report_result(
     else:
         head, ok = "готово", True
 
-    detail = f"добавлено {added}, отказано {refused}, ошибок {error}"
+    detail = f"{done_word} {added}, отказано {refused}, ошибок {error}"
     if hit_wall:
         detail += " — дальше стена"
 
     log.info(SEPARATOR)
-    log.info("Добавление в Wishlist — %s. %s", head, detail)
+    log.info("%s — %s. %s", title, head, detail)
     log.info(SEPARATOR)
-    toast("SAM Automation — Wishlist", f"{head}: {detail}")
+    toast(f"SAM Automation — {title}", f"{head}: {detail}")
     mark = "✅" if ok else "⚠️"
-    send_telegram(f"{mark} Wishlist — {head}: {detail}", cfg)
+    send_telegram(f"{mark} {title} — {head}: {detail}", cfg)
