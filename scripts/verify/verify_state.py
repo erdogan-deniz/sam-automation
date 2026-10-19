@@ -11,14 +11,14 @@ GetPlayerAchievements не имеет batch-варианта (по игре за
 свип на большой библиотеке — часы; это отдельная, более дорогая задача.
 
 Ничего не чинит и не пишет в data/ — только сообщает расхождения. Не требует
-SAM/run-lock (как scan.py) — чистый Steam API read-only отчёт.
+SAM/run-lock (как scan_library.py) — чистый Steam API read-only отчёт.
 
 Коды выхода: 0 — всё сверено, расхождений нет; 1 — найдены расхождения;
 2 — расхождений не найдено, но часть проверок не выполнилась (сбой Steam API,
 битый ответ) — «не проверено», а не «всё в порядке» и не «всё потеряно».
 
 Использование:
-    python scripts/verify/ground_truth.py
+    python scripts/verify/verify_state.py
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ def _run_check(
 def main() -> None:
     """Сверяет added.txt free_games, wishlist и demos с реальным Steam."""
     print()
-    setup_logging(name="ground_truth", category="verify/ground_truth")
+    setup_logging(name="verify_state", category="verify/verify_state")
     log.info("Сверка bookkeeping с реальным состоянием Steam")
     log.info(SEPARATOR)
     cfg = load_config()

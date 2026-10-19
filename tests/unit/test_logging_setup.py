@@ -11,7 +11,7 @@ def test_separator_is_80_box_chars():
 
 
 def test_centered_matches_legacy_farm_format():
-    # Воспроизводит прежний inline-код achievements/farm.py:
+    # Воспроизводит прежний inline-код achievements/farm_achievements.py:
     #   side = (70 - len(header) - 2) // 2
     #   "═"*side + " " + header + " " + "═"*side
     header = "[1/10]"

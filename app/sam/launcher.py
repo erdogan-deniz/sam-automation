@@ -217,7 +217,7 @@ def kill_all_sam_games() -> None:
 def prevent_idle_sleep() -> bool:
     """Не даёт Windows усыпить систему/погасить экран по таймауту простоя.
 
-    Слепая зона аудита: achievements/farm.py — единственный SAM-скрипт,
+    Слепая зона аудита: achievements/farm_achievements.py — единственный SAM-скрипт,
     кликающий через pywinauto (mouse.click/keyboard.send_keys). На
     заблокированном/неактивном рабочем столе Win32 SetCursorPos/SendInput
     отказывают (pywinauto бросает RuntimeError "нет активного рабочего

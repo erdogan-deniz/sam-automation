@@ -1,7 +1,7 @@
 """SAM Automation — автоматическая разблокировка всех достижений Steam.
 
 Использование:
-    python scripts/achievements/farm.py
+    python scripts/achievements/farm_achievements.py
 """
 
 from __future__ import annotations
@@ -262,14 +262,14 @@ def _report_result(
 def _teardown_picker(proc) -> None:
     """Убивает SAM.Picker.exe + бэкстоп-свип осиротевших SAM.Game.exe.
 
-    НИКОГДА не бросает (аналог boost.py _teardown). Вызывается из finally
+    НИКОГДА не бросает (аналог boost_playtime.py _teardown). Вызывается из finally
     main() на ЛЮБОМ выходе. Сбой kill_process (напр. PermissionError в гонке
     терминации уже выходящего процесса) не должен пропустить ни бэкстоп, ни
     честный _log_summary/_report_result, идущие следом. Бэкстоп нужен,
     поскольку kill_process(proc) убивает только сам Picker — осиротевший
     SAM.Game.exe (напр. из сбоя подключения в picker_session.py или Ctrl+C
     во время обработки игры) иначе никогда не подчищается, конфликт с
-    run-lock инвариантом (как в boost.py/cards/farm.py).
+    run-lock инвариантом (как в boost_playtime.py/cards/farm_cards.py).
     """
     try:
         kill_process(proc)
@@ -287,7 +287,7 @@ def main() -> None:
     args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
     setup_logging(
         name="farm_achievements",
-        category="achievements/farm",
+        category="achievements/farm_achievements",
     )
     try:
         acquire_run_lock("achievements/farm")
@@ -303,7 +303,7 @@ def main() -> None:
     # steam_id в GetPlayerSummaries, которому нужен числовой ID64 (сырой
     # vanity даёт ложное «API key invalid»). Пустой steam_id НЕ резолвим —
     # пусть validate выдаст локальную «missing». (RA-B; порядок resolve→
-    # validate выровнен со scan.py/boost.py/add_free.py/wishlist_add.py.)
+    # validate выровнен со scan_library.py/boost.py/add_free_games.py/fill_wishlist.py.)
     if cfg.steam_id:
         try:
             cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)
@@ -335,7 +335,7 @@ def main() -> None:
             and not cfg.game_ids
         ):
             log.error(
-                "all.txt не найден — запусти scan.py для формирования списка игр"
+                "all.txt не найден — запусти scan_library.py для формирования списка игр"
             )
             sys.exit(1)
         log.info("Список игр пуст (все исключены конфигом?)")
