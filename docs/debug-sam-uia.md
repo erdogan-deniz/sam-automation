@@ -11,7 +11,7 @@ git (`git log --all -- scripts/diag/dump_sam_window.py`).
 
 ## Ключевая техника: обход дерева ТОЛЬКО через `.children()`
 
-Ловушка (см. `CLAUDE.md`): окно из `app.windows()[0]` — это `UIAWrapper`, у него
+Ловушка: окно из `app.windows()[0]` — это `UIAWrapper`, у него
 **нет** `child_window()`/`wait()` (они только у `app.window(...)`). Вызов
 `child_window()` на `UIAWrapper` → `AttributeError`, который project-код глотает
 → молчаливый вечный `None`. Поэтому дерево обходится рекурсивно через
