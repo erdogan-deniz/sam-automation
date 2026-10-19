@@ -320,7 +320,9 @@ confirmation in Steam Guard — not sold yet), `ground.txt` (turned into gems) a
 `refused.txt` (Steam said no, never retried). Errors are not recorded; the item
 is tried again on the next run. Items with a buy order are sold at that bid
 unless their gems are worth more; items nobody bids on are listed at the lowest
-asking price and left hanging.
+asking price and left hanging. Steam allows at most 250 lots waiting for
+confirmation: the run stops at that ceiling, you confirm the batch in Steam
+Guard, then run `--sell` again.
 
 **Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
 API reports playtime for are gated on the **actual** `playtime_forever`: those at
