@@ -1,7 +1,6 @@
 """Тесты app/wishlist/wishlist_api.py: HTTP-вызов + x-eresult классификатор.
 
-x-eresult и коды сняты вживую на реальном аккаунте 2026-07-18 (см.
-docs/superpowers/specs/2026-07-18-add-wishlist-design.md): 1=added,
+x-eresult и коды сняты вживую на реальном аккаунте 2026-07-18 (см. спеку 2026-07-18-add-wishlist-design.md, вне git): 1=added,
 2/8=refused (owned/уже-в-вишлисте/invalid), 429 или eresult=84=rate_limit,
 HTTP 401=auth_fail.
 """

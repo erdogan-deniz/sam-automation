@@ -221,7 +221,7 @@ full-project-аудита 2026-08-10: единственное место, де�
   (пропущены `free_games`/`wishlist`, ложная запись про
   `[tool.pytest.ini_options]`), `config.example.yaml` (неверное описание
   `game_ids`/`game_ids_file`), `docs/gitflow.md` (неверный merge-back флоу),
-  `CLAUDE.md`, устаревший `--help` в `farm.py`; мёртвые поля/свойства
+  правила проекта, устаревший `--help` в `farm.py`; мёртвые поля/свойства
   (`UnlockResult.already_unlocked`, `ErrorTracker.total_errors` — теперь
   подключено вместо дублирующего счётчика в `farm.py`), лишние реэкспорты
   `AddResult`; мёртвые записи `.gitignore` (`.cache/`, `Options`).
