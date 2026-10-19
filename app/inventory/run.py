@@ -120,6 +120,12 @@ def _loop(
         raw[asset] = outcome
         if outcome in ("listed", "pending_confirm", "ok"):
             return "added"
+        if outcome == "pending_limit":
+            log.warning(
+                "Steam: слишком много лотов ждут подтверждения — подтвердите "
+                "их в Steam Guard и запустите --sell снова"
+            )
+            return "wall"
         if outcome in ("refused", "rate_limit", "auth_fail"):
             return outcome  # type: ignore[return-value]
         raise RuntimeError(f"сбой операции: {outcome}")
