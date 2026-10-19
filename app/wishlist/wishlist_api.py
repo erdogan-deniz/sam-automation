@@ -186,8 +186,11 @@ def add_pending(
     sleep: Callable[[float], None] = time.sleep,
     persist: Callable[[int, str], None] | None = None,
     call: Callable[[int, str], Classification] | None = None,
+    label: str = "Wishlist",
 ) -> AddResult:
     """Добавляет appids по одному (batch-эндпоинта нет).
+
+    label — префикс сообщений лога (распродажа инвентаря зовёт этот же цикл).
 
     call — операция над одним appid, по умолчанию add_to_wishlist; чистка
     вишлиста передаёт remove_from_wishlist (тогда added — удалённые).
@@ -218,7 +221,7 @@ def add_pending(
         try:
             classification = op(appid, access_token)
         except Exception as e:  # noqa: BLE001 — любой сетевой сбой → error appid
-            log.warning("Wishlist: сетевой сбой на appid=%d: %s", appid, e)
+            log.warning("%s: сетевой сбой на appid=%d: %s", label, appid, e)
             result.error.append(appid)
             if persist is not None:
                 persist(appid, "error")
@@ -248,7 +251,8 @@ def add_pending(
             if streak >= _WALL_STREAK:
                 result.hit_wall = True
                 log.warning(
-                    "Wishlist: %d подряд rate-limit — стена. Сделано: %d",
+                    "%s: %d подряд rate-limit — стена. Сделано: %d",
+                    label,
                     streak,
                     len(result.added),
                 )
@@ -257,7 +261,8 @@ def add_pending(
                 min(streak - 1, len(_BACKOFF_SCHEDULE) - 1)
             ]
             log.warning(
-                "Wishlist: rate-limit (streak %d/%d) — жду %.0fс",
+                "%s: rate-limit (streak %d/%d) — жду %.0fс",
+                label,
                 streak,
                 _WALL_STREAK,
                 delay,
