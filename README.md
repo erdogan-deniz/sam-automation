@@ -116,6 +116,15 @@ python scripts/library/wishlist_add.py --add   # actually add
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
 #    --interval SEC  pause between adds (default 1.0; 0 = full speed)
+
+# Remove free and unreleased items from the wishlist (IWishlistService/RemoveFromWishlist)
+python scripts/library/wishlist_clean.py           # dry-run: how many to remove
+python scripts/library/wishlist_clean.py --remove  # actually remove
+
+#    --free --unreleased  only this reason, flags combine (default: both)
+#    --list               show current removal candidates and exit
+#    --limit N            cap how many are removed per run
+#    --interval SEC       pause between removals (default 1.0)
 ```
 
 All three stop honestly rather than pretending to finish: `add_free.py` and
@@ -218,7 +227,8 @@ sam-automation/
 │   ├── library/
 │   │   ├── add_free.py     # Add every free Steam game/app to the library
 │   │   ├── add_demos.py    # Add every demo to the library
-│   │   └── wishlist_add.py # Add the Steam catalog to the wishlist
+│   │   ├── wishlist_add.py # Add paid, released Steam content to the wishlist
+│   │   └── wishlist_clean.py # Remove free and unreleased items from the wishlist
 │   ├── playtime/
 │   │   └── boost.py        # Boost low-playtime games via short SAM sessions
 │   └── verify/
@@ -238,7 +248,8 @@ sam-automation/
 │           ├── demos/              # candidates, added, refused, error
 │           ├── free/               # candidates, added, refused, error
 │           ├── playtime/           # done.txt, skip.txt
-│           └── wishlist/           # candidates, added, refused, error
+│           ├── wishlist/           # candidates, added, refused, error
+│           └── wishlist_clean/     # candidates, removed
 ├── logs/                   # Session logs (gitignored)
 ├── external/
 │   └── SAM/                # SAM binaries (auto-downloaded on first run)
@@ -284,6 +295,11 @@ and **Wishlist** (`data/games/ids/wishlist/`) share the same four-file layout:
 
 The wishlist keeps candidates of each type selection apart, e.g.
 `candidates_games.txt` for `--games` or `candidates_games_software.txt`.
+
+**Wishlist cleanup** (`data/games/ids/wishlist_clean/`) keeps `candidates.txt`
+(what to remove, rewritten every run) and `removed.txt`. A removed App ID is
+also dropped from the wishlist `added.txt`, so an unreleased game comes back as
+a candidate once it is out.
 
 **Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
 API reports playtime for are gated on the **actual** `playtime_forever`: those at

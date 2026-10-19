@@ -69,6 +69,19 @@ def test_clear_error_ids_removes_only_error_file(
     assert state_mod.load_added_ids() == {730}  # added не тронут
 
 
+def test_unmark_added_removes_only_that_appid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # B-18: удалённая из вишлиста не вышедшая игра должна вернуться в
+    # кандидатов, когда выйдет, — а added вычитается из кандидатов.
+    _patch_all(monkeypatch, tmp_path)
+    state_mod.mark_added(10)
+    state_mod.mark_added(20)
+    state_mod.unmark_added(10)
+    state_mod.unmark_added(99)  # отсутствующий — не ошибка
+    assert state_mod.load_added_ids() == {20}
+
+
 def test_clear_state_removes_everything(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

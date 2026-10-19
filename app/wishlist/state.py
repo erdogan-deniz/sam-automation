@@ -21,6 +21,7 @@ from app.cache import GAMES_DIR
 from app.id_file import (
     _append_id,
     _atomic_write_text,
+    _remove_id,
     load_ids_file,
     read_ids_ordered,
 )
@@ -73,6 +74,12 @@ def load_error_ids() -> set[int]:
 
 def mark_added(appid: int) -> None:
     _append_id(ADDED_FILE, appid)
+
+
+def unmark_added(appid: int) -> None:
+    """Убирает appid из added.txt: удалён из вишлиста чисткой (B-18) —
+    вышедшая игра снова попадёт в кандидатов."""
+    _remove_id(ADDED_FILE, appid)
 
 
 def mark_refused(appid: int) -> None:

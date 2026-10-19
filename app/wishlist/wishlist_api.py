@@ -40,6 +40,9 @@ _ERESULT_OK = "1"  # steam.enums.EResult.OK
 _ERESULT_FAIL = "2"  # steam.enums.EResult.Fail (owned / уже-в-вишлисте)
 _ERESULT_INVALID_PARAM = "8"  # EResult.InvalidParam (delisted/несуществующий)
 _ERESULT_RATE_LIMIT = "84"  # EResult.RateLimitExceeded
+# EResult.NoMatch: на RemoveFromWishlist — позиции в вишлисте уже нет (живая
+# проба 19.10.2026, повторное удаление Tetrapulse 250440).
+_ERESULT_NO_MATCH = "42"
 
 Classification = Literal["added", "refused", "rate_limit", "auth_fail"]
 
@@ -146,6 +149,23 @@ def add_to_wishlist(appid: int, access_token: str) -> Classification:
     return classification
 
 
+def remove_from_wishlist(appid: int, access_token: str) -> Classification:
+    """Один appid → удаление из вишлиста (B-17/B-18).
+
+    Исход «сделано» — тот же литерал "added", что у add_to_wishlist, чтобы
+    add_pending обслуживал оба направления. Сделано = x-eresult 1 или 42
+    (позиции уже нет — цель достигнута). Снято вживую 19.10.2026.
+    """
+    status, eresult, _body = _call("RemoveFromWishlist", appid, access_token)
+    if status == 200 and eresult == _ERESULT_NO_MATCH:
+        classification: Classification = "added"
+    else:
+        classification = _classify(status, eresult)
+    if classification == "added":
+        log.info("Wishlist: удалено appid=%d", appid)
+    return classification
+
+
 # Экспоненциальный backoff на rate-limit. Индекс = streak-1, капается на
 # последнем элементе. Живая мера 2026-07-18: 40 добавлений подряд без пауз —
 # ноль троттла (~2/сек) — устойчивый предел за тысячи adds НЕ измерен (не
@@ -165,8 +185,12 @@ def add_pending(
     interval: float = 1.0,
     sleep: Callable[[float], None] = time.sleep,
     persist: Callable[[int, str], None] | None = None,
+    call: Callable[[int, str], Classification] | None = None,
 ) -> AddResult:
     """Добавляет appids по одному (batch-эндпоинта нет).
+
+    call — операция над одним appid, по умолчанию add_to_wishlist; чистка
+    вишлиста передаёт remove_from_wishlist (тогда added — удалённые).
 
     Rate-limit (429/eresult=84) ретраит ТОТ ЖЕ appid с растущим backoff;
     streak подряд идущих rate-limit сбрасывается любым иным исходом. 5 подряд
@@ -183,13 +207,16 @@ def add_pending(
     ничего не осело. persist даёт caller'у (orchestrate.add) писать в
     id-файлы по ходу, переживая килл без потери прогресса.
     """
+    # Разрешается при вызове, а не в сигнатуре: тесты подменяют
+    # add_to_wishlist атрибутом модуля.
+    op = call if call is not None else add_to_wishlist
     result = AddResult()
     streak = 0
     i = 0
     while i < len(appids):
         appid = appids[i]
         try:
-            classification = add_to_wishlist(appid, access_token)
+            classification = op(appid, access_token)
         except Exception as e:  # noqa: BLE001 — любой сетевой сбой → error appid
             log.warning("Wishlist: сетевой сбой на appid=%d: %s", appid, e)
             result.error.append(appid)
@@ -221,7 +248,7 @@ def add_pending(
             if streak >= _WALL_STREAK:
                 result.hit_wall = True
                 log.warning(
-                    "Wishlist: %d подряд rate-limit — стена. Добавлено: %d",
+                    "Wishlist: %d подряд rate-limit — стена. Сделано: %d",
                     streak,
                     len(result.added),
                 )

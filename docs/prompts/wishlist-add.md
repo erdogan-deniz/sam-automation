@@ -183,6 +183,23 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   WebAPI, не CM-протокол; `steam`-пакет тяжёлый, тянуть его сюда не
   оправдано). Не «исправляй» это на импорт enum без веской причины.
 
+# ЧИСТКА ВИШЛИСТА: scripts/library/wishlist_clean.py (B-17/B-18, 19.10.2026)
+Удаляет из вишлиста бесплатное и не вышедшее — правило владельца «в
+вишлисте только платное и вышедшее». `app/wishlist/clean.py`: `discover`
+(`fetch_wishlist_ids` → `fetch_store_flags` → `clean_state.save_candidates`),
+`remove` (`wishlist_api.add_pending(..., call=remove_from_wishlist)` — тот
+же backoff и стена; `persist` пишет `wishlist_clean/removed.txt` и убирает
+appid из `wishlist/added.txt` через `state.unmark_added`, иначе вышедшая
+игра не вернулась бы в кандидатов), `run` (dry-run по умолчанию, `--remove`
+удаляет). Флаги: `--remove`, `--free`, `--unreleased` (складываются, без них
+оба), `--list`, `--limit N`, `--interval SEC`.
+Живая проба 19.10.2026: `POST IWishlistService/RemoveFromWishlist/v1` с тем
+же community-JWT → `x-eresult=1` (удалено, Tetrapulse 250440); повторное
+удаление → `42` (NoMatch, позиции нет) — считается успехом. В вишлисте
+было 106 031 позиция: бесплатных 8590, не вышедших 6321 (676 и то и
+другое) — 14 235 к удалению. Массовое `--remove` мутирует аккаунт —
+только по слову владельца.
+
 # ПРОБЕЛЫ В ТЕСТАХ (если правишь — закрой TDD)
 > Проверено 2026-08-10: фича построена через TDD (75 тестов в
 > test_wishlist_{api,discovery,orchestrate,report,state}.py) и живьём
