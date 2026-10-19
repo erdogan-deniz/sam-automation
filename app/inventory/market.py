@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import urllib.parse
 from typing import Any, Literal, Protocol
 
@@ -26,10 +27,18 @@ from app.exceptions import SAMError
 from app.inventory.items import GooParams
 from app.inventory.plan import Quote
 
+log = logging.getLogger("sam_automation")
+
 _COMMUNITY = "https://steamcommunity.com"
 
 SellOutcome = Literal[
-    "listed", "pending_confirm", "refused", "rate_limit", "auth_fail", "error"
+    "listed",
+    "pending_confirm",
+    "pending_limit",
+    "refused",
+    "rate_limit",
+    "auth_fail",
+    "error",
 ]
 GrindOutcome = Literal["ok", "refused", "rate_limit", "auth_fail", "error"]
 
@@ -115,6 +124,14 @@ def sell_item(
     if status != 200:
         return _status_outcome(status)
     if not body or not body.get("success"):
+        message = str((body or {}).get("message", ""))
+        log.warning(
+            "Steam отказал в лоте %s: %s", assetid, message or "без текста"
+        )
+        # Потолок неподтверждённых лотов (снят живьём 19.10.2026: 250): это не
+        # отказ по предмету, а сигнал «подтвердите лоты и запустите снова».
+        if "pending confirmation" in message.lower():
+            return "pending_limit"
         return "refused"
     if body.get("requires_confirmation"):
         return "pending_confirm"

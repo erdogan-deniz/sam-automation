@@ -49,6 +49,11 @@ sell_inventory.py --list`, строки из `logs/library/sell_inventory/` и �
 - `POST profiles/{id}/ajaxgrindintogoo/`: в ответе ключ `"goo_value_received "`
   **с пробелом на конце**.
 - `sessionid` Steam выдаёт в `Set-Cookie` любого GET и принимает в POST.
+- **Потолок неподтверждённых лотов — 250** (снят живьём 19.10.2026): дальше
+  `sellitem` отвечает `success: false`, `message: "You have too many listings
+  pending confirmation…"`. Скрипт распознаёт это как `pending_limit`: останавливается
+  сразу, предметы не помечает. Владелец подтверждает пачку в Steam Guard, потом
+  `--sell` запускают снова, и так до конца.
 - **Комиссия** (проверена на 101 лоте): `покупатель = на_руки + max(m, ⌊5%⌋) +
   max(m, ⌊10%⌋)`, `m` — минимум комиссии валюты (**рубли — 84 коп.**, не 1).
   Валюта вне таблицы `app/inventory/fees.py` — скрипт останавливается.
