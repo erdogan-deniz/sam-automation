@@ -1,4 +1,4 @@
-"""Тесты оркестрации main() add_free.py — разбор флагов, resolve→validate,
+"""Тесты оркестрации main() add_free_games.py — разбор флагов, resolve→validate,
 guard --list vs --reset/--retry-errors, wiring в run(). Паттерн загрузки —
 как test_add_demos_main.py (scripts/ не пакет). Закрывает пробел покрытия B-2.
 """
@@ -13,7 +13,10 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 _SCRIPT_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "library" / "add_free.py"
+    Path(__file__).resolve().parents[2]
+    / "scripts"
+    / "library"
+    / "add_free_games.py"
 )
 
 
@@ -56,7 +59,7 @@ def _stub_common(monkeypatch, cfg, argv) -> dict:  # type: ignore[no-untyped-def
 def test_main_resolves_steam_id_before_validate(monkeypatch) -> None:
     order: list[str] = []
     cfg = _cfg(steam_id="gabelogannewell")
-    _stub_common(monkeypatch, cfg, ["add_free.py"])
+    _stub_common(monkeypatch, cfg, ["add_free_games.py"])
 
     def fake_resolve(api_key, sid):
         order.append("resolve")
@@ -77,7 +80,7 @@ def test_main_resolves_steam_id_before_validate(monkeypatch) -> None:
 def test_main_empty_steam_id_not_resolved(monkeypatch) -> None:
     order: list[str] = []
     cfg = _cfg(steam_id="")
-    _stub_common(monkeypatch, cfg, ["add_free.py"])
+    _stub_common(monkeypatch, cfg, ["add_free_games.py"])
 
     monkeypatch.setattr(
         add_free,
@@ -97,7 +100,7 @@ def test_main_empty_steam_id_not_resolved(monkeypatch) -> None:
 
 def test_main_resolve_failure_exits_cleanly(monkeypatch) -> None:
     cfg = _cfg(steam_id="badvanity")
-    _stub_common(monkeypatch, cfg, ["add_free.py"])
+    _stub_common(monkeypatch, cfg, ["add_free_games.py"])
 
     def boom(api_key, sid):
         raise RuntimeError("vanity не резолвится")
@@ -122,7 +125,9 @@ def test_main_resolve_failure_exits_cleanly(monkeypatch) -> None:
 
 def test_main_list_with_reset_warns_and_ignores_reset(monkeypatch) -> None:
     cfg = _cfg()
-    calls = _stub_common(monkeypatch, cfg, ["add_free.py", "--list", "--reset"])
+    calls = _stub_common(
+        monkeypatch, cfg, ["add_free_games.py", "--list", "--reset"]
+    )
     monkeypatch.setattr(add_free, "resolve_steam_id", lambda *a: cfg.steam_id)
     monkeypatch.setattr(add_free, "validate", lambda c: None)
 
@@ -138,7 +143,7 @@ def test_main_list_with_reset_warns_and_ignores_reset(monkeypatch) -> None:
 
 def test_main_reset_clears_state_before_run(monkeypatch) -> None:
     cfg = _cfg()
-    calls = _stub_common(monkeypatch, cfg, ["add_free.py", "--reset"])
+    calls = _stub_common(monkeypatch, cfg, ["add_free_games.py", "--reset"])
     monkeypatch.setattr(add_free, "resolve_steam_id", lambda *a: cfg.steam_id)
     monkeypatch.setattr(add_free, "validate", lambda c: None)
 
@@ -157,7 +162,9 @@ def test_main_reset_clears_state_before_run(monkeypatch) -> None:
 
 def test_main_retry_errors_clears_only_error_ids(monkeypatch) -> None:
     cfg = _cfg()
-    calls = _stub_common(monkeypatch, cfg, ["add_free.py", "--retry-errors"])
+    calls = _stub_common(
+        monkeypatch, cfg, ["add_free_games.py", "--retry-errors"]
+    )
     monkeypatch.setattr(add_free, "resolve_steam_id", lambda *a: cfg.steam_id)
     monkeypatch.setattr(add_free, "validate", lambda c: None)
 
@@ -180,7 +187,7 @@ def test_main_retry_errors_clears_only_error_ids(monkeypatch) -> None:
 def test_main_wires_add_and_limit_into_run(monkeypatch) -> None:
     cfg = _cfg()
     calls = _stub_common(
-        monkeypatch, cfg, ["add_free.py", "--add", "--limit", "50"]
+        monkeypatch, cfg, ["add_free_games.py", "--add", "--limit", "50"]
     )
     monkeypatch.setattr(add_free, "resolve_steam_id", lambda *a: cfg.steam_id)
     monkeypatch.setattr(add_free, "validate", lambda c: None)

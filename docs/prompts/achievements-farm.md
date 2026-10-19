@@ -1,7 +1,7 @@
 <!--
 Handoff-промпт: фича achievements farm (разблокировка достижений через SAM —
 money-path). Скопируй всё ниже в новый чат и заполни секцию «ЗАДАЧА/СИМПТОМ».
-Собран из реального кода scripts/achievements/farm.py + app/sam/ + app/ (workflow:
+Собран из реального кода scripts/achievements/farm_achievements.py + app/sam/ + app/ (workflow:
 читатели по внутренностям SAM → синтез → адверсариальная сверка).
 -->
 
@@ -18,8 +18,8 @@ develop через merge --no-ff. Коммиты conventional, тело на р�
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: фича/баг/вопрос. Если баг — приложи реальный вывод
-`python scripts/achievements/farm.py`, что наблюдаешь vs ожидаешь, строки из
-logs/achievements/farm/, и состояние achievements/{unlocked,error,without}.txt
+`python scripts/achievements/farm_achievements.py`, что наблюдаешь vs ожидаешь, строки из
+logs/achievements/farm_achievements/, и состояние achievements/{unlocked,error,without}.txt
 ДО/ПОСЛЕ. Если UIA/детект — сними дамп окна по docs/debug-sam-uia.md.>>
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
@@ -29,13 +29,13 @@ logs/achievements/farm/, и состояние achievements/{unlocked,error,with
 один процесс Picker на весь прогон, каждая игра открывается в своём SAM.Game.
 Прогресс сохраняется после каждой игры → перезапуск продолжает с места.
 
-# ТОЧКА ВХОДА: scripts/achievements/farm.py
-main(): parse args → setup_logging(category="achievements/farm") →
+# ТОЧКА ВХОДА: scripts/achievements/farm_achievements.py
+main(): parse args → setup_logging(category="achievements/farm_achievements") →
 acquire_run_lock("achievements/farm") [ДО сброса прогресса!] → atexit release →
 load_config → resolve_steam_id (ДО validate, если steam_id непусто: validate
 шлёт steam_id в GetPlayerSummaries, которому нужен числовой ID64 — сырой
 vanity/URL иначе даёт ложное «API key invalid»; RA-B, исправлено — раньше
-farm.py вообще НЕ резолвил) → validate → _prepare_progress(args) →
+farm_achievements.py вообще НЕ резолвил) → validate → _prepare_progress(args) →
 check_steam_running → ensure_sam → load_game_ids → выбор среза
 (--retry-without/--retry-done → _select_retry_subset, иначе
 _apply_resume_filter) → launch_picker → цикл _process_one_game по каждой игре
@@ -65,7 +65,7 @@ _apply_resume_filter) → launch_picker → цикл _process_one_game по ка
 --retry-done (перепрогнать ТОЛЬКО unlocked).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
-- scripts/achievements/farm.py — оркестрация + флаги + итоговый отчёт.
+- scripts/achievements/farm_achievements.py — оркестрация + флаги + итоговый отчёт.
 - app/sam/picker_session.py — PickerSession.add_and_open_game: вводит appid в
   Picker, дабл-клик, ждёт новый PID SAM.Game, connect(backend="uia") → возвращает
   pywinauto Application. Гард IsWindowEnabled (modal dialog вешает UIA). Ошибки →
@@ -126,13 +126,13 @@ _apply_resume_filter) → launch_picker → цикл _process_one_game по ка
   аварийный SAMTooManyErrors (`aborted`) прогон даёт ⚠️ и честный текст, НЕ
   «✅ Готово»; ✅ только при чистом завершении без ошибок. Не регрессить.
 - newly_unlocked = полное число строк списка (НЕ дельта ранее-залоченных).
-- Логи: logs/achievements/farm/<TIMESTAMP>.log (UTF-8).
+- Логи: logs/achievements/farm_achievements/<TIMESTAMP>.log (UTF-8).
 
 # ПРОБЕЛЫ В ТЕСТАХ (если правишь — закрой TDD)
 > Проверено 2026-08-10 систематическим прогоном по стабильности всех
 > скриптов проекта: этот файл — единственный из пяти SAM/library-скриптов,
-> НИКОГДА не имевший полного многоосевого аудита (в отличие от scan.py/
-> boost.py/cards-farm.py). Ниже — реальное состояние покрытия, не
+> НИКОГДА не имевший полного многоосевого аудита (в отличие от scan_library.py/
+> boost_playtime.py/cards-farm.py). Ниже — реальное состояние покрытия, не
 > предположение.
 - _process_one_game — ПОКРЫТ (test_farm.py: soft-error/abort/unlock/no-achievements
   маршруты). _apply_resume_filter — БЕЗ покрытия.
@@ -168,7 +168,7 @@ _apply_resume_filter) → launch_picker → цикл _process_one_game по ка
 5. ✅ **[Low, доки] `--retry-without` help-текст** — актуализирован (v1.15.0).
 
 Общий баг в `app/run_lock.py` (AccessDenied=«мёртв») тоже закрыт (v1.15.1),
-затрагивал и boost.py/cards/farm.py.
+затрагивал и boost_playtime.py/cards/farm_cards.py.
 
 # НАЙДЕНО ДОПОЛНИТЕЛЬНО — слепая зона «screen lock» (закрыто)
 Единственный из 3 SAM-скриптов, кликающий через pywinauto (mouse.click/
@@ -181,7 +181,7 @@ SetCursorPos/SendInput отказывают (`RuntimeError` «нет актив�
 сразу после `launch_picker` — закрывает авто-сон/авто-выключение экрана по
 простою (самый реалистичный триггер для «запустил и ушёл»). НЕ спасает от
 ручного Win+L/экранной заставки с паролем — держи сессию разблокированной на
-время прогона. `boost.py`/`cards/farm.py` иммунны (не используют pywinauto).
+время прогона. `boost_playtime.py`/`cards/farm_cards.py` иммунны (не используют pywinauto).
 С 2026-10-18 (B-8) `prevent_idle_sleep()` проверяет возврат Windows: при
 отказе (0) — WARNING с подсказкой отключить сон в настройках питания и
 `False`, прогон продолжается.

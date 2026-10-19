@@ -13,7 +13,7 @@ Handoff-промпт: «Аудитор-чистильщик проекта». С
 финдеров + верификация + критик слепых зон) параллельно прогнан отдельный
 security/correctness-аудит по всем модулям (за рамками чартера этого файла:
 мусор+архитектура). Нашёл 7 High-находок (data-loss/resource-leak/run-lock)
-в scripts/achievements/farm.py, app/sam/picker_session.py,
+в scripts/achievements/farm_achievements.py, app/sam/picker_session.py,
 app/free_games/orchestrate.py, app/run_lock.py, app/cookies/playwright.py,
 app/auth/credentials.py — детали и предложения там, не здесь.
 
@@ -21,9 +21,9 @@ app/auth/credentials.py — детали и предложения там, не 
 - [УДАЛЕНО] GUI-подсистема: gui/ (10 файлов) + run.py + тесты test_gui_runner/test_settings_validate удалены; customtkinter убран из requirements.txt/pyproject.toml; README/правила проекта/этот промпт почищены от gui-ссылок. Проект теперь CLI-only (scripts/ + app/).
 - [УСТРАНЕНО] D докстринг-дрейф app/cache.py: «game_names.json»→names.json (load/save_game_names), «no_achievements.txt»→without.txt (load/mark_no_achievements, clear_progress). Реальные файлы из констант GAME_NAMES_FILE/NO_ACHIEVEMENTS_FILE.
 - [УДАЛЕНО] A устаревшие планы: планы и спеки (config-validator/sam-auto-update/telegram-notifications, 2026-03-23) удалены — описывали уже реализованное/отменённое; git-история сохранена.
-- [УСТРАНЕНО] honest-report: scripts/achievements/farm.py слал «✅ Готово» безусловно даже на Ctrl+C / SAMTooManyErrors — введён _report_result (status ok/interrupted/aborted, ⚠️ вместо ✅), +4 теста. Коммит 58cc5da. Теперь честный отчёт консистентен с boost.
-- [УСТРАНЕНО] D остаточный ids.txt→all.txt / scan_achievements.py→scan.py: докстринг/комментарии/лог app/game_list.py, main()-докстринг scripts/scan.py, ошибка scripts/achievements/farm.py, 4× user-строки app/cookies/playwright.py. Коммит 0f1a8b7. Не тронуты (легитимно): тест-фикстуры tmp_path/ids.txt, имя логгера name="scan_achievements", gui error_ids.txt.
-- [УСТРАНЕНО] D дрейф доков: README badge/Requirements 3.10+→3.12; добавлена вкладка Playtime (README + gui/app.py docstring); store_empty.txt внесён в таблицу+дерево; убраны has_cards/no_cards из доков карт; в дерево добавлен playtime/ (done.txt, skip.txt); docstrings scripts/scan.py и gui/runner.py (путь scripts/achievements/scan.py→scripts/scan.py, ids.txt→all.txt). Коммит 409fb74.
+- [УСТРАНЕНО] honest-report: scripts/achievements/farm_achievements.py слал «✅ Готово» безусловно даже на Ctrl+C / SAMTooManyErrors — введён _report_result (status ok/interrupted/aborted, ⚠️ вместо ✅), +4 теста. Коммит 58cc5da. Теперь честный отчёт консистентен с boost.
+- [УСТРАНЕНО] D остаточный ids.txt→all.txt / scan_achievements.py→scan_library.py: докстринг/комментарии/лог app/game_list.py, main()-докстринг scripts/scan_library.py, ошибка scripts/achievements/farm_achievements.py, 4× user-строки app/cookies/playwright.py. Коммит 0f1a8b7. Не тронуты (легитимно): тест-фикстуры tmp_path/ids.txt, имя логгера name="scan_achievements", gui error_ids.txt.
+- [УСТРАНЕНО] D дрейф доков: README badge/Requirements 3.10+→3.12; добавлена вкладка Playtime (README + gui/app.py docstring); store_empty.txt внесён в таблицу+дерево; убраны has_cards/no_cards из доков карт; в дерево добавлен playtime/ (done.txt, skip.txt); docstrings scripts/scan_library.py и gui/runner.py (путь scripts/achievements/scan_library.py→scripts/scan_library.py, ids.txt→all.txt). Коммит 409fb74.
 - [УСТРАНЕНО] B dead-код: app/cards/card_store.py удалён целиком вместе с транзитивно мёртвыми _has_trading_cards / _TRADING_CARDS_CATEGORY / _REQUEST_DELAY (store_api.py) и CARD_HAS_CARDS_FILE / CARD_NO_CARDS_FILE (card_cache.py) + реэкспорт из app/cards/__init__.py. Коммит 29a8b22. → Секции B/C/D/E и «НЕ ТРОГАТЬ» ниже про card_store и упоминания has_cards/no_cards УСТАРЕЛИ.
 - [ЛОЖНОЕ СРАБАТЫВАНИЕ] D CHANGELOG.md:40 fetch_achievement_count — это КОРРЕКТНАЯ историческая запись [1.4.0] (переименование в fetch_achievement_info было в 1.5.0). НЕ «исправлять».
 - [УСТРАНЕНО] D дрейф памяти: хук project_scan_catalog_reverted в MEMORY.md поправлен (флаги --retry-errors/--reset рабочие с v1.2.0; --no-resume заменён на --retry-without).
@@ -41,7 +41,7 @@ app/auth/credentials.py — детали и предложения там, не 
     auth/cards/sam facade).
   - get_web_cookies дублируется: app/steam/steam_cm.py:191 реэкспортирует
     app.cookies.get_web_cookies, app/steam/__init__.py листит его в __all__;
-    вызывающие расходятся — scripts/cards/farm.py берёт через app.steam,
+    вызывающие расходятся — scripts/cards/farm_cards.py берёт через app.steam,
     app/wishlist/* — через app.cookies напрямую.
   - app/steam/__init__.py:4 подтверждён НЕ листовым живым sys.modules-дифом:
     импорт app.steam тянет app.auth.* и app.cookies.* целиком.
@@ -52,7 +52,7 @@ app/auth/credentials.py — детали и предложения там, не 
     старые 4 скрипта нет. РИСК money-path не изменился → дизайн сначала.
 - D: config-таблица README/дерево структуры/Python-badge — СВЕРЕНО 2026-08-10,
   дрейфа не найдено (закрыто). Взамен 2 новые находки:
-  - scripts/achievements/farm.py:138 — help-текст `--retry-without` всё ещё
+  - scripts/achievements/farm_achievements.py:138 — help-текст `--retry-without` всё ещё
     упоминает удалённые в v1.9.x Store-советы store_zero/store_empty;
     реализация (_select_retry_subset) их не трогает.
   - ~~README.md:118 — задокументированный дефолт `sam_game_exe_path` исходил
@@ -66,7 +66,7 @@ app/auth/credentials.py — детали и предложения там, не 
   interactive.py — ПОДТВЕРЖДЕНЫ, конкретика: credentials._load_shared_secret/
   _save_session/_load_session(легаси-миграция)/_ask_keep_credentials;
   interactive._do_interactive_login email-code и TOTP-vs-manual-ввод ветки.
-  Новое: main() scripts/library/add_free.py и wishlist_add.py целиком без
+  Новое: main() scripts/library/add_free_games.py и fill_wishlist.py целиком без
   теста; app/exceptions.py без прямого теста (тривиально). Старые пункты про
   app/steam (steam_api/steam_id/packageinfo), app/cards
   (card_cache/card_checker), app/sam/picker_session — НЕ переверялись этим
@@ -74,7 +74,8 @@ app/auth/credentials.py — детали и предложения там, не 
   срабатывание: гипотеза, что tkinter-тесты в test_win32_error_window.py
   тихо скипаются на CI — ОПРОВЕРГНУТА живым логом `gh run view` (637 passed,
   0 skipped, 2026-08-10).
-- F: дубли имён farm.py×2 — статус прежний, информационно.
+- F: дубли имён farm.py×2 — закрыто 19.10.2026 переименованием в
+  farm_achievements.py / farm_cards.py.
 
 # ЗАДАЧА
 Провести аудит <<область / весь проект / перед релизом>> репозитория sam-automation на предмет мусора и структурных неточностей. Составить ранжированный по severity отчёт с доказательствами (файл:строка) и предложениями. НЕ удалять и НЕ рефакторить ничего до подтверждения находки и согласия. Дефолт — репортить, а не резать с ходу. Помни урок v1.3.0: перед релизом сверяй VERSION ↔ последний тег vX.Y.Z ↔ верхнюю секцию CHANGELOG (однажды VERSION забыли бампнуть, тег ушёл на старую версию).
@@ -95,7 +96,7 @@ B) DEAD / DEPRECATED КОД
 - ВНИМАНИЕ (ложные срабатывания): маркеров TODO/FIXME/HACK/deprecated в коде фактически НЕТ. Все «legacy» (app/auth/interactive.py, iauth_service.py, jwt.py, steam_cm.py, _constants.py, credentials.py; тест test_logging_setup.py) — доменная терминология live-кода Steam-auth, НЕ долг. gevent-eventemitter и protobuf<4 — транзитивные зависимости steam[client], НЕ unused.
 
 C) СТРУКТУРНЫЕ НЕТОЧНОСТИ / НАРУШЕНИЯ АРХИТЕКТУРЫ
-- Оркестрация «утекла» в scripts (нарушение «scripts тонкие»): scripts/scan.py (162 стр.: _read_vdf_ids/_read_api_ids/_read_cm_ids + слияние 3 источников), scripts/achievements/farm.py (303), scripts/playtime/boost.py (281), scripts/cards/farm.py (245).
+- Оркестрация «утекла» в scripts (нарушение «scripts тонкие»): scripts/scan_library.py (162 стр.: _read_vdf_ids/_read_api_ids/_read_cm_ids + слияние 3 источников), scripts/achievements/farm_achievements.py (303), scripts/playtime/boost_playtime.py (281), scripts/cards/farm_cards.py (245).
 - Дублирование публичной поверхности API: get_web_cookies определён в app/cookies/__init__.py:57, ре-экспортирован в app/steam/steam_cm.py:125 (noqa: F401, E402) и app/steam/__init__.py:8,16 — две публичные точки (app.cookies.get_web_cookies и app.steam.get_web_cookies; scripts/cards/* берут через app.steam).
 - [УСТРАНЕНО] Cross-subpackage импорт из app.steam.store_api: и card_store.py, и app/catalog.py (импортировал AchievementInfo) удалены — вместе с самим store_api.py (v1.9.x).
 - Гибридный фасад: app/cookies/__init__.py — НЕ чистый re-export, содержит бизнес-логику get_web_cookies (:57-93) + _browser_cookies_silent (:31) / _browser_cookies (:52). Остальные фасады (auth, cards, sam, steam) — чистые.
@@ -105,10 +106,10 @@ D) ДРЕЙФ ДОКОВ / ВЕРСИЙ
 - README badge (README.md:5) и Requirements (README.md:21-22) говорят «Python 3.10+», а pyproject/ruff/mypy/CI таргетят 3.12 — версия-дрейф, флагать.
 - [УСТРАНЕНО] Advisory-каталог целиком (app/catalog.py: with.txt/store_zero.txt/store_empty.txt + scripts/categorize.py + app/steam/store_api.py) удалён в v1.9.x — фича неактуальна (farm покрывает все игры, порядок-подсказки и ненадёжные Store-догадки не нужны).
 - CHANGELOG.md:40 (v1.4.0) ссылается на store_api.fetch_achievement_count. ВНИМАНИЕ: это может быть КОРРЕКТНАЯ историческая запись — на момент 1.4.0 функция так и называлась (переименована в fetch_achievement_info в 1.5.0). CHANGELOG — точечный во времени; не «исправлять» историю вслепую.
-- [УСТРАНЕНО, см. СТАТУС выше] Дрейф scripts/scan.py/gui/runner.py (путь «scripts/achievements/scan.py», «пишет ids.txt») закрыт коммитами 409fb74 + 0f1a8b7; остаточный ids.txt/scan_achievements.py в game_list/farm/playwright тоже устранён.
-- README «playtime/skip.txt» упомянут в прозе (README.md:237), но отсутствует в дереве структуры — сверь все playtime-файлы (done.txt, skip.txt) со scripts/playtime/boost.py.
+- [УСТРАНЕНО, см. СТАТУС выше] Дрейф scripts/scan_library.py/gui/runner.py (путь «scripts/achievements/scan_library.py», «пишет ids.txt») закрыт коммитами 409fb74 + 0f1a8b7; остаточный ids.txt/scan_achievements.py в game_list/farm/playwright тоже устранён.
+- README «playtime/skip.txt» упомянут в прозе (README.md:237), но отсутствует в дереве структуры — сверь все playtime-файлы (done.txt, skip.txt) со scripts/playtime/boost_playtime.py.
 - README config-таблица (launch_delay, load_timeout, max_concurrent_games, card_check_interval, playtime_idle_duration, playtime_target_minutes и т.д.) — сверить с дефолтами app/config.py.
-- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm.py (--retry-errors/--reset/--retry-without/--retry-done), scripts/cards/farm.py (флагов НЕТ — --reset удалён в v1.9.x), scripts/playtime/boost.py:65,70 (--list/--reset). (scripts/categorize.py с --reset/--limit удалён в v1.9.x.)
+- Дрейф памяти проекта: заметка project_scan_catalog_reverted.md считает --retry-errors/--reset «мёртвыми» — это УСТАРЕЛО, флаги живые: scripts/achievements/farm_achievements.py (--retry-errors/--reset/--retry-without/--retry-done), scripts/cards/farm_cards.py (флагов НЕТ — --reset удалён в v1.9.x), scripts/playtime/boost_playtime.py:65,70 (--list/--reset). (scripts/categorize.py с --reset/--limit удалён в v1.9.x.)
 - ИНВАРИАНТ версии: VERSION-файл == верхняя секция CHANGELOG == последний тег `vX.Y.Z`. Сверяй ПЕРЕД каждым релизом (это инвариант, а не снапшот: пин коммита/PR ре-ротится каждым коммитом). Прецедент: на v1.3.0 забытый бамп дал тег с VERSION=1.2.0 — фикс-форвардом, тег НЕ перемещали.
 
 E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)
@@ -121,7 +122,7 @@ E) ПРОБЕЛЫ В ТЕСТАХ (зеркальность tests/unit ↔ app)
 - app/exceptions.py, app/unlock_result.py — без тестов, но тривиальны (низкий риск).
 
 F) РАСКЛАДКА / ДУБЛИ
-- Дублирующиеся имена файлов повышают риск запуска не того скрипта: две farm.py (scripts/achievements/farm.py; scripts/cards/farm.py). (scripts/cards/scan.py удалён в v1.9.x — второй scan.py больше нет; scripts/stats.py + app/stats.py удалены в v1.9.x.)
+- Имена скриптов — «глагол_существительное» (farm_achievements.py, farm_cards.py, fill_wishlist.py…), дублей нет с 19.10.2026. Новый скрипт называть так же; дубль имени или выпавший из формата — находка.
 - README-дерево структуры — ручное; диффать против реальных app/, scripts/ на добавленные/удалённые модули.
 
 # ЭТАЛОННАЯ СТРУКТУРА (от неё ищешь отклонения)

@@ -1,5 +1,5 @@
 <!--
-Handoff-промпт: распродажа инвентаря Steam (scripts/library/inventory_sale.py,
+Handoff-промпт: распродажа инвентаря Steam (scripts/library/sell_inventory.py,
 B-16). Скопируй всё ниже в новый чат и заполни секцию «ЗАДАЧА/СИМПТОМ». Собран
 из реального кода app/inventory/ и живых проб 19.10.2026.
 -->
@@ -19,11 +19,11 @@ Windows, Python 3.12, venv в `.venv`. Отвечай коротко. Перед
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: фича/баг/вопрос. Для бага приложи вывод `python scripts/library/
-inventory_sale.py --list`, строки из `logs/library/inventory_sale/` и файлы
+sell_inventory.py --list`, строки из `logs/library/sell_inventory/` и файлы
 `data/games/ids/inventory_sale/{listed,pending,ground,refused}.txt`.>>
 
 # ЧТО ДЕЛАЕТ СКРИПТ
-`python scripts/library/inventory_sale.py` — dry-run: план и суммы. Флаги
+`python scripts/library/sell_inventory.py` — dry-run: план и суммы. Флаги
 (регистр не важен): `--sell` (выставить лоты), `--grind` (разобрать),
 `--list` (таблица по предметам), `--limit N`, `--interval SEC` (по умолчанию 3),
 `--reset` (забыть сделанное, например после снятия лотов).

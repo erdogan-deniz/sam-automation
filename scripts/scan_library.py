@@ -6,7 +6,7 @@
   3. Steam CM        — все лицензии аккаунта (требует логин, самый полный)
 
 Использование:
-    python scripts/scan.py  # читает config.yaml, пишет all.txt
+    python scripts/scan_library.py  # читает config.yaml, пишет all.txt
 """
 
 from __future__ import annotations
@@ -111,9 +111,7 @@ def main(allow_shrink: bool = False) -> None:
     """
     print()
 
-    setup_logging(
-        verbose=False, name="scan_achievements", category="achievements/scan"
-    )
+    setup_logging(verbose=False, name="scan_library", category="scan_library")
     log.info("Сканирование приложений библиотеки Steam")
     log.info(SEPARATOR)
     cfg = load_config()

@@ -9,7 +9,10 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 _BOOST_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "playtime" / "boost.py"
+    Path(__file__).resolve().parents[2]
+    / "scripts"
+    / "playtime"
+    / "boost_playtime.py"
 )
 
 

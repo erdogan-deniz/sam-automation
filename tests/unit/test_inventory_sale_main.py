@@ -1,4 +1,4 @@
-"""Тесты main() inventory_sale.py: флаги → run()."""
+"""Тесты main() sell_inventory.py: флаги → run()."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ _SCRIPT_PATH = (
     Path(__file__).resolve().parents[2]
     / "scripts"
     / "library"
-    / "inventory_sale.py"
+    / "sell_inventory.py"
 )
 
 
@@ -30,7 +30,7 @@ inventory_sale = _load()
 
 def _run_with(monkeypatch, *flags: str) -> dict:  # type: ignore[no-untyped-def]
     cfg = SimpleNamespace(steam_api_key="k", steam_id="vanity")
-    monkeypatch.setattr(sys, "argv", ["inventory_sale.py", *flags])
+    monkeypatch.setattr(sys, "argv", ["sell_inventory.py", *flags])
     monkeypatch.setattr(inventory_sale, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(inventory_sale, "load_config", lambda: cfg)
     monkeypatch.setattr(

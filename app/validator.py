@@ -118,7 +118,7 @@ def _check_numeric_bounds(cfg: Config) -> list[str]:
         )
     # between_games_delay: nan/inf проскакивают guard >= 0 (`nan < 0` ==
     # False); отрицательное или nan значение роняет time.sleep() необработанным
-    # ValueError посреди прогона achievements/farm.py вместо честного отчёта.
+    # ValueError посреди прогона achievements/farm_achievements.py вместо честного отчёта.
     if (
         not math.isfinite(cfg.between_games_delay)
         or cfg.between_games_delay < 0

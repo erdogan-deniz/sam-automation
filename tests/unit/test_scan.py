@@ -1,4 +1,4 @@
-"""Тесты scripts/scan.py — оркестрация слияния источников ID → all.txt.
+"""Тесты scripts/scan_library.py — оркестрация слияния источников ID → all.txt.
 
 Источники (_read_vdf_ids/_read_api_ids/_read_cm_ids) и внешние зависимости
 замоканы: проверяется поведение main() — слияние с дедупом, атомарная запись,
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 import app.steam
-import scripts.scan as scan
+import scripts.scan_library as scan
 from app.config import Config
 
 _STEAM_ID = "76561197960287930"

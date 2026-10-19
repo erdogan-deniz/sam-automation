@@ -35,14 +35,14 @@ def _load(rel: str) -> ModuleType:
 @pytest.mark.parametrize(
     ("rel", "entry"),
     [
-        ("achievements/farm.py", "main"),
-        ("playtime/boost.py", "main"),
-        ("library/add_free.py", "main"),
+        ("achievements/farm_achievements.py", "main"),
+        ("playtime/boost_playtime.py", "main"),
+        ("library/add_free_games.py", "main"),
         ("library/add_demos.py", "main"),
-        ("library/wishlist_add.py", "main"),
-        ("library/wishlist_clean.py", "main"),
-        ("library/inventory_sale.py", "main"),
-        ("scan.py", "_parse_args"),
+        ("library/fill_wishlist.py", "main"),
+        ("library/clean_wishlist.py", "main"),
+        ("library/sell_inventory.py", "main"),
+        ("scan_library.py", "_parse_args"),
     ],
 )
 def test_script_lowercases_flag_names(monkeypatch, rel, entry) -> None:

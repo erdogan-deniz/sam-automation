@@ -361,7 +361,7 @@ def test_discover_candidates_passes_types_to_universe(monkeypatch) -> None:
 
 def test_discover_candidates_drops_free_content(monkeypatch) -> None:
     # Решение владельца 19.10.2026: в вишлист — только платное, бесплатное
-    # забирает add_free.py. Проверяем бесплатность только у оставшихся.
+    # забирает add_free_games.py. Проверяем бесплатность только у оставшихся.
     monkeypatch.setattr(
         discovery, "discover_universe", lambda _key, **_kw: [1, 2, 3, 4, 5]
     )
