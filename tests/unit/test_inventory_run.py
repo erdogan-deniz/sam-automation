@@ -541,3 +541,23 @@ def test_run_list_hides_non_marketable_items(world, capsys) -> None:
     out = capsys.readouterr().out
     assert BG in out
     assert "753-Gems" not in out
+
+
+def test_run_sells_bid_rows_before_ask_rows(world) -> None:
+    """--limit 1 сначала проверяет лот по заявке (мгновенная продажа)."""
+    books = _books()
+    books[EMO] = _book(5671, 8273)  # у второго предмета есть заявка
+    http = FakeHttp(books, goo={1: 10})
+    inv_run.run(
+        do_sell=True,
+        do_grind=False,
+        list_only=False,
+        limit=1,
+        interval=0.0,
+        reset=False,
+        steam_id="7656",
+        cfg=_cfg(),
+        http=http,
+        sleep=lambda s: None,
+    )
+    assert [f["assetid"] for _u, f in http.posts] == ["20"]  # EMO, не BG
