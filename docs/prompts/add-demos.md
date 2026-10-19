@@ -1,7 +1,7 @@
 <!--
 Handoff-промпт: фича auto-add Demos (scripts/library/add_demos.py).
 Скопируй всё ниже в новый чат и заполни секцию «ЗАДАЧА/СИМПТОМ». Отделена
-от add_free.py 2026-09-12 (B-11, TDD) — раньше демо были побочным эффектом
+от add_free_games.py 2026-09-12 (B-11, TDD) — раньше демо были побочным эффектом
 того скрипта (category1=10 внутри общей discovery, include_demos=True).
 -->
 
@@ -30,7 +30,7 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 минус owned (развёрнутые через `packageinfo.vdf` пакеты живой CM-сессии),
 минус уже added/refused → `candidates.txt`. **Add**:
 `client.request_free_license` батчами по 20 поверх переиспользуемого
-`cm_session()` (та же функция, что и у add_free.py — `app.free_games.licenses`
+`cm_session()` (та же функция, что и у add_free_games.py — `app.free_games.licenses`
 переиспользуется напрямую, это generic CM-механизм, не free_games-специфика).
 Дефолт — dry-run (только discover + отчёт); реальное добавление лицензий
 необратимо на аккаунте (штатными средствами Steam не убрать) — только по
@@ -38,7 +38,7 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 
 > **Не путай с add-free.md**: до 2026-09-12 демо были частью того скрипта
 > (`include_demos=True`). Теперь полностью отделены — свой discovery, свой
-> `data/games/ids/demos/`, свой CLI. Общее с add_free.py — только пагинация
+> `data/games/ids/demos/`, свой CLI. Общее с add_free_games.py — только пагинация
 > store search (`app.steam.store_search`) и выдача лицензий
 > (`app.free_games.licenses`), оба переиспользуются напрямую, не дублируются.
 
@@ -46,7 +46,7 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 `main()`: `_build_parser().parse_args()` → `setup_logging(category="library/
 add_demos")` → `load_config()` → если `cfg.steam_id` непусто:
 `resolve_steam_id` (vanity/URL → ID64) ДО `validate` (тот же RA-B-паттерн,
-что в scan.py/boost.py/add_free.py) → `validate(cfg)` → guard `--list` vs
+что в scan_library.py/boost.py/add_free_games.py) → `validate(cfg)` → guard `--list` vs
 `--reset`/`--retry-errors` (варнинг, не ошибка) → применяет
 `--reset`/`--retry-errors` к state → `app.demos.run(do_add, list_only,
 limit, cfg)`.
@@ -102,7 +102,7 @@ limit, cfg)`.
 - `app/demos/report.py` — `report_result(*, status, added, refused, error,
   hit_cap, cfg)`. `hit_cap=True` НИКОГДА не даёт ✅ (тот же инвариант, что
   везде в проекте).
-- `app/steam/steam_cm.py::cm_session()` — переиспользуется, как в add_free.py.
+- `app/steam/steam_cm.py::cm_session()` — переиспользуется, как в add_free_games.py.
 - `app/steam/packageinfo.py::expand_packages_to_apps` — переиспользуется.
 
 # STATE-ФАЙЛЫ (data/games/ids/demos/)
@@ -114,7 +114,7 @@ limit, cfg)`.
 # КОНФИГ (config.yaml)
 `steam_api_key`/`steam_id` — как везде. Специфичных для фичи ключей в
 `Config` НЕТ — пагинация/батчинг/бэкофф захардкожены константами в коде
-(общие с add_free.py — см. `app/steam/store_search.py`/
+(общие с add_free_games.py — см. `app/steam/store_search.py`/
 `app/free_games/licenses.py`).
 
 # ЗНАЧИМЫЕ ПОВЕДЕНИЯ / РИСКИ
@@ -131,7 +131,7 @@ limit, cfg)`.
   САМ `app/demos/orchestrate.add()` — общий `licenses.py` без `persist`
   работает по-старому, так что при правке `add()` не потеряй аргумент
   (страхует `test_add_wires_working_persist_callback_to_add_licenses`).
-- `ground_truth.py::_check_demos` сверяет `added.txt` (demos) с
+- `verify_state.py::_check_demos` сверяет `added.txt` (demos) с
   `GetOwnedGames` тем же способом, что `_check_free_games`. Битый ответ
   GetOwnedGames (`game_count>0`, `games` пуст) с 2026-10-18 (B-6) даёт
   «проверка не выполнена» (код выхода 2), а не ложное «всё потеряно».
@@ -148,7 +148,7 @@ limit, cfg)`.
 > но НИКОГДА не проходила формальный многоосевой аудит после релиза.
 - Реальный сетевой путь (store-search HTML-парсинг, CM
   `request_free_license`) не тестируется — ожидаемо, фейки покрывают только
-  логику (то же ограничение, что у add_free.py).
+  логику (то же ограничение, что у add_free_games.py).
 - Пер-батчевый персист покрыт юнит-тестами с имитацией килла, но живьём на
   реальном retry-шторме не проверялся.
 - Живой e2e-прогон (сколько demo реально находится/добавляется на реальном
@@ -171,5 +171,5 @@ limit, cfg)`.
   проверяет (не спавнит SAM).
 - Не выдумывай ключи config.yaml для этой фичи — их нет, всё в константах кода.
 - Правя `app.steam.store_search` или `app.free_games.licenses` — это ОБЩИЙ
-  код с add_free.py, изменения затрагивают оба скрипта. Прогоняй тесты
+  код с add_free_games.py, изменения затрагивают оба скрипта. Прогоняй тесты
   ОБОИХ (`test_store_search.py`, `test_free_games_*`, `test_demos_*`).

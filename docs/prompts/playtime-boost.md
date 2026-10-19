@@ -1,6 +1,6 @@
 <!--
 Handoff-промпт: фича playtime boost. Скопируй всё ниже в новый чат и заполни
-секцию «ЗАДАЧА/СИМПТОМ». Собран из реального кода scripts/playtime/boost.py + app/.
+секцию «ЗАДАЧА/СИМПТОМ». Собран из реального кода scripts/playtime/boost_playtime.py + app/.
 -->
 
 # РОЛЬ
@@ -15,8 +15,8 @@ conventional, тело на русском, БЕЗ футеров-атрибуц
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: что нужно — фича/баг/вопрос. Если баг — приложи реальный вывод
-прогона `python scripts/playtime/boost.py` (или `--list`), что наблюдаешь vs
-ожидаешь, и относящиеся строки из logs/playtime/boost/.>>
+прогона `python scripts/playtime/boost_playtime.py` (или `--list`), что наблюдаешь vs
+ожидаешь, и относящиеся строки из logs/playtime/boost_playtime/.>>
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
 Набивает playtime до target в каждой игре, запуская SAM.Game.exe (фейковая
@@ -25,7 +25,7 @@ idle_duration сек → убиваем всех → следующий батч
 API (`playtime_forever`); локальный прогресс для «известных» игр НЕ хранится
 (перепроверяется по API каждый прогон).
 
-# ТОЧКА ВХОДА: scripts/playtime/boost.py
+# ТОЧКА ВХОДА: scripts/playtime/boost_playtime.py
 - main(): args → setup_logging → load_config → resolve_steam_id (ДО validate:
   validate шлёт steam_id в GetPlayerSummaries, которому нужен числовой ID64 —
   сырой vanity/URL иначе даёт ложное «API key invalid») → validate →
@@ -58,7 +58,7 @@ API (`playtime_forever`); локальный прогресс для «изве�
   Ctrl+C: активные убиваются, но НЕ помечаются done (могли не добрать время).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
-- scripts/playtime/boost.py — точка входа (_build_parser/_fetch_targets/
+- scripts/playtime/boost_playtime.py — точка входа (_build_parser/_fetch_targets/
   _select_targets/_boost_loop).
 - app/cache.py — пути и хелперы: PLAYTIME_DONE_FILE (data/games/ids/playtime/
   done.txt), PLAYTIME_SKIP_FILE (skip.txt), load/mark_playtime_done,
@@ -109,11 +109,11 @@ API (`playtime_forever`); локальный прогресс для «изве�
 - Честный отчёт: ✅-тост/Telegram только при полном прогоне без провалов; Ctrl+C,
   ошибка и наличие провалов → ⚠️ и честный текст (не «✅ обработано»).
 - Ctrl+C безопасен (resume по done.txt), но текущий батч не зачтётся.
-- Логи: logs/playtime/boost/<timestamp>.log (UTF-8).
+- Логи: logs/playtime/boost_playtime/<timestamp>.log (UTF-8).
 
 # НАЙДЕНО АУДИТОМ 2026-08-10
 > Полный проектный аудит (46 агентов) сделал sanity-реверификацию этого
-> скрипта (он уже ЗАКРЫТ через v1.14.1) — регрессий в самом boost.py не
+> скрипта (он уже ЗАКРЫТ через v1.14.1) — регрессий в самом boost_playtime.py не
 > нашлось, статус «доведён» остаётся в силе.
 
 Единственная новая находка касается ОБЩЕГО файла, не логики этого скрипта:
@@ -122,7 +122,7 @@ API (`playtime_forever`); локальный прогресс для «изве�
 недоступный для опроса (напр. elevation-mismatch — один скрипт запущен
 админом, другой нет), тихо считается мёртвым → второй SAM-спавнящий скрипт
 может украсть лок и запуститься параллельно, прямое нарушение run-lock
-инварианта. Тот же файл использует achievements/farm.py и cards/farm.py —
+инварианта. Тот же файл использует achievements/farm_achievements.py и cards/farm_cards.py —
 не дублируй фикс, если другая сессия уже взялась (проверь `git log
 --oneline -5 -- app/run_lock.py` и `git status` перед правкой). Полный
 evidence — память `project_full_audit_2026_08_10`.

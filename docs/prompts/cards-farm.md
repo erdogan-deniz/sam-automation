@@ -11,14 +11,14 @@ scripts/cards → синтез → адверсариальная сверка �
 <<Опиши здесь конкретную задачу или баг по фиче cards/farm: что наблюдаешь, при каких флагах/конфиге, ожидаемое vs фактическое поведение, логи. Пока не заполнено — не пиши код, сначала воспроизведи и найди корень по доказательствам.>>
 
 # ЧТО ДЕЛАЕТ ФИЧА
-`scripts/cards/farm.py` — точка входа фарма Steam trading cards. Идлит игры через `SAM.Game.exe`, чтобы триггерить выпадение карточек. `main()`: настраивает логирование, берёт взаимоисключающий run-lock (farm/boost/cards), грузит+валидирует конфиг, проверяет что Steam запущен, обеспечивает наличие `SAM.Game.exe`, резолвит Steam ID, получает web-cookies, скрейпит страницы badges Steam Community на предмет игр с оставшимися дропами, затем крутит `_farm_loop()`. Цикл запускает до `cfg.max_concurrent_games` игр параллельно (со stagger-паузой), спит `cfg.card_check_interval` минут, затем перечитывает страницу gamecards каждой игры; когда у игры остаётся 0 дропов — она убивается, помечается done (`cards/done.txt`), открывается следующая из очереди.
+`scripts/cards/farm_cards.py` — точка входа фарма Steam trading cards. Идлит игры через `SAM.Game.exe`, чтобы триггерить выпадение карточек. `main()`: настраивает логирование, берёт взаимоисключающий run-lock (farm/boost/cards), грузит+валидирует конфиг, проверяет что Steam запущен, обеспечивает наличие `SAM.Game.exe`, резолвит Steam ID, получает web-cookies, скрейпит страницы badges Steam Community на предмет игр с оставшимися дропами, затем крутит `_farm_loop()`. Цикл запускает до `cfg.max_concurrent_games` игр параллельно (со stagger-паузой), спит `cfg.card_check_interval` минут, затем перечитывает страницу gamecards каждой игры; когда у игры остаётся 0 дропов — она убивается, помечается done (`cards/done.txt`), открывается следующая из очереди.
 
 Источник истины для «сколько карт осталось» — живой HTML Steam Community (страницы badges + gamecards), НЕ локальный кэш и НЕ inventory/badge API. Резюм-фильтра НЕТ: `cards/done.txt` пишется, но никогда не читается для пропуска игр; очередь строится целиком из живого скрейпа badges.
 
-# ТОЧКА ВХОДА: scripts/cards/farm.py
+# ТОЧКА ВХОДА: scripts/cards/farm_cards.py
 main() flow:
 1. `print()` пустая строка
-2. `setup_logging(name='farm_cards', category='cards/farm')`
+2. `setup_logging(name='farm_cards', category='cards/farm_cards')`
 3. `acquire_run_lock('cards/farm')` в try/except RuntimeError → log.error + sys.exit(1)
 4. `atexit.register(release_run_lock)`
 5. `cfg = load_config()`
@@ -31,7 +31,7 @@ main() flow:
 12. `games_with_drops = fetch_games_with_card_drops(cookies, steam_id)`; если пусто → лог «всё уже получено» + sys.exit(0)
 13. `_farm_loop(games_with_drops, cfg, cookies, steam_id)`
 
-Хелперы в farm.py:
+Хелперы в farm_cards.py:
 - `_kill_game(appid, proc)` → `kill_process(proc)`
 - `_open_next(queue, active, cfg, game_names)` — запускает пока есть место и логирует APP NAME / APP PID / APP CARDS + SEPARATOR
 - `_farm_loop(games_with_drops, cfg, cookies, steam_id)` — главный цикл
@@ -43,7 +43,7 @@ write-only, очередь строится из живого скрейпа bad
 `-v/--verbose` / интервала / concurrency.
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
-- `scripts/cards/farm.py` — точка входа фарма; `main`, `_farm_loop`, `_open_next`, `_kill_game`. Без CLI-флагов (argparse снят в v1.9.x). Локальные имена игр берёт через `load_game_names()` из `app.cache`.
+- `scripts/cards/farm_cards.py` — точка входа фарма; `main`, `_farm_loop`, `_open_next`, `_kill_game`. Без CLI-флагов (argparse снят в v1.9.x). Локальные имена игр берёт через `load_game_names()` из `app.cache`.
 - `app/cards/card_checker.py` — живой скрейп Steam Community:
   - `fetch_games_with_card_drops(cookies, steam_id) -> list[tuple[int,int]]` (card_checker.py:93-206): пагинация GET `https://steamcommunity.com/profiles/{steam_id}/badges/?l=english&p={page}`, парсер `_BadgesPageParser`, возвращает `(appid, cards_remaining)` СОРТ. ASC по остатку. Пагинация УСТОЙЧИВА: каждая страница через `_fetch_page_with_retry` (3 попытки, card_checker.py:66); стойкий отказ страницы ПРОПУСКАЕТСЯ (`prev_html_size=-1; page+=1; continue`), обрыв ТОЛЬКО после `_MAX_CONSEC_PAGE_FAILURES=3` подряд (card_checker.py:23) ИЛИ `_MAX_BADGE_PAGES=40`. НЕ break на первой SSL/HTTP-ошибке — это был баг, терявший игры при ~8% сбоев Steam Community. Стоп по content: приватный профиль `profile_private`/`This profile is private` (159), `parser.badge_row_count==0` (186), равная байт-длина соседних страниц; пауза `_REQUEST_DELAY=1.0s` между страницами (20).
   - `check_cards_remaining(cookies, steam_id, appid) -> int` (card_checker.py:209-236): проверка остатка GET `https://steamcommunity.com/profiles/{steam_id}/gamecards/{appid}/?l=english` ЧЕРЕЗ `_fetch_page_with_retry` (3 попытки — НЕ одиночный GET), парсер `_GameCardsParser`; `>0` = осталось, `0` = закончились, `-1` = не удалось определить (устойчивая сетевая ошибка ИЛИ парсер не совпал).
@@ -62,10 +62,10 @@ write-only, очередь строится из живого скрейпа bad
 - `app/cache.py` — пути: `CARDS_DIR = data/games/ids/cards`; экспортит `load_game_names()`.
 
 # КОНФИГ (app/config.py, dataclass defaults)
-- `max_concurrent_games: int = 1` — сколько игр идлить одновременно. Используется farm.py:64,97.
-- `card_check_interval: int = 10` — минут между проверками card drops. Используется farm.py:93,106,110.
-- Прочие ключи в farm.py: `cfg.sam_game_exe_path` (переприсваивается `ensure_sam`), `cfg.steam_api_key`, `cfg.steam_id`.
-- ВНИМАНИЕ: `launch_stagger: float = 3.0` — это ключ playtime; farm.py его НЕ читает. Пауза между стартами в card-фарме — хардкод-константа `_PAUSE_BETWEEN_GAMES=3` в farm.py.
+- `max_concurrent_games: int = 1` — сколько игр идлить одновременно. Используется farm_cards.py:64,97.
+- `card_check_interval: int = 10` — минут между проверками card drops. Используется farm_cards.py:93,106,110.
+- Прочие ключи в farm_cards.py: `cfg.sam_game_exe_path` (переприсваивается `ensure_sam`), `cfg.steam_api_key`, `cfg.steam_id`.
+- ВНИМАНИЕ: `launch_stagger: float = 3.0` — это ключ playtime; farm_cards.py его НЕ читает. Пауза между стартами в card-фарме — хардкод-константа `_PAUSE_BETWEEN_GAMES=3` в farm_cards.py.
 
 # ЗНАЧИМЫЕ ПОВЕДЕНИЯ / РИСКИ
 > ОБНОВЛЕНО 2026-07-02 (Fast-mode + hardening): цикл больше НЕ делает per-game reopen. Механика дропа — коллапс аккаунта в «ноль игр» сбрасывает накопленные карты (zero-transition flush). Номера строк ниже могли сдвинуться — сверяйся с кодом.
@@ -116,11 +116,11 @@ write-only, очередь строится из живого скрейпа bad
    рефрешить куки нон-интерактивно — сюда тот же паттерн не пробрасывается.
    Итог: `main()` видит `games_with_drops == []` и печатает ЛОЖНОЕ «всё уже
    получено» вместо честного «сессия протухла», молча скипая весь фарм.~~
-   ИСПРАВЛЕНО: `_AuthError` стала публичным `AuthError`, `scripts/cards/farm.py`
+   ИСПРАВЛЕНО: `_AuthError` стала публичным `AuthError`, `scripts/cards/farm_cards.py`
    (строки 338, 354) ловит его отдельно, рефрешит куки нон-интерактивно и
    повторяет один раз, при повторном провале — честный exit.
 2. **[Low, открыто] Вводящий в заблуждение комментарий** (строка 49-51 —
-   теперь `scripts/cards/farm.py:50-51`, `_MAX_CHECK_FAILURES`):
+   теперь `scripts/cards/farm_cards.py:50-51`, `_MAX_CHECK_FAILURES`):
    `_MAX_CHECK_FAILURES = 5  # после N неудачных проверок подряд считаем
    дропы закончившимися` — реальный код (213-225) делает ПРОТИВОПОЛОЖНОЕ:
    явно логирует «бросаю (НЕ помечаю done)» и кладёт appid в `unverified`
@@ -129,7 +129,7 @@ write-only, очередь строится из живого скрейпа bad
 
 Общий баг в `app/run_lock.py` (`_proc_create_time`/`_is_live_owner`
 трактует `psutil.AccessDenied` как «владелец мёртв») затрагивает и этот
-скрипт, и achievements/farm.py, и boost.py — файл общий, не дублируй фикс
+скрипт, и achievements/farm_achievements.py, и boost_playtime.py — файл общий, не дублируй фикс
 (проверь `git log`/`git status` перед правкой). Скрипт также использует
 `get_web_cookies` (через `app.steam`) — 3 находки по самой fallback-цепочке
 (playwright.py/web_refresh.py) см. в `docs/prompts/core-auth-cookies.md`.
@@ -141,7 +141,7 @@ write-only, очередь строится из живого скрейпа bad
 4. git-flow: feature/* от develop (merge --no-ff); release/X.Y.Z → main через PR (gh); тег vX.Y.Z; back-merge в develop.
 
 # ОГРАНИЧЕНИЯ
-- Не выдумывай флаги/ключи/функции: у farm.py НЕТ CLI-флагов (argparse снят в v1.9.x); функции `drop_failed_launches` НЕТ; farm.py НЕ читает `cfg.launch_stagger`.
+- Не выдумывай флаги/ключи/функции: у farm_cards.py НЕТ CLI-флагов (argparse снят в v1.9.x); функции `drop_failed_launches` НЕТ; farm_cards.py НЕ читает `cfg.launch_stagger`.
 - Терминально пометить «без карт» может только факт farm (0 дропов в живом HTML), НЕ advisory-догадка.
 - farm / boost / cards нельзя запускать параллельно (общий run-lock).
 - Источник истины — живой HTML Steam Community; `-1` из `check_cards_remaining` — это «неизвестно», не «0».

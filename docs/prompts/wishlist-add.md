@@ -1,9 +1,9 @@
 <!--
-Handoff-промпт: фича auto-add Wishlist (scripts/library/wishlist_add.py).
+Handoff-промпт: фича auto-add Wishlist (scripts/library/fill_wishlist.py).
 Скопируй всё ниже в новый чат и заполни секцию «ЗАДАЧА/СИМПТОМ». Собран из
-реального кода app/wishlist/ + scripts/library/wishlist_add.py (прямое
+реального кода app/wishlist/ + scripts/library/fill_wishlist.py (прямое
 чтение, 2026-08-10) — фича никогда не проходила формальный многоосевой аудит
-(в отличие от scan.py/boost.py/cards-farm.py), это кандидат №2 после add-free.
+(в отличие от scan_library.py/boost.py/cards-farm.py), это кандидат №2 после add-free.
 -->
 
 # РОЛЬ
@@ -20,8 +20,8 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: фича/баг/вопрос. Если баг — приложи реальный вывод
-`python scripts/library/wishlist_add.py [--add]`, что наблюдаешь vs
-ожидаешь, строки из `logs/library/wishlist_add/`, состояние
+`python scripts/library/fill_wishlist.py [--add]`, что наблюдаешь vs
+ожидаешь, строки из `logs/library/fill_wishlist/`, состояние
 `data/games/ids/wishlist/{candidates,added,refused,error}.txt` ДО/ПОСЛЕ.>>
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
@@ -31,7 +31,7 @@ B-14 от 19.10.2026; демо не входят — их в библиотек�
 `add_demos.py`) минус owned (`GetOwnedGames` Web API) минус уже-в-вишлисте
 (`IWishlistService/GetWishlist/v1`, keyless) минус бесплатное и не
 вышедшее (`IStoreBrowseService/GetItems`, `is_free`/`is_coming_soon`; в
-вишлист — только платное и вышедшее, бесплатное забирает `add_free.py`,
+вишлист — только платное и вышедшее, бесплатное забирает `add_free_games.py`,
 решения владельца 19.10.2026) минус added/refused →
 `state.candidates_file(types)`. **Add**: по одному appid (batch-эндпоинта у Steam нет)
 через `POST IWishlistService/AddToWishlist/v1` с community-JWT. Дефолт —
@@ -44,11 +44,11 @@ dry-run (только discover + отчёт); реальное добавлен�
 `get_web_cookies` не даёт). Рабочий путь — `IWishlistService/AddToWishlist`
 с community-JWT (см. `wishlist_api.py:1-18`).
 
-# ТОЧКА ВХОДА: scripts/library/wishlist_add.py
+# ТОЧКА ВХОДА: scripts/library/fill_wishlist.py
 `main()`: `_build_parser().parse_args()` → `setup_logging(category="library/
-wishlist_add")` → `load_config()` → если `cfg.steam_id` непусто:
+fill_wishlist")` → `load_config()` → если `cfg.steam_id` непусто:
 `resolve_steam_id` ДО `validate` (RA-B-паттерн, уже сделано правильно, см.
-wishlist_add.py:86-95) → `validate(cfg)` → guard `--list` vs `--reset`/
+fill_wishlist.py:86-95) → `validate(cfg)` → guard `--list` vs `--reset`/
 `--retry-errors` → применяет флаги к state → `app.wishlist.run(do_add=
 args.add, list_only=args.list, limit=args.limit, interval=args.interval,
 api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
@@ -88,7 +88,7 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
 1.0; 0 = максимальная скорость).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
-- `scripts/library/wishlist_add.py` — CLI, разбор флагов, resolve→validate,
+- `scripts/library/fill_wishlist.py` — CLI, разбор флагов, resolve→validate,
   wiring в `app.wishlist.run`.
 - `app/wishlist/content.py` — типы контента: `CONTENT_TYPES` (пять фильтров
   GetAppList `include_*`), `ALL_TYPES`.
@@ -170,7 +170,7 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   `error.txt` (в отличие от free_games) — architected так специально
   (сессия хранится между запусками, не per-run как CM). Если рефакторишь
   `add()` — не regressни это различие.
-- Персист УЖЕ инкрементальный (в отличие от `add_free.py`) — живая находка
+- Персист УЖЕ инкрементальный (в отличие от `add_free_games.py`) — живая находка
   2026-07-19: жёсткий килл посреди 10k-прогона терял прогресс при батчевом
   персисте, исправлено callback'ом `persist` в `add_pending`.
 - `_WALL_STREAK=5`/`_BACKOFF_SCHEDULE` — живые константы (снято на реальном
@@ -183,7 +183,7 @@ api_key=cfg.steam_api_key, steam_id=cfg.steam_id, cfg=cfg)`.
   WebAPI, не CM-протокол; `steam`-пакет тяжёлый, тянуть его сюда не
   оправдано). Не «исправляй» это на импорт enum без веской причины.
 
-# ЧИСТКА ВИШЛИСТА: scripts/library/wishlist_clean.py (B-17/B-18, 19.10.2026)
+# ЧИСТКА ВИШЛИСТА: scripts/library/clean_wishlist.py (B-17/B-18, 19.10.2026)
 Удаляет из вишлиста бесплатное и не вышедшее — правило владельца «в
 вишлисте только платное и вышедшее». `app/wishlist/clean.py`: `discover`
 (`fetch_wishlist_ids` → `fetch_store_flags` → `clean_state.save_candidates`),
@@ -205,10 +205,10 @@ appid из `wishlist/added.txt` через `state.unmark_added`, иначе вы
 > test_wishlist_{api,discovery,orchestrate,report,state}.py) и живьём
 > e2e-верифицирована (234 955 кандидатов dry-run, 24 281 добавлено за
 > несколько прогонов), но НИКОГДА не проходила формальный многоосевой аудит
-> после релиза (в отличие от scan.py/boost.py).
-- ~~`scripts/library/wishlist_add.py::main()` — целиком без покрытия.~~
+> после релиза (в отличие от scan_library.py/boost.py).
+- ~~`scripts/library/fill_wishlist.py::main()` — целиком без покрытия.~~
   ЗАКРЫТО 2026-10-19 (B-2): `tests/unit/test_wishlist_add_main.py` — то же,
-  что у add_free, плюс `--interval` (дефолт 1.0) и то, что в `run()` уходит
+  что у add_free_games, плюс `--interval` (дефолт 1.0) и то, что в `run()` уходит
   резолвнутый ID64 и `api_key`.
 - Реальный сетевой путь (`IWishlistService`, `GetAppList` пагинация) не
   тестируется — ожидаемо, фейки покрывают только логику классификации/backoff.
@@ -225,7 +225,7 @@ appid из `wishlist/added.txt` через `state.unmark_added`, иначе вы
 1. ~~**[Medium]** `app/wishlist/orchestrate.py:174` — финальный
    `report.report_result(...)` не переживает BaseException. Голый
    top-level statement, не обёрнутый в try/except — в отличие от
-   `scripts/playtime/boost.py` (полиш v1.14.1:
+   `scripts/playtime/boost_playtime.py` (полиш v1.14.1:
    `try: _report_result(...) except BaseException: log.exception(...)`).
    Ctrl+C ровно на этапе отчёта (напр. внутри `toast()`/`send_telegram()`)
    даёт сырой трейсбек вместо уже честно посчитанного статуса, вместо

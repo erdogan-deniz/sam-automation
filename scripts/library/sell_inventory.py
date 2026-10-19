@@ -8,12 +8,12 @@
 мобильном Steam Guard вручную. Регистр флагов не важен.
 
 Использование:
-    python scripts/library/inventory_sale.py                 # план и суммы
-    python scripts/library/inventory_sale.py --list          # таблица по предметам
-    python scripts/library/inventory_sale.py --sell          # выставить лоты
-    python scripts/library/inventory_sale.py --grind         # разобрать на самоцветы
-    python scripts/library/inventory_sale.py --sell --grind --limit 20
-    python scripts/library/inventory_sale.py --reset         # забыть сделанное
+    python scripts/library/sell_inventory.py                 # план и суммы
+    python scripts/library/sell_inventory.py --list          # таблица по предметам
+    python scripts/library/sell_inventory.py --sell          # выставить лоты
+    python scripts/library/sell_inventory.py --grind         # разобрать на самоцветы
+    python scripts/library/sell_inventory.py --sell --grind --limit 20
+    python scripts/library/sell_inventory.py --reset         # забыть сделанное
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
-    setup_logging(name="inventory_sale", category="library/inventory_sale")
+    setup_logging(name="sell_inventory", category="library/sell_inventory")
     cfg = load_config()
 
     # Steam ID64 нужен инвентарю, GetBadges и URL профиля.

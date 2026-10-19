@@ -8,7 +8,10 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 _BOOST_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "playtime" / "boost.py"
+    Path(__file__).resolve().parents[2]
+    / "scripts"
+    / "playtime"
+    / "boost_playtime.py"
 )
 
 

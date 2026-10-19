@@ -1,7 +1,7 @@
 """Тесты оркестрации main() add_demos.py — разбор флагов, resolve→validate,
 guard --list vs --reset/--retry-errors, wiring в run(). Паттерн загрузки —
 как test_boost_main.py (scripts/ не пакет). Закрывает для add_demos.py тот
-пробел покрытия, что B-2 фиксирует для add_free.py/wishlist_add.py.
+пробел покрытия, что B-2 фиксирует для add_free_games.py/fill_wishlist.py.
 """
 
 from __future__ import annotations

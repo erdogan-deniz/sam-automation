@@ -23,10 +23,10 @@ sam_game_exe_path: "./external/SAM/SAM.Game.exe"
 #   - 250820   # SteamVR
 
 # Путь к файлу со списком App ID (по одному на строку, # — комментарий)
-# Используется вместо scan.py если нужен ручной список.
+# Используется вместо scan_library.py если нужен ручной список.
 # game_ids_file: "my_games.txt"
 
-# Явный список App ID (отключает all.txt от scan.py; объединяется —
+# Явный список App ID (отключает all.txt от scan_library.py; объединяется —
 # union, не override — с game_ids_file)
 # game_ids:
 #   - 570
@@ -54,7 +54,7 @@ between_games_delay: 0.1
 # Порог последовательных ошибок для аварийной остановки
 max_consecutive_errors: 100
 
-# ── Карточки (scripts/cards/farm.py) ─────────────────────────────────────────
+# ── Карточки (scripts/cards/farm_cards.py) ─────────────────────────────────────────
 
 # Сколько игр идлить одновременно (SAM.Game.exe запускается N раз параллельно)
 max_concurrent_games: 1
@@ -62,7 +62,7 @@ max_concurrent_games: 1
 # Минут между проверками количества оставшихся card drops
 card_check_interval: 10
 
-# ── Boost Playtime (scripts/playtime/boost.py) ────────────────────────────────
+# ── Boost Playtime (scripts/playtime/boost_playtime.py) ────────────────────────────────
 
 # Секунд идлить каждую игру. 120 = гарантированно Steam запишет >1 мин.
 playtime_idle_duration: 120

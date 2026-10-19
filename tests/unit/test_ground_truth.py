@@ -1,4 +1,4 @@
-"""Тесты scripts/verify/ground_truth.py — сверка bookkeeping с реальным Steam.
+"""Тесты scripts/verify/verify_state.py — сверка bookkeeping с реальным Steam.
 
 Слепая зона full-project-аудита 2026-08-10 (#5): ничего не сверяло
 added.txt/refused.txt с реальным состоянием на стороне Steam — весь аудит
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-import scripts.verify.ground_truth as gt
+import scripts.verify.verify_state as gt
 from app.config import Config
 
 _STEAM_ID = "76561197960287930"

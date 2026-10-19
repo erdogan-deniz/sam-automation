@@ -1,9 +1,9 @@
 <!--
-Handoff-промпт: фича auto-add Free Games (scripts/library/add_free.py).
+Handoff-промпт: фича auto-add Free Games (scripts/library/add_free_games.py).
 Скопируй всё ниже в новый чат и заполни секцию «ЗАДАЧА/СИМПТОМ». Собран из
-реального кода app/free_games/ + scripts/library/add_free.py (прямое чтение,
+реального кода app/free_games/ + scripts/library/add_free_games.py (прямое чтение,
 2026-08-10) — фича никогда не проходила формальный многоосевой аудит
-(в отличие от scan.py/boost.py/cards-farm.py), это первый кандидат.
+(в отличие от scan_library.py/boost.py/cards-farm.py), это первый кандидат.
 -->
 
 # РОЛЬ
@@ -20,8 +20,8 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: фича/баг/вопрос. Если баг — приложи реальный вывод
-`python scripts/library/add_free.py [--add]`, что наблюдаешь vs ожидаешь,
-строки из `logs/library/add_free/`, состояние
+`python scripts/library/add_free_games.py [--add]`, что наблюдаешь vs ожидаешь,
+строки из `logs/library/add_free_games/`, состояние
 `data/games/ids/free/{candidates,added,refused,error}.txt` ДО/ПОСЛЕ.>>
 
 # ЧТО ДЕЛАЕТ ФУНКЦИЯ
@@ -40,12 +40,12 @@ git-flow: `feature/*` от develop через `merge --no-ff`. Коммиты co
 > `docs/prompts/add-demos.md`. Раньше были частью этого скрипта
 > (`include_demos=True`) — история в git, не здесь.
 
-# ТОЧКА ВХОДА: scripts/library/add_free.py
+# ТОЧКА ВХОДА: scripts/library/add_free_games.py
 `main()`: `_build_parser().parse_args()` → `setup_logging(category="library/
-add_free")` → `load_config()` → если `cfg.steam_id` непусто:
+add_free_games")` → `load_config()` → если `cfg.steam_id` непусто:
 `resolve_steam_id` (vanity/URL → ID64) ДО `validate` (тот же RA-B-паттерн,
-что в scan.py/boost.py/achievements-farm.py/cards-farm.py — уже сделано
-правильно с самого начала, см. add_free.py:88-97) → `validate(cfg)` → guard
+что в scan_library.py/boost.py/achievements-farm.py/cards-farm.py — уже сделано
+правильно с самого начала, см. add_free_games.py:88-97) → `validate(cfg)` → guard
 `--list` vs `--reset`/`--retry-errors` (варнинг, не ошибка) → применяет
 `--reset`/`--retry-errors` к state → `app.free_games.run(do_add, list_only,
 limit, cfg)`.
@@ -76,7 +76,7 @@ limit, cfg)`.
 не трогается) · `--limit N` (потолок добавлений за прогон).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
-- `scripts/library/add_free.py` — CLI, разбор флагов, resolve→validate,
+- `scripts/library/add_free_games.py` — CLI, разбор флагов, resolve→validate,
   wiring в `app.free_games.run`.
 - `app/free_games/discovery.py` — `discover_candidates(*, target_count=3000,
   page_size=100, max_pages=200) -> list[int]`. Пагинация (`search_page`/
@@ -129,7 +129,7 @@ limit, cfg)`.
 - **Необратимость**: добавленную бесплатную лицензию нельзя убрать штатными
   средствами Steam. `--add` — единственное действие, мутирующее аккаунт;
   dry-run — дефолт.
-- run-lock НЕ нужен: фича не спавнит `SAM.Game.exe` (как `scan.py`).
+- run-lock НЕ нужен: фича не спавнит `SAM.Game.exe` (как `scan_library.py`).
 - `discover()` УСТОЙЧИВ к отсутствию Steam/неуспеху CM-логина (просто не
   вычитает owned — WARNING, не сбой); `add()` НЕ устойчив: неуспех логина →
   ВСЕ pending разом в `error.txt` (per-appid `--retry-errors` их вернёт).
@@ -151,8 +151,8 @@ limit, cfg)`.
 > Проверено 2026-08-10: фича построена через TDD (46 тестов в
 > test_free_games_{discovery,licenses,orchestrate,report,state}.py) и
 > живьём e2e-верифицирована (3441 кандидат dry-run), но НИКОГДА не проходила
-> формальный многоосевой аудит после релиза (в отличие от scan.py/boost.py).
-- ~~`scripts/library/add_free.py::main()` — целиком без покрытия.~~ ЗАКРЫТО
+> формальный многоосевой аудит после релиза (в отличие от scan_library.py/boost.py).
+- ~~`scripts/library/add_free_games.py::main()` — целиком без покрытия.~~ ЗАКРЫТО
   2026-10-19 (B-2): `tests/unit/test_add_free_main.py` — порядок
   resolve→validate, пустой/битый steam_id, guard `--list` vs `--reset`,
   `--reset`/`--retry-errors`, wiring `--add`/`--limit` в `run()`.
@@ -199,6 +199,6 @@ limit, cfg)`.
   (CM-сессия) и МУТИРУЕТ аккаунт необратимо — не гоняй `--add` без явного
   запроса пользователя.
 - farm/boost/cards нельзя запускать параллельно с этим скриптом ТОЛЬКО если
-  что-то из них уже держит run-lock — сам add_free.py лок не берёт и не
+  что-то из них уже держит run-lock — сам add_free_games.py лок не берёт и не
   проверяет (не спавнит SAM).
 - Не выдумывай ключи config.yaml для этой фичи — их нет, всё в константах кода.

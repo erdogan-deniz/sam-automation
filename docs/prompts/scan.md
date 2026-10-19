@@ -1,11 +1,11 @@
 <!--
 Handoff-промпт: фича scan (сбор App ID библиотеки → all.txt). Скопируй всё ниже
 в новый чат и заполни секцию «ЗАДАЧА/СИМПТОМ». Собран из реального кода
-scripts/scan.py + app/steam/ (workflow: читатели → синтез → адверсариальная сверка).
+scripts/scan_library.py + app/steam/ (workflow: читатели → синтез → адверсариальная сверка).
 -->
 
 # РОЛЬ
-Ты — мейнтейнер репозитория sam-automation. Сессия — работа со scan.py
+Ты — мейнтейнер репозитория sam-automation. Сессия — работа со scan_library.py
 (сбор App ID библиотеки Steam → all.txt). Только Windows, Python 3.12, venv в
 .venv. Отвечай коротко. Перед фиксами — корень по доказательствам
 (systematic-debugging). TDD обязателен (тест ПЕРЕД кодом, RED→GREEN). Гейты
@@ -17,8 +17,8 @@ Co-Authored-By, ни «Generated with …»).
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
 <<ОПИШИ: что нужно — фича/баг/вопрос. Если баг — приложи реальный вывод
-`python scripts/scan.py`, что наблюдаешь vs ожидаешь, относящиеся строки из
-logs/achievements/scan/, и состояние all.txt (сколько ID было/стало).>>
+`python scripts/scan_library.py`, что наблюдаешь vs ожидаешь, относящиеся строки из
+logs/scan_library/, и состояние all.txt (сколько ID было/стало).>>
 
 # ЧТО ДЕЛАЕТ СКРИПТ
 Собирает App ID всей библиотеки Steam из ТРЁХ источников, объединяет без
@@ -30,11 +30,11 @@ farm/boost). Источники (порядок = приоритет перво�
   3. Steam CM — ВСЕ лицензии аккаунта (требует логин; самый полный).
 Каждый источник best-effort: падение оборачивается в warning и даёт [],
 скан НЕ прерывается. CLI: единственный флаг `--allow-shrink` (обход
-floor-guard усадки all.txt, см. РИСКИ); иначе `python scripts/scan.py`,
+floor-guard усадки all.txt, см. РИСКИ); иначе `python scripts/scan_library.py`,
 конфиг из config.yaml.
 
-# ТОЧКА ВХОДА: scripts/scan.py
-- main(): setup_logging(category="achievements/scan") → load_config → validate →
+# ТОЧКА ВХОДА: scripts/scan_library.py
+- main(): setup_logging(category="scan_library") → load_config → validate →
   resolve_steam_id(api_key, steam_id) (vanity-имя / URL профиля → ID64) →
   steam_path = cfg.steam_path or find_steam_path() → читает prev_ids из all.txt
   (ТОЛЬКО для подсчёта «новых», не для слияния) → _merge каждого источника в
@@ -51,7 +51,7 @@ floor-guard усадки all.txt, см. РИСКИ); иначе `python scripts/
   interactive=True); ловит KeyboardInterrupt отдельно (отмена пользователем).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
-- scripts/scan.py — оркестрация трёх источников + запись all.txt.
+- scripts/scan_library.py — оркестрация трёх источников + запись all.txt.
 - app/steam/steam_local.py — read_library_app_ids: парсит
   userdata/<id3>/config/localconfig.vdf, секция Software>Valve>Steam>apps
   (quote-aware токенайзер + стековый walker; App ID = numeric-ключи depth=1
@@ -106,11 +106,11 @@ floor-guard усадки all.txt, см. РИСКИ); иначе `python scripts/
 - Скрипт использует `cm_session()`/интерактивный логин — 2 High находки
   аудита 2026-08-10 по самому логину (credentials.py теряет пароль при
   неудачной миграции в keyring, playwright.py кэширует CM-токен не в тот
-  файл) лежат в `docs/prompts/core-auth-cookies.md`, не здесь. Сам scan.py
+  файл) лежат в `docs/prompts/core-auth-cookies.md`, не здесь. Сам scan_library.py
   этим прогоном чист (sanity-реверификация регрессий не нашла).
 - protobuf: os.environ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python выставляется
   ДО импорта steam — не переносить импорты выше этой строки.
-- Логи: logs/achievements/scan/<TIMESTAMP>.log (UTF-8).
+- Логи: logs/scan_library/<TIMESTAMP>.log (UTF-8).
 
 # МЕТОД
 1. По симптому выбери цель. Если баг — воспроизведи, сними лог, сверь ДО/ПОСЛЕ:

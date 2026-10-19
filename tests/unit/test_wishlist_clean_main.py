@@ -1,4 +1,4 @@
-"""Тесты main() wishlist_clean.py: флаги → run()."""
+"""Тесты main() clean_wishlist.py: флаги → run()."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ _SCRIPT_PATH = (
     Path(__file__).resolve().parents[2]
     / "scripts"
     / "library"
-    / "wishlist_clean.py"
+    / "clean_wishlist.py"
 )
 
 
@@ -32,7 +32,7 @@ wishlist_clean = _load()
 
 def _run_with(monkeypatch, *flags: str) -> dict:  # type: ignore[no-untyped-def]
     cfg = SimpleNamespace(steam_api_key="k", steam_id="vanity")
-    monkeypatch.setattr(sys, "argv", ["wishlist_clean.py", *flags])
+    monkeypatch.setattr(sys, "argv", ["clean_wishlist.py", *flags])
     monkeypatch.setattr(wishlist_clean, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(wishlist_clean, "load_config", lambda: cfg)
     monkeypatch.setattr(

@@ -20,14 +20,14 @@ py312; mypy scoped ТОЛЬКО на `app/`). git-flow: `feature/*` от develop
 `merge --no-ff`. Коммиты conventional, тело на русском, БЕЗ футеров-атрибуций
 (ни `Co-Authored-By`, ни «Generated with …») — ни в коммитах, ни в PR-боди.
 
-ВАЖНО (общий файл, не один владелец): эти модули дёргают scan.py, cards/
-farm.py, add_free.py, wishlist_add.py — прежде чем чинить, `git log --oneline
+ВАЖНО (общий файл, не один владелец): эти модули дёргают scan_library.py,
+cards/farm_cards.py, add_free_games.py, fill_wishlist.py — прежде чем чинить, `git log --oneline
 -5 -- app/auth/ app/cookies/` и `git status`, чтобы не столкнуться с правкой
 из другой параллельной сессии по одному из тех скриптов.
 
 # ЗАДАЧА/СИМПТОМ (заполни перед стартом)
-<<ОПИШИ: фича/баг/вопрос. Если баг — из какого скрипта воспроизведён (scan.py
-/ add_free.py — через cm_session; cards/farm.py / wishlist_add.py — через
+<<ОПИШИ: фича/баг/вопрос. Если баг — из какого скрипта воспроизведён (scan_library.py
+/ add_free_games.py — через cm_session; cards/farm_cards.py / fill_wishlist.py — через
 get_web_cookies), реальный лог, что наблюдаешь vs ожидаешь.>>
 
 # ЧТО ДЕЛАЮТ ЭТИ ПОДПАКЕТЫ
@@ -36,8 +36,8 @@ get_web_cookies), реальный лог, что наблюдаешь vs ожи
   `InvalidPassword` у аккаунтов на современном Steam auth — см. память
   `project_legacy_cm_login_invalidpassword`) → TOTP/2FA/email-код →
   сохранение сессии/кредов в Windows Credential Manager через `keyring`.
-  Потребители: `app/steam/steam_cm.py::cm_session()` (scan.py,
-  app/free_games/orchestrate.py → add_free.py).
+  Потребители: `app/steam/steam_cm.py::cm_session()` (scan_library.py,
+  app/free_games/orchestrate.py → add_free_games.py).
 - **app/cookies/** — добыча `steamLoginSecure`-куки (`{steamid64}||{jwt}`,
   вторая половина — community-JWT) 4-шаговой fallback-цепочкой:
   1. ранее сохранённая ручная кука (`storage.py`);
@@ -46,7 +46,7 @@ get_web_cookies), реальный лог, что наблюдаешь vs ожи
   4. `_playwright_login` — полный интерактивный вход через headless-браузер
      (последний резерв, самый медленный).
   Потребители: `app/cookies/__init__.py::get_web_cookies()` →
-  scripts/cards/farm.py (`app.steam.get_web_cookies`), app/wishlist/
+  scripts/cards/farm_cards.py (`app.steam.get_web_cookies`), app/wishlist/
   orchestrate.py (`add()`, `interactive=False`).
 
 # КЛЮЧЕВЫЕ ФАЙЛЫ
@@ -129,8 +129,8 @@ evidence находок — память `project_full_audit_2026_08_10`.)
 # ОГРАНИЧЕНИЯ
 - Только Windows; реальный прогон интерактивного логина требует настоящих
   Steam-кредов + возможно 2FA/email-кода — не гоняй его без явного запроса.
-- Общий код для 4 скриптов (scan/add_free через cm_session; cards-farm/
-  wishlist_add через get_web_cookies) — перед правкой сверься с их
+- Общий код для 4 скриптов (scan_library/add_free_games через cm_session; farm_cards/
+  fill_wishlist через get_web_cookies) — перед правкой сверься с их
   плейбуками (`scan.md`, `add-free.md`, `cards-farm.md`, `wishlist-add.md`),
   не regressни то, что там задокументировано как ожидаемое поведение.
 - Не путай `_JWT_REFRESH_FILE` (web-scope) и `_JWT_REFRESH_CLIENT_FILE`

@@ -17,7 +17,7 @@ git-flow `feature/*` от develop через `merge --no-ff`, коммиты con
 на русском, БЕЗ футеров-атрибуций.
 
 # ЗАДАЧА / ГИПОТЕЗА
-Источник — R-6 в `docs/backlog.md`. `add_free.py`/`add_demos.py` уже умеют
+Источник — R-6 в `docs/backlog.md`. `add_free_games.py`/`add_demos.py` уже умеют
 добавлять в библиотеку бесплатные игры/софт/демо через
 `client.request_free_license`. Гипотеза: тот же CM-вызов способен выдавать
 и бесплатный DLC для игр, которыми аккаунт уже владеет — но это НЕ
@@ -61,7 +61,7 @@ git-flow `feature/*` от develop через `merge --no-ff`, коммиты con
   копипаст бездумно (per-game discovery — другая форма, чем у demos).
 - `app/steam/steam_api.py::fetch_owned_games` — источник списка
   игр-кандидатов на итерацию (или `app/cache.py::ALL_IDS_FILE`/`all.txt` от
-  scan.py — то, что уже есть на диске, не считать заново).
+  scan_library.py — то, что уже есть на диске, не считать заново).
 - `app/steam/packageinfo.py::expand_packages_to_apps` — как уже владеемые
   package/app разворачиваются из `client.licenses` — пригодится, если нужно
   проверять «уже владею ли я этим DLC».
@@ -91,7 +91,7 @@ git-flow `feature/*` от develop через `merge --no-ff`, коммиты con
 
 # ОГРАНИЧЕНИЯ / РИСКИ
 - **`request_free_license` необратим на аккаунте** (штатно лицензию не
-  снять) — тот же риск, что у add_free.py/add_demos.py, но здесь ЕЩЁ не
+  снять) — тот же риск, что у add_free_games.py/add_demos.py, но здесь ЕЩЁ не
   проверено даже, что вызов делает на DLC-appid. НЕ вызывай без явного
   запроса пользователя, и НЕ на произвольном DLC — только на заведомо
   бесплатном (платный DLC через этот путь трогать нельзя даже в

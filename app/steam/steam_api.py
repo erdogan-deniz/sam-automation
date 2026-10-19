@@ -139,7 +139,7 @@ def fetch_owned_games(api_key: str, steam_id: str) -> list[dict]:
         RuntimeError: сетевой/HTTP-сбой (из _api_get) ИЛИ ответ с
             game_count>0 и пустым games, не исправившийся за
             _AMBIGUOUS_OWNED_RETRIES повторов. Такой ответ нельзя выдавать за
-            «игр нет»: ground_truth.py сочтёт потерянными все added.txt.
+            «игр нет»: verify_state.py сочтёт потерянными все added.txt.
     """
     url = (
         f"{BASE_URL}/IPlayerService/GetOwnedGames/v1/"
