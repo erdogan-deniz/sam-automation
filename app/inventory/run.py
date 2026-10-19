@@ -338,9 +338,12 @@ def run(
 
         budget = limit
         if do_sell:
+            # Сначала лоты по заявке (покупают сразу), потом по цене продажи:
+            # --limit 1 первым делом проверяет мгновенную продажу.
             todo = [
                 r for r in rows if r.decision.action in ("sell_bid", "sell_ask")
             ]
+            todo.sort(key=lambda r: r.decision.action != "sell_bid")
             todo = todo if budget is None else todo[:budget]
             if budget is not None:
                 budget -= len(todo)
