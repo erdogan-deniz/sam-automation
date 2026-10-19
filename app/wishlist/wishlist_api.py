@@ -44,7 +44,9 @@ _ERESULT_RATE_LIMIT = "84"  # EResult.RateLimitExceeded
 # проба 19.10.2026, повторное удаление Tetrapulse 250440).
 _ERESULT_NO_MATCH = "42"
 
-Classification = Literal["added", "refused", "rate_limit", "auth_fail"]
+# "wall" возвращает только внешний call (распродажа инвентаря): немедленная
+# остановка цикла без пометки остальных, как упор в rate-limit-стену.
+Classification = Literal["added", "refused", "rate_limit", "auth_fail", "wall"]
 
 
 @dataclass
@@ -245,6 +247,9 @@ def add_pending(
             sleep(interval)
         elif classification == "auth_fail":
             result.auth_fail = True
+            break
+        elif classification == "wall":
+            result.hit_wall = True
             break
         else:  # "rate_limit"
             streak += 1

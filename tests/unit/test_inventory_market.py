@@ -200,3 +200,28 @@ def test_grind_item_classification(status, body, expected) -> None:
         http, "7656", assetid="9", goo=GooParams(1, 2, 3), expected=10
     )
     assert res == (expected, 0)
+
+
+def test_sell_item_pending_limit_is_its_own_outcome() -> None:
+    http = FakeHttp(
+        post=(
+            200,
+            {
+                "success": False,
+                "message": "You have too many listings pending confirmation. "
+                "Please confirm or cancel some before attempting to list more.",
+            },
+        )
+    )
+    assert (
+        market.sell_item(http, "7656", assetid="1", amount=1, received=100)
+        == "pending_limit"
+    )
+
+
+def test_sell_item_logs_steam_refusal_message(caplog) -> None:
+    http = FakeHttp(post=(200, {"success": False, "message": "Nope, no."}))
+    with caplog.at_level("WARNING", logger="sam_automation"):
+        market.sell_item(http, "7656", assetid="42", amount=1, received=100)
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "42" in text and "Nope, no." in text

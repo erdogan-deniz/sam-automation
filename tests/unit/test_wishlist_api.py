@@ -489,3 +489,26 @@ def test_add_pending_log_label_is_configurable(monkeypatch, caplog) -> None:
     text = " ".join(r.getMessage() for r in caplog.records)
     assert "Распродажа: rate-limit" in text
     assert "Wishlist:" not in text
+
+
+def test_add_pending_wall_classification_stops_immediately(monkeypatch) -> None:
+    """call может вернуть "wall": стоп без пометки остальных и без ретраев."""
+    seen: list[int] = []
+    persisted: list[tuple[int, str]] = []
+
+    def call(appid: int, token: str) -> str:
+        seen.append(appid)
+        return "wall" if appid == 2 else "added"
+
+    result = wishlist_api.add_pending(
+        "tok",
+        [1, 2, 3],
+        interval=0.0,
+        sleep=lambda *_a: None,
+        persist=lambda a, o: persisted.append((a, o)),
+        call=call,  # type: ignore[arg-type]
+    )
+    assert seen == [1, 2]
+    assert result.added == [1]
+    assert result.hit_wall is True
+    assert persisted == [(1, "added")]

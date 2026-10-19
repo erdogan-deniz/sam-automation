@@ -561,3 +561,37 @@ def test_run_sells_bid_rows_before_ask_rows(world) -> None:
         sleep=lambda s: None,
     )
     assert [f["assetid"] for _u, f in http.posts] == ["20"]  # EMO, не BG
+
+
+_CAP = {
+    "success": False,
+    "message": "You have too many listings pending confirmation. "
+    "Please confirm or cancel some before attempting to list more.",
+}
+
+
+def test_sell_pending_limit_stops_without_marking_the_rest() -> None:
+    http = FakeHttp(
+        {},
+        post=[
+            (200, {"success": True, "requires_confirmation": 1}),
+            (200, _CAP),
+        ],
+    )
+    res = inv_run.sell(
+        http,
+        "7656",
+        [
+            _row("1", BG, Decision("sell_ask", received=84)),
+            _row("2", EMO, Decision("sell_ask", received=84)),
+            _row("3", CHEAP, Decision("sell_ask", received=84)),
+        ],
+        interval=0.0,
+        sleep=lambda s: None,
+    )
+    assert res.done == 1 and res.pending == 1
+    assert res.hit_wall is True and res.refused == 0
+    assert len(http.posts) == 2  # третий предмет даже не пробовали
+    assert st.load_handled() == {
+        1
+    }  # второй и третий повторятся в след. прогоне
