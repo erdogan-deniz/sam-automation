@@ -125,6 +125,17 @@ python scripts/library/wishlist_clean.py --remove  # actually remove
 #    --list               show current removal candidates and exit
 #    --limit N            cap how many are removed per run
 #    --interval SEC       pause between removals (default 1.0)
+
+# Sell the Steam inventory or grind it into gems, whichever pays more (market/sellitem,
+# ajaxgrindintogoo). Never touches booster packs or cards of unfinished badges.
+python scripts/library/inventory_sale.py          # dry-run: plan and totals
+python scripts/library/inventory_sale.py --list   # one line per item
+python scripts/library/inventory_sale.py --sell   # list the lots (confirm them in Steam Guard)
+python scripts/library/inventory_sale.py --grind  # grind into gems (irreversible)
+
+#    --limit N       cap how many operations run (sells and grinds together)
+#    --interval SEC  pause between operations (default 3.0)
+#    --reset         forget what was done (e.g. after cancelling lots)
 ```
 
 All three stop honestly rather than pretending to finish: `add_free.py` and
@@ -228,7 +239,8 @@ sam-automation/
 │   │   ├── add_free.py     # Add every free Steam game/app to the library
 │   │   ├── add_demos.py    # Add every demo to the library
 │   │   ├── wishlist_add.py # Add paid, released Steam content to the wishlist
-│   │   └── wishlist_clean.py # Remove free and unreleased items from the wishlist
+│   │   ├── wishlist_clean.py # Remove free and unreleased items from the wishlist
+│   │   └── inventory_sale.py # Sell the inventory on the market or grind it into gems
 │   ├── playtime/
 │   │   └── boost.py        # Boost low-playtime games via short SAM sessions
 │   └── verify/
@@ -249,7 +261,8 @@ sam-automation/
 │           ├── free/               # candidates, added, refused, error
 │           ├── playtime/           # done.txt, skip.txt
 │           ├── wishlist/           # candidates, added, refused, error
-│           └── wishlist_clean/     # candidates, removed
+│           ├── wishlist_clean/     # candidates, removed
+│           └── inventory_sale/     # listed, pending, ground, refused
 ├── logs/                   # Session logs (gitignored)
 ├── external/
 │   └── SAM/                # SAM binaries (auto-downloaded on first run)
@@ -300,6 +313,14 @@ The wishlist keeps candidates of each type selection apart, e.g.
 (what to remove, rewritten every run) and `removed.txt`. A removed App ID is
 also dropped from the wishlist `added.txt`, so an unreleased game comes back as
 a candidate once it is out.
+
+**Inventory sale** (`data/games/ids/inventory_sale/`) keys files by asset id:
+`listed.txt` (lot placed), `pending.txt` (lot placed, waiting for your
+confirmation in Steam Guard — not sold yet), `ground.txt` (turned into gems) and
+`refused.txt` (Steam said no, never retried). Errors are not recorded; the item
+is tried again on the next run. Items with a buy order are sold at that bid
+unless their gems are worth more; items nobody bids on are listed at the lowest
+asking price and left hanging.
 
 **Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
 API reports playtime for are gated on the **actual** `playtime_forever`: those at

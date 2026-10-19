@@ -470,3 +470,22 @@ def test_add_pending_exception_resets_streak(monkeypatch) -> None:
     assert result.error == [1]
     assert result.added == [2]
     assert result.hit_wall is False
+
+
+def test_add_pending_log_label_is_configurable(monkeypatch, caplog) -> None:
+    """Распродажа инвентаря переиспользует add_pending: в логе её подпись."""
+    outcomes = iter(["rate_limit", "added"])
+    monkeypatch.setattr(
+        wishlist_api, "add_to_wishlist", lambda a, t: next(outcomes)
+    )
+    with caplog.at_level("WARNING", logger="sam_automation"):
+        wishlist_api.add_pending(
+            "tok",
+            [1],
+            interval=0.0,
+            sleep=lambda *_a: None,
+            label="Распродажа",
+        )
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "Распродажа: rate-limit" in text
+    assert "Wishlist:" not in text
