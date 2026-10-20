@@ -1,7 +1,7 @@
 """Тесты оркестрации main() cards/farm — порядок resolve/validate.
 
 Зеркало test_boost_main.py/test_farm_main.py: тот же класс бага (RA-B) —
-cards/farm.py резолвил steam_id (vanity/URL → ID64) ПОСЛЕ validate(), а не
+cards/farm_cards.py резолвил steam_id (vanity/URL → ID64) ПОСЛЕ validate(), а не
 до, в отличие от остальных четырёх SAM/library-скриптов проекта.
 """
 
@@ -15,7 +15,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 _CARDS_FARM_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "cards" / "farm.py"
+    Path(__file__).resolve().parents[2] / "scripts" / "cards" / "farm_cards.py"
 )
 
 
@@ -48,7 +48,7 @@ def _stub_main_deps(monkeypatch, cfg, order, seen) -> None:  # type: ignore[no-u
     check_steam_running → False, поэтому main дойдёт до sys.exit(1) сразу
     после resolve/validate, не трогая SAM/веб-куки.
     """
-    monkeypatch.setattr(sys, "argv", ["farm.py"])
+    monkeypatch.setattr(sys, "argv", ["farm_cards.py"])
     monkeypatch.setattr(cards_farm, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(cards_farm, "load_config", lambda: cfg)
     monkeypatch.setattr(cards_farm, "acquire_run_lock", lambda name: None)
@@ -69,7 +69,7 @@ def _stub_main_deps(monkeypatch, cfg, order, seen) -> None:  # type: ignore[no-u
 
 def test_main_resolves_steam_id_before_validate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     # RA-B: validate шлёт steam_id в GetPlayerSummaries, которому нужен
-    # числовой ID64. cards/farm.py резолвил vanity/URL ПОСЛЕ validate —
+    # числовой ID64. cards/farm_cards.py резолвил vanity/URL ПОСЛЕ validate —
     # ложное «API key invalid» для любого пользователя с vanity/URL steam_id
     # (документированный README формат) до того, как резолв вообще случится.
     order: list[str] = []
@@ -122,7 +122,7 @@ def _stub_discovery_deps(monkeypatch, cfg, cookie_calls, discover_calls):  # typ
     check_steam_running → True (в отличие от _stub_main_deps), чтобы дойти
     до обнаружения игр с card drops.
     """
-    monkeypatch.setattr(sys, "argv", ["farm.py"])
+    monkeypatch.setattr(sys, "argv", ["farm_cards.py"])
     monkeypatch.setattr(cards_farm, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(cards_farm, "load_config", lambda: cfg)
     monkeypatch.setattr(cards_farm, "acquire_run_lock", lambda name: None)

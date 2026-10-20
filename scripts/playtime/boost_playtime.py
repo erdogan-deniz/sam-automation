@@ -6,8 +6,8 @@ Batch-модель: N игр одновременно → ждём playtime_idle
 Источник правды — Steam API (`playtime_forever`), локальный прогресс не хранится.
 
 Использование:
-    python scripts/playtime/boost.py              # добить недостающие игры
-    python scripts/playtime/boost.py --list       # показать недобранные игры и выйти
+    python scripts/playtime/boost_playtime.py              # добить недостающие игры
+    python scripts/playtime/boost_playtime.py --list       # показать недобранные игры и выйти
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from app.cache import (
     mark_playtime_done,
     mark_playtime_skip,
 )
+from app.cli import casefold_options
 from app.config import load_config
 from app.id_file import read_ids_ordered
 from app.logging_setup import SEPARATOR, setup_logging
@@ -359,16 +360,16 @@ def _boost_loop(games: list[dict], cfg: Any, persist_done: bool = True) -> None:
 
 def main() -> None:
     """Точка входа: парсит аргументы CLI и запускает цикл набивки playtime."""
-    args = _build_parser().parse_args()
+    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
-    setup_logging(name="boost_playtime", category="playtime/boost")
+    setup_logging(name="boost_playtime", category="playtime/boost_playtime")
     cfg = load_config()
 
     # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации: validate шлёт
     # steam_id в GetPlayerSummaries, которому нужен числовой ID64 (сырой vanity
     # даёт ложное «API key invalid»). Числовой ID64 резолвер пропускает без сети;
     # пустой steam_id НЕ резолвим — пусть validate выдаст локальную «missing».
-    # (RA-B; порядок resolve→validate выровнен со scan.py de7e9e4.)
+    # (RA-B; порядок resolve→validate выровнен со scan_library.py de7e9e4.)
     if cfg.steam_id:
         try:
             cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)

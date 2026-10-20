@@ -43,7 +43,7 @@ def test_discover_passes_api_key_and_steam_id_through(
     _patch_state(monkeypatch, tmp_path)
     captured = {}
 
-    def fake_discover_candidates(*, api_key, steam_id):
+    def fake_discover_candidates(*, api_key, steam_id, types):
         captured["api_key"] = api_key
         captured["steam_id"] = steam_id
         return []
@@ -74,6 +74,48 @@ def test_discover_failure_propagates_without_overwriting_candidates(
         orch.discover(api_key="key", steam_id="76561198190468628")
 
     assert state_mod.load_candidates() == [100, 200, 300]
+
+
+def test_discover_types_saves_into_own_candidates(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    captured = {}
+
+    def fake_discover_candidates(*, api_key, steam_id, types):
+        captured["types"] = types
+        return [7, 8]
+
+    monkeypatch.setattr(
+        orch.discovery, "discover_candidates", fake_discover_candidates
+    )
+    state_mod.save_candidates([1])
+
+    orch.discover(api_key="k", steam_id="s", types=frozenset({"hardware"}))
+
+    assert captured["types"] == frozenset({"hardware"})
+    assert state_mod.load_candidates({"hardware"}) == [7, 8]
+    assert state_mod.load_candidates() == [1]
+
+
+def test_add_types_takes_own_candidates(monkeypatch, tmp_path) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2])
+    state_mod.save_candidates([9], {"hardware"})
+    monkeypatch.setattr(
+        orch, "get_web_cookies", lambda *a, **k: {"steamLoginSecure": "x||tok"}
+    )
+    seen = {}
+
+    def fake_add_pending(token, pending, *, interval, persist):
+        seen["pending"] = list(pending)
+        return orch.wishlist_api.AddResult(added=list(pending))
+
+    monkeypatch.setattr(orch.wishlist_api, "add_pending", fake_add_pending)
+
+    orch.add(types=frozenset({"hardware"}))
+
+    assert seen["pending"] == [9]
 
 
 # ── add() ─────────────────────────────────────────────────────────────────
@@ -440,6 +482,58 @@ def test_run_list_only_does_not_call_discover(monkeypatch, tmp_path) -> None:
     )
 
 
+def test_run_list_only_prints_candidates_of_chosen_types(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    state_mod.save_candidates([1, 2])
+    state_mod.save_candidates([9], {"hardware"})
+
+    orch.run(
+        do_add=False,
+        list_only=True,
+        limit=None,
+        interval=1.0,
+        api_key="k",
+        steam_id="s",
+        cfg=SimpleNamespace(),
+        types=frozenset({"hardware"}),
+    )
+
+    assert capsys.readouterr().out.split() == ["9"]
+
+
+def test_run_passes_types_to_discover_and_add(monkeypatch, tmp_path) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    seen: dict = {}
+
+    def fake_discover(**kw):
+        seen["discover"] = kw.get("types")
+        return []
+
+    def fake_add(**kw):
+        seen["add"] = kw.get("types")
+        return orch.wishlist_api.AddResult()
+
+    monkeypatch.setattr(orch, "discover", fake_discover)
+    monkeypatch.setattr(orch, "add", fake_add)
+    monkeypatch.setattr(orch.report, "report_result", lambda **kw: None)
+    games = frozenset({"games"})
+
+    orch.run(
+        do_add=True,
+        list_only=False,
+        limit=None,
+        interval=1.0,
+        api_key="k",
+        steam_id="s",
+        cfg=SimpleNamespace(),
+        types=games,
+    )
+
+    assert seen == {"discover": games, "add": games}
+
+
 def test_run_dry_run_reports_without_adding(monkeypatch, tmp_path) -> None:
     _patch_state(monkeypatch, tmp_path)
     monkeypatch.setattr(orch, "discover", lambda **_k: [1, 2, 3])
@@ -602,7 +696,7 @@ def test_run_add_keyboard_interrupt_reports_interrupted(
 # Найдено формальным аудитом: голый top-level report.report_result(...) не
 # обёрнут в try/except — третий Ctrl+C (BaseException) ровно на этапе отчёта
 # (внутри toast()/send_telegram()) даёт сырой трейсбек вместо уже честно
-# посчитанного статуса. Тот же паттерн, что boost.py (полиш v1.14.1).
+# посчитанного статуса. Тот же паттерн, что boost_playtime.py (полиш v1.14.1).
 
 
 def test_run_add_report_result_raises_does_not_crash(

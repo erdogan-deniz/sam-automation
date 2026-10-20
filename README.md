@@ -40,14 +40,16 @@ steam_id:      "YOUR_STEAM_ID"
 
 ## Usage
 
+Flag names are case-insensitive in every script: `--RESET` is `--reset`.
+
 ### Achievements (CLI)
 
 ```bash
 # 1. Scan your Steam library → writes data/games/ids/all.txt
-python scripts/scan.py
+python scripts/scan_library.py
 
 # 2. Unlock (resumes automatically if previously interrupted)
-python scripts/achievements/farm.py
+python scripts/achievements/farm_achievements.py
 
 #    --retry-errors    retry games that errored out (clears error.txt)
 #    --reset           wipe all progress and start over
@@ -60,17 +62,17 @@ python scripts/achievements/farm.py
 
 ```bash
 # Start farming (idles games until all remaining card drops are collected)
-python scripts/cards/farm.py
+python scripts/cards/farm_cards.py
 ```
 
 ### Playtime boosting (CLI)
 
 ```bash
 # Show the games that would be boosted, then exit
-python scripts/playtime/boost.py --list
+python scripts/playtime/boost_playtime.py --list
 
 # Boost every game in all.txt via short SAM sessions (resumable)
-python scripts/playtime/boost.py
+python scripts/playtime/boost_playtime.py
 
 #    --reset         re-boost everything (clears playtime/done.txt)
 #    --retry-skips   retry games that previously failed to connect (clears skip.txt)
@@ -84,15 +86,15 @@ state lives in `data/games/ids/` and a re-run picks up where it stopped.
 
 ```bash
 # Add every free Steam game/app to your library (CM request_free_license)
-python scripts/library/add_free.py            # dry-run: how many candidates
-python scripts/library/add_free.py --add      # actually add
+python scripts/library/add_free_games.py            # dry-run: how many candidates
+python scripts/library/add_free_games.py --add      # actually add
 
 #    --list          show current candidates and exit
 #    --reset         wipe resume state
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
 
-# Add every demo to your library (same CM mechanism, separate from add_free.py)
+# Add every demo to your library (same CM mechanism, separate from add_free_games.py)
 python scripts/library/add_demos.py           # dry-run: how many candidates
 python scripts/library/add_demos.py --add     # actually add
 
@@ -101,25 +103,49 @@ python scripts/library/add_demos.py --add     # actually add
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
 
-# Add the Steam catalog to your wishlist (IWishlistService/AddToWishlist)
-python scripts/library/wishlist_add.py         # dry-run: how many candidates
-python scripts/library/wishlist_add.py --add   # actually add
+# Add paid, released Steam content to your wishlist (IWishlistService/AddToWishlist);
+# free content is skipped (add_free_games.py puts it in the library), unreleased too
+python scripts/library/fill_wishlist.py         # dry-run: how many candidates
+python scripts/library/fill_wishlist.py --add   # actually add
 
+#    --games --dlc --software --videos --hardware
+#                    only these types, flags combine (default: all);
+#                    no demos (demos go to the library via add_demos.py)
 #    --list          show current candidates and exit
 #    --reset         wipe resume state
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
 #    --interval SEC  pause between adds (default 1.0; 0 = full speed)
+
+# Remove free and unreleased items from the wishlist (IWishlistService/RemoveFromWishlist)
+python scripts/library/clean_wishlist.py           # dry-run: how many to remove
+python scripts/library/clean_wishlist.py --remove  # actually remove
+
+#    --free --unreleased  only this reason, flags combine (default: both)
+#    --list               show current removal candidates and exit
+#    --limit N            cap how many are removed per run
+#    --interval SEC       pause between removals (default 1.0)
+
+# Sell the Steam inventory or grind it into gems, whichever pays more (market/sellitem,
+# ajaxgrindintogoo). Never touches booster packs or cards of unfinished badges.
+python scripts/library/sell_inventory.py          # dry-run: plan and totals
+python scripts/library/sell_inventory.py --list   # one line per item
+python scripts/library/sell_inventory.py --sell   # list the lots (confirm them in Steam Guard)
+python scripts/library/sell_inventory.py --grind  # grind into gems (irreversible)
+
+#    --limit N       cap how many operations run (sells and grinds together)
+#    --interval SEC  pause between operations (default 3.0)
+#    --reset         forget what was done (e.g. after cancelling lots)
 ```
 
-All three stop honestly rather than pretending to finish: `add_free.py` and
+All three stop honestly rather than pretending to finish: `add_free_games.py` and
 `add_demos.py` stop when the account hits its free-license ceiling, and
-`wishlist_add.py` backs off on Steam's rate limit and stops after five
+`fill_wishlist.py` backs off on Steam's rate limit and stops after five
 consecutive throttles. None report success when they stopped early.
 
 ### Checking the records against Steam (CLI)
 
-The library scripts record what they added in `added.txt`. `ground_truth.py`
+The library scripts record what they added in `added.txt`. `verify_state.py`
 checks those records against the account itself: every App ID in the free-games
 and demos `added.txt` must be owned, every one in the wishlist `added.txt` must
 be on the wishlist. A mismatch usually means a run was killed before Steam's
@@ -127,7 +153,7 @@ answer was saved. Read-only: it changes nothing in Steam or in `data/`, and need
 neither SAM nor the run lock.
 
 ```bash
-python scripts/verify/ground_truth.py
+python scripts/verify/verify_state.py
 
 # exit 0  everything matches
 # exit 1  mismatches found — listed in the log
@@ -143,8 +169,8 @@ python scripts/verify/ground_truth.py
 | `sam_game_exe_path` | `./external/SAM/SAM.Game.exe` | Path to SAM.Game.exe; downloaded automatically if missing |
 | `steam_path` | *(auto)* | Steam installation directory; auto-detected from the registry if omitted |
 | `exclude_ids` | — | List of App IDs to skip (DLC, tools, demos) |
-| `game_ids_file` | — | Path to a text file with App IDs (one per line); merged (union) on top of `game_ids`, and suppresses the `scan.py` list (`all.txt`) |
-| `game_ids` | — | Explicit list of App IDs; suppresses the `scan.py` list (`all.txt`), but is merged (union, deduped) with `game_ids_file` rather than overriding it |
+| `game_ids_file` | — | Path to a text file with App IDs (one per line); merged (union) on top of `game_ids`, and suppresses the `scan_library.py` list (`all.txt`) |
+| `game_ids` | — | Explicit list of App IDs; suppresses the `scan_library.py` list (`all.txt`), but is merged (union, deduped) with `game_ids_file` rather than overriding it |
 | `launch_delay` | `3` | Seconds to wait after launching SAM.Picker.exe |
 | `load_timeout` | `20` | Max seconds to wait for a game's stats to load in SAM |
 | `post_commit_delay` | `0.2` | Pause after Commit Changes (seconds) |
@@ -204,19 +230,21 @@ sam-automation/
 │   ├── unlock_result.py    # Achievement unlock result type
 │   └── validator.py        # Pre-run config/param validation
 ├── scripts/
-│   ├── scan.py             # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
+│   ├── scan_library.py           # Collect App IDs (VDF + API + CM) → data/games/ids/all.txt
 │   ├── achievements/
-│   │   └── farm.py         # Main achievement unlock loop
+│   │   └── farm_achievements.py  # Main achievement unlock loop
 │   ├── cards/
-│   │   └── farm.py         # Idle games to collect card drops
+│   │   └── farm_cards.py         # Idle games to collect card drops
 │   ├── library/
-│   │   ├── add_free.py     # Add every free Steam game/app to the library
-│   │   ├── add_demos.py    # Add every demo to the library
-│   │   └── wishlist_add.py # Add the Steam catalog to the wishlist
+│   │   ├── add_free_games.py     # Add every free Steam game/app to the library
+│   │   ├── add_demos.py          # Add every demo to the library
+│   │   ├── fill_wishlist.py      # Add paid, released Steam content to the wishlist
+│   │   ├── clean_wishlist.py     # Remove free and unreleased items from the wishlist
+│   │   └── sell_inventory.py     # Sell the inventory on the market or grind it into gems
 │   ├── playtime/
-│   │   └── boost.py        # Boost low-playtime games via short SAM sessions
+│   │   └── boost_playtime.py     # Boost low-playtime games via short SAM sessions
 │   └── verify/
-│       └── ground_truth.py # Check added.txt records against the Steam account
+│       └── verify_state.py       # Check added.txt records against the Steam account
 ├── .github/
 │   ├── workflows/ci.yml    # CI: version check, pre-commit, tests
 │   └── scripts/
@@ -226,13 +254,15 @@ sam-automation/
 │   └── games/
 │       ├── names.json      # AppID → game name cache
 │       └── ids/
-│           ├── all.txt             # Master list of App IDs (from scan.py)
+│           ├── all.txt             # Master list of App IDs (from scan_library.py)
 │           ├── achievements/       # unlocked, error, without
 │           ├── cards/              # done.txt
 │           ├── demos/              # candidates, added, refused, error
 │           ├── free/               # candidates, added, refused, error
 │           ├── playtime/           # done.txt, skip.txt
-│           └── wishlist/           # candidates, added, refused, error
+│           ├── wishlist/           # candidates, added, refused, error
+│           ├── wishlist_clean/     # candidates, removed
+│           └── inventory_sale/     # listed, pending, ground, refused
 ├── logs/                   # Session logs (gitignored)
 ├── external/
 │   └── SAM/                # SAM binaries (auto-downloaded on first run)
@@ -249,7 +279,7 @@ Delete or edit them manually if needed.
 
 | File | Purpose |
 | --- | --- |
-| `all.txt` | App IDs collected by `scripts/scan.py` (VDF + Steam API + Steam CM) |
+| `all.txt` | App IDs collected by `scripts/scan_library.py` (VDF + Steam API + Steam CM) |
 | `../names.json` | AppID → game name lookup, populated alongside the scan |
 
 **Achievements** (`data/games/ids/achievements/`)
@@ -275,6 +305,24 @@ and **Wishlist** (`data/games/ids/wishlist/`) share the same four-file layout:
 | `added.txt` | Successfully added |
 | `refused.txt` | Steam refused permanently (delisted, already owned, not free) — never retried |
 | `error.txt` | Transient failures; cleared and retried with `--retry-errors` |
+
+The wishlist keeps candidates of each type selection apart, e.g.
+`candidates_games.txt` for `--games` or `candidates_games_software.txt`.
+
+**Wishlist cleanup** (`data/games/ids/wishlist_clean/`) keeps `candidates.txt`
+(what to remove, rewritten every run) and `removed.txt`. A removed App ID is
+also dropped from the wishlist `added.txt`, so an unreleased game comes back as
+a candidate once it is out.
+
+**Inventory sale** (`data/games/ids/inventory_sale/`) keys files by asset id:
+`listed.txt` (lot placed), `pending.txt` (lot placed, waiting for your
+confirmation in Steam Guard — not sold yet), `ground.txt` (turned into gems) and
+`refused.txt` (Steam said no, never retried). Errors are not recorded; the item
+is tried again on the next run. Each item is listed at the lowest asking
+price on the market (at the best buy order if nobody sells it) unless its gems
+are worth more; the lot stays up until someone buys it. Steam allows at most 250 lots waiting for
+confirmation: the run stops at that ceiling, you confirm the batch in Steam
+Guard, then run `--sell` again.
 
 **Playtime boosting** drives off `all.txt` (the whole library). Games the Steam
 API reports playtime for are gated on the **actual** `playtime_forever`: those at

@@ -1,4 +1,4 @@
-"""Тесты Fast-mode цикла scripts/cards/farm.py::_farm_loop.
+"""Тесты Fast-mode цикла scripts/cards/farm_cards.py::_farm_loop.
 
 Механика дропов: карта выдаётся при коллапсе in-game состояния в НОЛЬ
 (закрыл все окна). Поэтому цикл должен УБИТЬ ВСЕ игры разом, дать паузу
@@ -17,7 +17,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 _FARM_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "cards" / "farm.py"
+    Path(__file__).resolve().parents[2] / "scripts" / "cards" / "farm_cards.py"
 )
 
 

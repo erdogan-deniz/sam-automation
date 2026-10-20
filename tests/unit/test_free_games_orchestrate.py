@@ -417,7 +417,7 @@ def test_run_add_discover_exception_reports_error_without_calling_add(
 # Найдено формальным аудитом: голый top-level report.report_result(...) не
 # обёрнут в try/except — третий Ctrl+C (BaseException) ровно на этапе отчёта
 # (внутри toast()/send_telegram()) даёт сырой трейсбек вместо уже честно
-# посчитанного статуса. Тот же паттерн, что boost.py (полиш v1.14.1), и
+# посчитанного статуса. Тот же паттерн, что boost_playtime.py (полиш v1.14.1), и
 # app/wishlist/orchestrate.py (тот же баг, найден там же).
 
 

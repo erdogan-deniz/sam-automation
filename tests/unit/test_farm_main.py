@@ -1,7 +1,7 @@
 """Тесты оркестрации main() achievements/farm — порядок resolve/validate.
 
 Зеркало test_boost_main.py: тот же класс бага (RA-B), обнаруженный здесь
-живьём при аудите — farm.py, в отличие от boost/scan/add_free/wishlist_add,
+живьём при аудите — farm_achievements.py, в отличие от boost/scan/add_free/wishlist_add,
 никогда не резолвил vanity-имя/URL steam_id перед validate().
 """
 
@@ -17,7 +17,10 @@ import pytest
 from app.exceptions import SAMLaunchError
 
 _FARM_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "achievements" / "farm.py"
+    Path(__file__).resolve().parents[2]
+    / "scripts"
+    / "achievements"
+    / "farm_achievements.py"
 )
 
 
@@ -51,7 +54,7 @@ def _stub_main_deps(monkeypatch, cfg, order, seen) -> None:  # type: ignore[no-u
     check_steam_running → False, поэтому main дойдёт до sys.exit(1) сразу
     после resolve/validate/_prepare_progress, не трогая SAM.
     """
-    monkeypatch.setattr(sys, "argv", ["farm.py"])
+    monkeypatch.setattr(sys, "argv", ["farm_achievements.py"])
     monkeypatch.setattr(farm, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(farm, "load_config", lambda: cfg)
     monkeypatch.setattr(farm, "acquire_run_lock", lambda name: None)
@@ -73,7 +76,7 @@ def _stub_main_deps(monkeypatch, cfg, order, seen) -> None:  # type: ignore[no-u
 
 def test_main_resolves_steam_id_before_validate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     # RA-B (тот же класс, что в boost/scan/add_free/wishlist_add): validate
-    # шлёт steam_id в GetPlayerSummaries, которому нужен числовой ID64. farm.py
+    # шлёт steam_id в GetPlayerSummaries, которому нужен числовой ID64. farm_achievements.py
     # никогда не резолвил vanity/URL → ложное «API key invalid» для любого
     # пользователя, настроившего steam_id как vanity-имя/URL (документированный
     # README формат).
@@ -109,7 +112,7 @@ def _stub_main_deps_through_launch(monkeypatch, cfg, calls) -> None:  # type: ig
     поведение, чтобы проверить guard-обвязку вокруг launch_picker и
     факт вызова SetThreadExecutionState перед основным циклом.
     """
-    monkeypatch.setattr(sys, "argv", ["farm.py"])
+    monkeypatch.setattr(sys, "argv", ["farm_achievements.py"])
     monkeypatch.setattr(farm, "setup_logging", lambda *a, **k: None)
     monkeypatch.setattr(farm, "load_config", lambda: cfg)
     monkeypatch.setattr(farm, "acquire_run_lock", lambda name: None)
@@ -127,7 +130,7 @@ def _stub_main_deps_through_launch(monkeypatch, cfg, calls) -> None:  # type: ig
 
 
 def test_main_launch_picker_failure_exits_cleanly(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    # [Medium, docs/prompts/achievements-farm.md] launch_picker — единственный
+    # [Medium] launch_picker — единственный
     # из 4 похожих вызовов в main() (acquire_run_lock/resolve_steam_id/
     # ensure_sam тоже могут кинуть) БЕЗ try/except: сбой (SAMLaunchError/
     # SAMConnectionError) давал сырой трейсбек вместо чистого exit(1).

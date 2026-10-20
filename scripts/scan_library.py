@@ -6,7 +6,7 @@
   3. Steam CM        — все лицензии аккаунта (требует логин, самый полный)
 
 Использование:
-    python scripts/scan.py  # читает config.yaml, пишет all.txt
+    python scripts/scan_library.py  # читает config.yaml, пишет all.txt
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ import os
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 from app.cache import ALL_IDS_FILE, save_game_names
+from app.cli import casefold_options
 from app.config import load_config
 from app.id_file import _atomic_write_text, read_ids_ordered
 from app.logging_setup import SEPARATOR, setup_logging
@@ -110,9 +111,7 @@ def main(allow_shrink: bool = False) -> None:
     """
     print()
 
-    setup_logging(
-        verbose=False, name="scan_achievements", category="achievements/scan"
-    )
+    setup_logging(verbose=False, name="scan_library", category="scan_library")
     log.info("Сканирование приложений библиотеки Steam")
     log.info(SEPARATOR)
     cfg = load_config()
@@ -232,7 +231,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="перезаписать all.txt даже при резкой усадке библиотеки "
         "(обход защиты от транзиентного отказа источника)",
     )
-    return parser.parse_args(argv)
+    return parser.parse_args(
+        casefold_options(sys.argv[1:] if argv is None else argv)
+    )
 
 
 if __name__ == "__main__":
