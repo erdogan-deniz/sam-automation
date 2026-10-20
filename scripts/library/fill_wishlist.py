@@ -1,6 +1,6 @@
 """Auto-add Wishlist — добавляет позиции каталога Steam в вишлист аккаунта.
 
-Добавляет только платное: бесплатное забирает в библиотеку add_free_games.py.
+Добавляет только платное: бесплатное забирает в библиотеку add_free_content.py.
 Без флагов типа — все типы. Флаги --games, --dlc, --software, --videos,
 --hardware сужают выбор и складываются. Регистр флагов не важен (--DLC =
 --dlc). Демо в вишлист не идут — их добавляет add_demos.py.
@@ -106,7 +106,7 @@ def main() -> None:
     setup_logging(name="fill_wishlist", category="library/fill_wishlist")
     cfg = load_config()
 
-    # Резолвим Steam ID ДО валидации — как add_free_games.py/scan_library.py/boost.py:
+    # Резолвим Steam ID ДО валидации — как add_free_content.py/scan_library.py/boost.py:
     # validate шлёт steam_id в GetPlayerSummaries, которому нужен числовой ID64.
     if cfg.steam_id:
         try:

@@ -123,6 +123,9 @@ class StoreFlags:
 
     free: set[int] = field(default_factory=set)
     coming_soon: set[int] = field(default_factory=set)
+    # DLC → его игра (related_items.parent_appid, живая проба 21.10.2026);
+    # нужно add_free_content.py: DLC берётся только к игре из библиотеки.
+    parents: dict[int, int] = field(default_factory=dict)
 
 
 def fetch_store_flags(appids: list[int]) -> StoreFlags:
@@ -161,9 +164,12 @@ def fetch_store_flags(appids: list[int]) -> StoreFlags:
             release = it.get("release") or {}
             if it.get("is_coming_soon") or release.get("is_coming_soon"):
                 flags.coming_soon.add(appid)
+            parent = (it.get("related_items") or {}).get("parent_appid")
+            if parent:
+                flags.parents[appid] = int(parent)
         if n % _ITEMS_PROGRESS_EVERY == 0:
             log.info(
-                "Wishlist: проверено в магазине %d из %d",
+                "Steam: проверено в магазине %d из %d",
                 min(start + _ITEMS_BATCH, len(appids)),
                 len(appids),
             )
@@ -186,7 +192,7 @@ def discover_candidates(
     вышедшее (B-14).
 
     Решения владельца 19.10.2026: бесплатное в вишлист не идёт — его
-    забирает в библиотеку add_free_games.py; не вышедшее тоже не идёт. Ничем не
+    забирает в библиотеку add_free_content.py; не вышедшее тоже не идёт. Ничем не
     помечается, поэтому вышедшая игра попадёт в кандидаты следующего
     прогона. Проверяется только то, что осталось после вычета
     owned/wishlisted. Сбой проверки пробрасывается, как сбой universe:

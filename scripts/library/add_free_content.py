@@ -1,18 +1,21 @@
-"""Auto-add Free Games — добавляет бесплатные App ID в библиотеку Steam.
+"""Добавляет в библиотеку Steam весь бесплатный контент (B-19).
 
-Две фазы: discover (витрина free store search → candidates.txt минус owned) и
-add (request_free_license батчами, resume-aware). По умолчанию — dry-run
+Две фазы: discover (весь каталог Steam: бесплатное и вышедшее, DLC — только к
+играм из библиотеки → candidates.txt минус owned) и add (request_free_license
+батчами, resume-aware). Типы контента — флаги --games, --dlc, --software,
+--videos, --hardware (складываются; без флагов — все); демо — add_demos.py. По умолчанию — dry-run
 (только discover + отчёт), реальное добавление лицензий — только по --add
 (необратимое действие на аккаунте: добавленные бесплатные лицензии нельзя
 удалить из библиотеки штатными средствами Steam).
 
 Использование:
-    python scripts/library/add_free_games.py              # dry-run: сколько найдено
-    python scripts/library/add_free_games.py --add         # реально добавить
-    python scripts/library/add_free_games.py --list        # показать candidates.txt
-    python scripts/library/add_free_games.py --add --limit 100
-    python scripts/library/add_free_games.py --add --retry-errors
-    python scripts/library/add_free_games.py --reset
+    python scripts/library/add_free_content.py              # dry-run: сколько найдено
+    python scripts/library/add_free_content.py --add         # реально добавить
+    python scripts/library/add_free_content.py --add --dlc   # только DLC к своим играм
+    python scripts/library/add_free_content.py --list        # показать candidates.txt
+    python scripts/library/add_free_content.py --add --limit 100
+    python scripts/library/add_free_content.py --add --retry-errors
+    python scripts/library/add_free_content.py --reset
 """
 
 from __future__ import annotations
@@ -35,22 +38,30 @@ from app.free_games import state as free_games_state
 from app.logging_setup import setup_logging
 from app.steam import resolve_steam_id
 from app.validator import validate
+from app.wishlist.content import ALL_TYPES, CONTENT_TYPES
 
 log = logging.getLogger("sam_automation")
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=(
-            "Auto-add Free Games — добавляет бесплатные игры/app в "
-            "библиотеку Steam"
-        )
+        description="Добавляет в библиотеку Steam весь бесплатный контент"
     )
     parser.add_argument(
         "--add",
         action="store_true",
         help="Реально добавить лицензии (по умолчанию — dry-run, только discover)",
     )
+    types = parser.add_argument_group(
+        "типы контента (без флагов — все; флаги складываются)"
+    )
+    types.add_argument("--games", action="store_true", help="Игры")
+    types.add_argument(
+        "--dlc", action="store_true", help="DLC к играм из библиотеки"
+    )
+    types.add_argument("--software", action="store_true", help="Софт")
+    types.add_argument("--videos", action="store_true", help="Видео")
+    types.add_argument("--hardware", action="store_true", help="Железо")
     parser.add_argument(
         "--list",
         action="store_true",
@@ -75,10 +86,16 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _selected_types(args: argparse.Namespace) -> frozenset[str]:
+    """Типы из флагов; ни одного флага — все типы."""
+    chosen = frozenset(t for t in CONTENT_TYPES if getattr(args, t))
+    return chosen or ALL_TYPES
+
+
 def main() -> None:
     args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
-    setup_logging(name="add_free_games", category="library/add_free_games")
+    setup_logging(name="add_free_content", category="library/add_free_content")
     cfg = load_config()
 
     # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации — как scan_library.py/
@@ -113,6 +130,7 @@ def main() -> None:
         list_only=args.list,
         limit=args.limit,
         cfg=cfg,
+        types=_selected_types(args),
     )
 
 
