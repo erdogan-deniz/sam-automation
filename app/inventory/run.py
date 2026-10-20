@@ -79,12 +79,12 @@ def build_plan(
     goo_values: dict[items.GooParams, int | None] = {}
     for it in candidates:
         quote = quotes[it.market_hash_name]
-        # самоцветы нужны, когда есть с чем сравнить: цена продажи или заявка
+        # самоцветы нужны, когда есть с чем сравнить: заявка или цена продажи
         if (
             it.goo is not None
             and it.amount == 1
             and quote is not None
-            and (quote.min_sell is not None or quote.max_buy is not None)
+            and (quote.max_buy is not None or quote.min_sell is not None)
             and it.goo not in goo_values
         ):
             goo_values[it.goo] = market.get_goo_value(http, it.goo)
