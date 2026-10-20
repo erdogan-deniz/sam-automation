@@ -1,7 +1,6 @@
 """Тесты app/wishlist/wishlist_api.py: HTTP-вызов + x-eresult классификатор.
 
-x-eresult и коды сняты вживую на реальном аккаунте 2026-07-18 (см.
-docs/superpowers/specs/2026-07-18-add-wishlist-design.md): 1=added,
+x-eresult и коды сняты вживую на реальном аккаунте 2026-07-18 (см. спеку 2026-07-18-add-wishlist-design.md, вне git): 1=added,
 2/8=refused (owned/уже-в-вишлисте/invalid), 429 или eresult=84=rate_limit,
 HTTP 401=auth_fail.
 """
@@ -222,6 +221,58 @@ def test_add_to_wishlist_auth_fail(monkeypatch) -> None:
     assert wishlist_api.add_to_wishlist(730, "tok") == "auth_fail"
 
 
+# ── remove_from_wishlist (B-17/B-18, живая проба 19.10.2026) ───────────────
+
+
+def test_remove_from_wishlist_ok(monkeypatch) -> None:
+    calls = []
+
+    def fake_call(action, appid, token):
+        calls.append(action)
+        return 200, "1", {"response": {"wishlist_count": 5}}
+
+    monkeypatch.setattr(wishlist_api, "_call", fake_call)
+    assert wishlist_api.remove_from_wishlist(250440, "tok") == "added"
+    assert calls == ["RemoveFromWishlist"]
+
+
+def test_remove_from_wishlist_already_absent_is_success(monkeypatch) -> None:
+    # Живая проба: повторное удаление → x-eresult=42 (NoMatch). Цель —
+    # «позиции нет в вишлисте» — достигнута.
+    monkeypatch.setattr(wishlist_api, "_call", lambda *_a: (200, "42", {}))
+    assert wishlist_api.remove_from_wishlist(250440, "tok") == "added"
+
+
+def test_remove_from_wishlist_rate_limit_and_auth(monkeypatch) -> None:
+    monkeypatch.setattr(wishlist_api, "_call", lambda *_a: (429, None, {}))
+    assert wishlist_api.remove_from_wishlist(1, "tok") == "rate_limit"
+    monkeypatch.setattr(wishlist_api, "_call", lambda *_a: (401, None, {}))
+    assert wishlist_api.remove_from_wishlist(1, "tok") == "auth_fail"
+
+
+def test_remove_from_wishlist_other_eresult_refused(monkeypatch) -> None:
+    monkeypatch.setattr(wishlist_api, "_call", lambda *_a: (200, "8", {}))
+    assert wishlist_api.remove_from_wishlist(1, "tok") == "refused"
+
+
+def test_add_pending_uses_given_call(monkeypatch) -> None:
+    seen: list[int] = []
+
+    def fake_remove(appid: int, token: str) -> str:
+        seen.append(appid)
+        return "added"
+
+    def _boom(*_a):
+        raise AssertionError("add_to_wishlist не должен вызываться")
+
+    monkeypatch.setattr(wishlist_api, "add_to_wishlist", _boom)
+    result = wishlist_api.add_pending(
+        "tok", [1, 2], interval=0, sleep=lambda _s: None, call=fake_remove
+    )
+    assert seen == [1, 2]
+    assert result.added == [1, 2]
+
+
 # ── add_pending: адаптивный backoff + стена (K=5 подряд rate_limit) ─────────
 
 
@@ -419,3 +470,45 @@ def test_add_pending_exception_resets_streak(monkeypatch) -> None:
     assert result.error == [1]
     assert result.added == [2]
     assert result.hit_wall is False
+
+
+def test_add_pending_log_label_is_configurable(monkeypatch, caplog) -> None:
+    """Распродажа инвентаря переиспользует add_pending: в логе её подпись."""
+    outcomes = iter(["rate_limit", "added"])
+    monkeypatch.setattr(
+        wishlist_api, "add_to_wishlist", lambda a, t: next(outcomes)
+    )
+    with caplog.at_level("WARNING", logger="sam_automation"):
+        wishlist_api.add_pending(
+            "tok",
+            [1],
+            interval=0.0,
+            sleep=lambda *_a: None,
+            label="Распродажа",
+        )
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "Распродажа: rate-limit" in text
+    assert "Wishlist:" not in text
+
+
+def test_add_pending_wall_classification_stops_immediately(monkeypatch) -> None:
+    """call может вернуть "wall": стоп без пометки остальных и без ретраев."""
+    seen: list[int] = []
+    persisted: list[tuple[int, str]] = []
+
+    def call(appid: int, token: str) -> str:
+        seen.append(appid)
+        return "wall" if appid == 2 else "added"
+
+    result = wishlist_api.add_pending(
+        "tok",
+        [1, 2, 3],
+        interval=0.0,
+        sleep=lambda *_a: None,
+        persist=lambda a, o: persisted.append((a, o)),
+        call=call,  # type: ignore[arg-type]
+    )
+    assert seen == [1, 2]
+    assert result.added == [1]
+    assert result.hit_wall is True
+    assert persisted == [(1, "added")]

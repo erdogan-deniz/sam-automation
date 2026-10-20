@@ -1,6 +1,6 @@
 """Auto-add Demos — добавляет demo-версии игр в библиотеку Steam.
 
-Отделено от add_free.py (2026-09-12, B-11) — раньше демо были побочным
+Отделено от add_free_games.py (2026-09-12, B-11) — раньше демо были побочным
 эффектом того скрипта. Две фазы: discover (витрина Demos store search →
 candidates.txt минус owned) и add (request_free_license батчами,
 resume-aware). По умолчанию — dry-run (только discover + отчёт), реальное
@@ -30,6 +30,7 @@ import os
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+from app.cli import casefold_options
 from app.config import load_config
 from app.demos import run
 from app.demos import state as demos_state
@@ -76,13 +77,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = _build_parser().parse_args()
+    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
     setup_logging(name="add_demos", category="library/add_demos")
     cfg = load_config()
 
     # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации — как
-    # add_free.py/scan.py/boost.py: validate шлёт steam_id в
+    # add_free_games.py/scan_library.py/boost.py: validate шлёт steam_id в
     # GetPlayerSummaries, которому нужен числовой ID64.
     if cfg.steam_id:
         try:

@@ -1,4 +1,4 @@
-"""Тесты scripts/achievements/farm.py.
+"""Тесты scripts/achievements/farm_achievements.py.
 
 Скрипт импортируется напрямую по пути (он не пакет). Проверяем разбор
 аргументов, применение сброса/повтора прогресса (флаги --reset/--retry-errors),
@@ -18,7 +18,10 @@ from app.safety import ErrorTracker
 from app.unlock_result import UnlockResult
 
 _FARM_PATH = (
-    Path(__file__).resolve().parents[2] / "scripts" / "achievements" / "farm.py"
+    Path(__file__).resolve().parents[2]
+    / "scripts"
+    / "achievements"
+    / "farm_achievements.py"
 )
 
 
@@ -407,7 +410,7 @@ def test_teardown_picker_survives_kill_process_failure(
 # ── _teardown_picker подчищает осиротевшие SAM.Game.exe (HIGH #3, аудит
 # 2026-08-10) ────────────────────────────────────────────────────────────────
 # finally main() убивал только Picker (kill_process(proc)) без бэкстопа
-# kill_all_sam_games(), в отличие от boost.py/cards/farm.py — сирота
+# kill_all_sam_games(), в отличие от boost_playtime.py/cards/farm_cards.py — сирота
 # SAM.Game.exe (напр. из бага picker_session.py Step-2, или Ctrl+C во время
 # обработки игры) никогда не подчищался, конфликт с run-lock инвариантом.
 

@@ -10,26 +10,57 @@ app/free_games/discovery.py (store.steampowered.com, HTML results_html) здес
 
 from __future__ import annotations
 
+import json
 import logging
+import time
+import urllib.parse
+from dataclasses import dataclass, field
 
-from app.steam.steam_api import BASE_URL, _api_get, fetch_owned_games
+from app.steam.steam_api import (
+    BASE_URL,
+    _api_get,
+    _RateLimitError,
+    fetch_owned_games,
+)
+from app.wishlist.content import ALL_TYPES, CONTENT_TYPES, label
 
 log = logging.getLogger("sam_automation")
 
 _MAX_RESULTS = 50000  # максимум GetAppList/v1 на страницу
+# GetItems — GET с JSON в URL: на 300 appid URL длиннее ~8 КБ и Steam
+# отвечает 400 (живая проба 19.10.2026); 200 — с запасом.
+_ITEMS_BATCH = 200
+_ITEMS_PROGRESS_EVERY = 100  # пачек между строками прогресса в логе
+# 429, не пережитый ретраем _api_get: пауза и повтор пачки. Живой прогон
+# 19.10.2026 (760 пачек) ловил 429 сотню раз, до 2-й попытки из 3.
+_ITEMS_COOLDOWN = 30.0
+_ITEMS_COOLDOWNS = 3
+
+
+def _type_params(types: frozenset[str]) -> str:
+    """Фильтр типов GetAppList (B-14): include_<тип>=1 для выбранных.
+
+    Все пять флагов явные: include_games у GetAppList по умолчанию включён.
+    """
+    return "".join(
+        f"&include_{t}={1 if t in types else 0}" for t in CONTENT_TYPES
+    )
 
 
 def _fetch_universe_page(
-    api_key: str, *, last_appid: int, max_results: int = _MAX_RESULTS
+    api_key: str,
+    *,
+    last_appid: int,
+    types: frozenset[str] = ALL_TYPES,
+    max_results: int = _MAX_RESULTS,
 ) -> tuple[list[int], bool, int]:
-    """Одна страница GetAppList/v1 (все типы контента).
+    """Одна страница GetAppList/v1 выбранных типов.
 
     Возвращает (appids, have_more_results, следующий last_appid).
     """
     url = (
         f"{BASE_URL}/IStoreService/GetAppList/v1/?key={api_key}"
-        f"&include_games=1&include_dlc=1&include_software=1"
-        f"&include_videos=1&include_hardware=1"
+        f"{_type_params(types)}"
         f"&max_results={max_results}&last_appid={last_appid}"
     )
     data = _api_get(url)
@@ -41,17 +72,26 @@ def _fetch_universe_page(
     return appids, have_more, next_last_appid
 
 
-def discover_universe(api_key: str, *, max_pages: int = 200) -> list[int]:
-    """Пагинирует GetAppList/v1 до конца каталога (games+dlc+software+videos+hardware).
+def discover_universe(
+    api_key: str,
+    *,
+    types: frozenset[str] = ALL_TYPES,
+    max_pages: int = 200,
+) -> list[int]:
+    """Пагинирует GetAppList/v1 до конца каталога выбранных типов.
 
+    С пустым набором типов GetAppList не зовётся: со всеми include_*=0 Steam
+    отдаёт весь каталог без фильтра (живая проба 19.10.2026, 332 587 appid).
     max_pages — защита от зависания, если Steam когда-либо вернёт
     have_more_results=True с незменяющимся курсором.
     """
+    if not types:
+        return []
     out: list[int] = []
     last_appid = 0
     for _page in range(max_pages):
         appids, have_more, last_appid = _fetch_universe_page(
-            api_key, last_appid=last_appid
+            api_key, last_appid=last_appid, types=types
         )
         if not appids:
             break
@@ -59,6 +99,75 @@ def discover_universe(api_key: str, *, max_pages: int = 200) -> list[int]:
         if not have_more:
             break
     return out
+
+
+def _get_items(url: str) -> dict:
+    """_api_get с паузой _ITEMS_COOLDOWN, если 429 пережил его ретраи."""
+    for cooldown in range(_ITEMS_COOLDOWNS):
+        try:
+            return _api_get(url)
+        except _RateLimitError:
+            log.warning(
+                "Steam GetItems: 429 не проходит — пауза %.0fс (%d/%d)",
+                _ITEMS_COOLDOWN,
+                cooldown + 1,
+                _ITEMS_COOLDOWNS,
+            )
+            time.sleep(_ITEMS_COOLDOWN)
+    return _api_get(url)
+
+
+@dataclass
+class StoreFlags:
+    """Что из кандидатов не идёт в вишлист по данным магазина."""
+
+    free: set[int] = field(default_factory=set)
+    coming_soon: set[int] = field(default_factory=set)
+
+
+def fetch_store_flags(appids: list[int]) -> StoreFlags:
+    """Бесплатное и не вышедшее среди appids: IStoreBrowseService/GetItems.
+
+    Живая проба 19.10.2026: `is_free: true` стоит только у бесплатного (CS2,
+    Dota 2, TF2), `is_coming_soon: true` — у не вышедшего (и в
+    `release.is_coming_soon`); у прочих полей нет. Неизвестные магазину appid
+    не попадают ни туда, ни туда: их отсеет AddToWishlist как refused. Сбой
+    запроса и ответ без store_items пробрасываются — см. discover_candidates.
+    """
+    flags = StoreFlags()
+    batches = range(0, len(appids), _ITEMS_BATCH)
+    for n, start in enumerate(batches, 1):
+        payload = {
+            "ids": [{"appid": a} for a in appids[start : start + _ITEMS_BATCH]],
+            # Без country_code Steam отвечает пустым response (живая проба
+            # 19.10.2026).
+            "context": {"language": "english", "country_code": "US"},
+            "data_request": {"include_release": True},
+        }
+        query = urllib.parse.quote(json.dumps(payload, separators=(",", ":")))
+        url = f"{BASE_URL}/IStoreBrowseService/GetItems/v1/?input_json={query}"
+        response = _get_items(url).get("response", {})
+        if "store_items" not in response:
+            raise RuntimeError(
+                "Steam GetItems вернул ответ без store_items — "
+                "кандидаты не проверены"
+            )
+        for it in response["store_items"]:
+            if it.get("appid") is None:
+                continue
+            appid = int(it["appid"])
+            if it.get("is_free"):
+                flags.free.add(appid)
+            release = it.get("release") or {}
+            if it.get("is_coming_soon") or release.get("is_coming_soon"):
+                flags.coming_soon.add(appid)
+        if n % _ITEMS_PROGRESS_EVERY == 0:
+            log.info(
+                "Wishlist: проверено в магазине %d из %d",
+                min(start + _ITEMS_BATCH, len(appids)),
+                len(appids),
+            )
+    return flags
 
 
 def fetch_wishlist_ids(steam_id: str) -> set[int]:
@@ -70,8 +179,18 @@ def fetch_wishlist_ids(steam_id: str) -> set[int]:
     return {int(it["appid"]) for it in items if it.get("appid") is not None}
 
 
-def discover_candidates(*, api_key: str, steam_id: str) -> list[int]:
-    """Вселенная минус owned минус wishlisted.
+def discover_candidates(
+    *, api_key: str, steam_id: str, types: frozenset[str] = ALL_TYPES
+) -> list[int]:
+    """Вселенная выбранных типов минус owned, wishlisted, бесплатное и не
+    вышедшее (B-14).
+
+    Решения владельца 19.10.2026: бесплатное в вишлист не идёт — его
+    забирает в библиотеку add_free_games.py; не вышедшее тоже не идёт. Ничем не
+    помечается, поэтому вышедшая игра попадёт в кандидаты следующего
+    прогона. Проверяется только то, что осталось после вычета
+    owned/wishlisted. Сбой проверки пробрасывается, как сбой universe:
+    иначе отсеиваемое попало бы в candidates и дальше в вишлист.
 
     Устойчив к сбою owned/wishlisted: недоступны → просто не вычитаются
     (WARNING в лог, лишнее появление отсеется как refused при add —
@@ -83,9 +202,10 @@ def discover_candidates(*, api_key: str, steam_id: str) -> list[int]:
     накопленный прогресс. Пробрасывая исключение, caller (run()) ловит его
     честным status="error" и НЕ вызывает save_candidates() вовсе.
     """
-    universe = discover_universe(api_key)
+    universe = discover_universe(api_key, types=types)
     log.info(
-        "Wishlist: вселенная кандидатов (GetAppList, все типы): %d",
+        "Wishlist: вселенная кандидатов (%s): %d",
+        label(types),
         len(universe),
     )
 
@@ -110,6 +230,16 @@ def discover_candidates(*, api_key: str, steam_id: str) -> list[int]:
         "Wishlist: кандидатов (минус owned=%d, wishlisted=%d): %d",
         len(owned),
         len(wishlisted),
+        len(candidates),
+    )
+
+    flags = fetch_store_flags(candidates)
+    skip = flags.free | flags.coming_soon
+    candidates = [a for a in candidates if a not in skip]
+    log.info(
+        "Wishlist: минус бесплатное (%d) и не вышедшее (%d) — кандидатов: %d",
+        len(flags.free),
+        len(flags.coming_soon),
         len(candidates),
     )
     return candidates

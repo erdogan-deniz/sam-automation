@@ -16,7 +16,7 @@ def load_game_ids(cfg: Config) -> list[int]:
     """Собирает итоговый список ID игр из доступных источников.
 
     Приоритет: config.game_ids → all.txt → cfg.game_ids_file.
-    Для сбора ID из Steam-источников используй scripts/scan.py.
+    Для сбора ID из Steam-источников используй scripts/scan_library.py.
     """
     ids: list[int] = list(cfg.game_ids)
 

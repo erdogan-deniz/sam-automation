@@ -7,12 +7,12 @@ add (request_free_license батчами, resume-aware). По умолчанию
 удалить из библиотеки штатными средствами Steam).
 
 Использование:
-    python scripts/library/add_free.py              # dry-run: сколько найдено
-    python scripts/library/add_free.py --add         # реально добавить
-    python scripts/library/add_free.py --list        # показать candidates.txt
-    python scripts/library/add_free.py --add --limit 100
-    python scripts/library/add_free.py --add --retry-errors
-    python scripts/library/add_free.py --reset
+    python scripts/library/add_free_games.py              # dry-run: сколько найдено
+    python scripts/library/add_free_games.py --add         # реально добавить
+    python scripts/library/add_free_games.py --list        # показать candidates.txt
+    python scripts/library/add_free_games.py --add --limit 100
+    python scripts/library/add_free_games.py --add --retry-errors
+    python scripts/library/add_free_games.py --reset
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ import os
 
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+from app.cli import casefold_options
 from app.config import load_config
 from app.free_games import run
 from app.free_games import state as free_games_state
@@ -75,13 +76,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = _build_parser().parse_args()
+    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
 
-    setup_logging(name="add_free", category="library/add_free")
+    setup_logging(name="add_free_games", category="library/add_free_games")
     cfg = load_config()
 
-    # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации — как scan.py/
-    # boost.py: validate шлёт steam_id в GetPlayerSummaries, которому нужен
+    # Резолвим Steam ID (vanity-имя/URL → ID64) ДО валидации — как scan_library.py/
+    # boost_playtime.py: validate шлёт steam_id в GetPlayerSummaries, которому нужен
     # числовой ID64. Пустой steam_id НЕ резолвим — пусть validate выдаст
     # локальную «missing».
     if cfg.steam_id:
