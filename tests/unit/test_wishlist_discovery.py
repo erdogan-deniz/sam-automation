@@ -228,6 +228,29 @@ def test_fetch_store_flags_batches_and_collects(monkeypatch) -> None:
     assert all("IStoreBrowseService/GetItems/v1" in u for u in urls)
 
 
+def test_fetch_store_flags_collects_dlc_parents(monkeypatch) -> None:
+    # Живая проба 21.10.2026: у DLC GetItems отдаёт related_items.parent_appid.
+    def fake_api_get(url: str) -> dict:
+        return {
+            "response": {
+                "store_items": [
+                    {
+                        "appid": 348690,
+                        "related_items": {"parent_appid": 333250},
+                    },
+                    {"appid": 333250},
+                    {"appid": 5, "related_items": {}},
+                ]
+            }
+        }
+
+    monkeypatch.setattr(discovery, "_api_get", fake_api_get)
+
+    out = _REAL_FETCH_STORE_FLAGS([348690, 333250, 5])
+
+    assert out.parents == {348690: 333250}
+
+
 def test_fetch_store_flags_empty_input_makes_no_requests(monkeypatch) -> None:
     def _boom(url):
         raise AssertionError("без кандидатов запросов быть не должно")
@@ -361,7 +384,7 @@ def test_discover_candidates_passes_types_to_universe(monkeypatch) -> None:
 
 def test_discover_candidates_drops_free_content(monkeypatch) -> None:
     # Решение владельца 19.10.2026: в вишлист — только платное, бесплатное
-    # забирает add_free_games.py. Проверяем бесплатность только у оставшихся.
+    # забирает add_free_content.py. Проверяем бесплатность только у оставшихся.
     monkeypatch.setattr(
         discovery, "discover_universe", lambda _key, **_kw: [1, 2, 3, 4, 5]
     )

@@ -131,7 +131,7 @@ def test_append_id_write_failure_preserves_existing(
 def test_append_id_replace_transient_permission_error_retries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Живой краш в проде (add_free_games.py --add): os.replace дал PermissionError
+    # Живой краш в проде (add_free_content.py --add): os.replace дал PermissionError
     # (WinError 5) — транзиентная Windows sharing-violation (антивирус/
     # индексатор держат только что созданный tmp-файл миллисекунды). Должен
     # повторить и в итоге успеть, а не терять прогресс всей пачки.

@@ -298,7 +298,7 @@ def main() -> None:
     # steam_id в GetPlayerSummaries, которому нужен числовой ID64 (сырой
     # vanity даёт ложное «API key invalid»). Пустой steam_id НЕ резолвим —
     # пусть validate выдаст локальную «missing». (RA-B; порядок resolve→
-    # validate выровнен со scan_library.py/boost.py/add_free_games.py/fill_wishlist.py.)
+    # validate выровнен со scan_library.py/boost.py/add_free_content.py/fill_wishlist.py.)
     if cfg.steam_id:
         try:
             cfg.steam_id = resolve_steam_id(cfg.steam_api_key, cfg.steam_id)

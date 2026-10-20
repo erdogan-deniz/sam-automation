@@ -1,77 +1,66 @@
-"""Обнаружение бесплатных App ID Steam через неофициальный store search API.
+"""Обнаружение бесплатного контента Steam по полному каталогу (B-19).
 
-Пагинация вынесена в app.steam.store_search (2026-09-12, переиспользуется
-app/demos/discovery.py для категории Demos — та же логика бага не стоит
-дублировать дважды).
+Каталог — IStoreService/GetAppList по типам контента, свойства —
+IStoreBrowseService/GetItems: тот же путь, что у вишлиста
+(app.wishlist.discovery), без витрины. Витрина резала выдачу и отвечала 429:
+на 19.10.2026 в списках free/ было 1211 игр, а каталог дал около 29 тысяч
+бесплатного не в библиотеке.
 
-Две категории (category1):
-  998 = Games (дефолт витрины) + maxprice=free → F2P-игры
-  994 = Software                + maxprice=free → бесплатные не-игровые app
-
-Демо (category1=10) больше не обнаруживаются здесь — своим отдельным
-скриптом, см. app/demos/discovery.py.
-
-Потолок free-лицензий аккаунта ~1000-2000, поэтому набираем кандидатов с
-запасом (target_count), а не весь каталог (~20k только по одной категории
-Games+maxprice=free — см. total_count в живой проверке).
+Правила отбора:
+  * бесплатное (`is_free`) и уже вышедшее;
+  * DLC и прочее с родительской игрой (`related_items.parent_appid`) —
+    только к игре, которая есть в библиотеке (R-6: request_free_license
+    выдаёт бесплатные DLC, живая проба 21.10.2026);
+  * appid из exclude (уже в библиотеке, добавлено, отказано) в магазине не
+    проверяется — так быстрее.
+Демо в типизированных списках каталога нет — их добавляет add_demos.py.
 """
 
 from __future__ import annotations
 
 import logging
 
-from app.steam import store_search
+from app.wishlist import discovery as wl_discovery
+from app.wishlist.content import ALL_TYPES, label
 
 log = logging.getLogger("sam_automation")
-
-_CATEGORY_GAMES = 998
-_CATEGORY_SOFTWARE = 994
 
 
 def discover_candidates(
     *,
-    target_count: int = 3000,
-    page_size: int = 100,
-    max_pages: int = 200,
+    api_key: str,
+    types: frozenset[str] = ALL_TYPES,
+    owned: set[int],
+    exclude: set[int],
 ) -> list[int]:
-    """Собирает кандидатов на бесплатное добавление из витрины Steam.
+    """Бесплатное вышедшее из каталога по types, кроме exclude.
 
-    Два источника: F2P-игры (category1=998+maxprice=free), бесплатные
-    не-игровые app (category1=994+maxprice=free). Дедуп между источниками.
-    Не гарантирует полноту каталога — набирает достаточно кандидатов с
-    запасом относительно потолка free-лицензий аккаунта (~1000-2000).
+    Сбой каталога или проверки магазина пробрасывается: orchestrate.discover
+    тогда не перезаписывает candidates.txt неполным списком.
     """
-    seen: set[int] = set()
+    universe = wl_discovery.discover_universe(api_key, types=types)
+    log.info("Steam: в каталоге (%s): %d", label(types), len(universe))
+    todo = [a for a in universe if a not in exclude]
+    log.info(
+        "Steam: к проверке в магазине (минус owned/added/refused): %d",
+        len(todo),
+    )
+    flags = wl_discovery.fetch_store_flags(todo)
+
     out: list[int] = []
-
-    def _merge(ids: list[int]) -> None:
-        for appid in ids:
-            if appid not in seen:
-                seen.add(appid)
-                out.append(appid)
-
-    log.info("Store search: обнаружение F2P-игр (maxprice=free)")
-    _merge(
-        store_search.collect_category(
-            category1=_CATEGORY_GAMES,
-            maxprice_free=True,
-            target_count=target_count,
-            page_size=page_size,
-            max_pages=max_pages,
-        )
+    foreign = 0
+    for appid in todo:
+        if appid not in flags.free or appid in flags.coming_soon:
+            continue
+        parent = flags.parents.get(appid)
+        if parent is not None and parent not in owned:
+            foreign += 1
+            continue
+        out.append(appid)
+    log.info(
+        "Steam: бесплатного вышедшего %d, из них к играм не из библиотеки "
+        "пропущено %d",
+        len(out) + foreign,
+        foreign,
     )
-    log.info("Store search: найдено кандидатов (игры): %d", len(out))
-
-    log.info("Store search: обнаружение бесплатных приложений")
-    _merge(
-        store_search.collect_category(
-            category1=_CATEGORY_SOFTWARE,
-            maxprice_free=True,
-            target_count=target_count,
-            page_size=page_size,
-            max_pages=max_pages,
-        )
-    )
-    log.info("Store search: найдено кандидатов (игры+app): %d", len(out))
-
     return out

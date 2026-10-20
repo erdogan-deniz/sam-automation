@@ -37,7 +37,7 @@ def _load(rel: str) -> ModuleType:
     [
         ("achievements/farm_achievements.py", "main"),
         ("playtime/boost_playtime.py", "main"),
-        ("library/add_free_games.py", "main"),
+        ("library/add_free_content.py", "main"),
         ("library/add_demos.py", "main"),
         ("library/fill_wishlist.py", "main"),
         ("library/clean_wishlist.py", "main"),

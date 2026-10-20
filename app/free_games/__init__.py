@@ -1,7 +1,7 @@
-"""Пакет авто-добавления бесплатных игр/приложений Steam в библиотеку.
+"""Пакет авто-добавления бесплатного контента Steam в библиотеку.
 
 Субмодули:
-  discovery    — обнаружение кандидатов через store search (витрина free)
+  discovery    — кандидаты по полному каталогу (GetAppList + GetItems)
   state        — resume-состояние (candidates/added/refused/error)
   licenses     — батчевый request_free_license + cap-детект + backoff
   report       — честный итоговый отчёт (toast + Telegram)
