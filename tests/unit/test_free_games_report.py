@@ -33,6 +33,20 @@ def test_report_ok_status_marks_success(monkeypatch):
     assert "✅" in calls["tg"]
 
 
+def test_report_dry_run_says_to_add_not_added(monkeypatch):
+    calls = _capture(monkeypatch)
+    report_mod.report_result(
+        status="dry_run",
+        added=194,
+        refused=0,
+        error=0,
+        hit_cap=False,
+        cfg=_cfg(),
+    )
+    assert "к добавлению 194" in calls["toast"][1]
+    assert "Free content" in calls["toast"][0]
+
+
 def test_report_hit_cap_never_says_all_added(monkeypatch):
     calls = _capture(monkeypatch)
     report_mod.report_result(
