@@ -130,7 +130,7 @@ def _stub_main_deps_through_launch(monkeypatch, cfg, calls) -> None:  # type: ig
 
 
 def test_main_launch_picker_failure_exits_cleanly(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    # [Medium, docs/prompts/achievements-farm.md] launch_picker — единственный
+    # [Medium] launch_picker — единственный
     # из 4 похожих вызовов в main() (acquire_run_lock/resolve_steam_id/
     # ensure_sam тоже могут кинуть) БЕЗ try/except: сбой (SAMLaunchError/
     # SAMConnectionError) давал сырой трейсбек вместо чистого exit(1).

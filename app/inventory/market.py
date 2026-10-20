@@ -1,7 +1,6 @@
 """Запросы к маркету и самоцветам Steam Community (B-16).
 
-Все эндпоинты сняты живьём 19.10.2026 (см. docs/superpowers/specs/
-2026-10-19-inventory-sale-design.md):
+Все эндпоинты сняты живьём 19.10.2026:
 
   * market/orderbook?q=Load&qp=[753,"<market_hash_name>"] — лучшая заявка и
     цена продажи в валюте кошелька. Старые market/listings и priceoverview из
