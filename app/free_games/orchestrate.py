@@ -1,4 +1,4 @@
-"""Оркестрация авто-добавления бесплатных игр Steam: discover + add фазы."""
+"""Оркестрация авто-добавления бесплатного контента Steam: discover + add фазы."""
 
 from __future__ import annotations
 
@@ -8,25 +8,27 @@ from typing import Any, Literal
 from app.free_games import discovery, licenses, report, state
 from app.logging_setup import SEPARATOR
 from app.steam.packageinfo import expand_packages_to_apps
+from app.steam.steam_api import fetch_owned_games
 from app.steam.steam_cm import cm_session
 from app.steam.steam_local import find_steam_path
+from app.wishlist.content import ALL_TYPES
 
 log = logging.getLogger("sam_automation")
 
 
-def discover() -> list[int]:
-    """Фаза discover: витрина free → candidates.txt минус owned/added/refused.
+def discover(
+    *, api_key: str = "", steam_id: str = "", types: frozenset[str] = ALL_TYPES
+) -> list[int]:
+    """Фаза discover: каталог Steam → candidates.txt минус owned/added/refused.
 
-    owned вычисляется из client.licenses живой CM-сессии (authoritative для
-    аккаунта) через expand_packages_to_apps — тот же путь, что и scan_library.py.
-    Отсутствие Steam или неуспех CM-логина НЕ роняет discover — просто owned
-    не вычитается (кандидаты могут включать уже имеющееся, лишнее отсеется
-    на фазе add как DuplicateRequest/refused).
+    owned — из client.licenses живой CM-сессии (authoritative, включая DLC)
+    через expand_packages_to_apps, тот же путь, что у scan_library.py, плюс
+    GetOwnedGames: по owned решается, к своей ли игре DLC. Отсутствие Steam,
+    неуспех CM-логина или GetOwnedGames НЕ роняют discover — owned просто
+    неполон (лишнее отсеется на фазе add как refused, DLC к играм без
+    owned не попадут в кандидаты).
     """
     log.info(SEPARATOR)
-    discovered = discovery.discover_candidates()
-    log.info("Store search: всего обнаружено кандидатов: %d", len(discovered))
-
     steam_path = find_steam_path()
     owned: set[int] = set()
     if steam_path:
@@ -42,9 +44,22 @@ def discover() -> list[int]:
                 )
     else:
         log.warning("Папка Steam не найдена — owned не вычтен")
+    if api_key and steam_id:
+        try:
+            owned |= {
+                int(g["appid"]) for g in fetch_owned_games(api_key, steam_id)
+            }
+        except Exception as e:
+            log.warning("Steam API: GetOwnedGames не удался — %s", e)
 
     already_added = state.load_added_ids()
     already_refused = state.load_refused_ids()
+    discovered = discovery.discover_candidates(
+        api_key=api_key,
+        types=types,
+        owned=owned,
+        exclude=owned | already_added | already_refused,
+    )
     candidates = [
         a
         for a in discovered
@@ -123,6 +138,7 @@ def run(
     list_only: bool,
     limit: int | None,
     cfg: Any,
+    types: frozenset[str] = ALL_TYPES,
 ) -> None:
     """Точка входа: dry-run по умолчанию, реально добавляет только при do_add=True.
 
@@ -142,7 +158,11 @@ def run(
     candidates: list[int] = []
     result = licenses.AddResult()
     try:
-        candidates = discover()
+        candidates = discover(
+            api_key=getattr(cfg, "steam_api_key", ""),
+            steam_id=getattr(cfg, "steam_id", ""),
+            types=types,
+        )
         if do_add:
             result = add(limit=limit)
     except KeyboardInterrupt:

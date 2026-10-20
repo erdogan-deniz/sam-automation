@@ -90,6 +90,89 @@ def test_discover_cm_login_failed_skips_owned_subtraction(
     assert result == [1, 2]  # логин не удался — owned не вычтен, не падаем
 
 
+def test_discover_passes_owned_and_exclude_to_catalog_search(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    seen: dict = {}
+
+    def fake_discover(**kw):
+        seen.update(kw)
+        return [1, 5]
+
+    monkeypatch.setattr(orch.discovery, "discover_candidates", fake_discover)
+    monkeypatch.setattr(orch, "find_steam_path", lambda: "C:/steam")
+    monkeypatch.setattr(
+        orch, "cm_session", _fake_cm_session(_FakeClient({999: object()}))
+    )
+    monkeypatch.setattr(orch, "expand_packages_to_apps", lambda _p, _pk: [2])
+    monkeypatch.setattr(
+        orch, "fetch_owned_games", lambda key, sid: [{"appid": 7}]
+    )
+    state_mod.mark_added(3)
+    state_mod.mark_refused(4)
+
+    result = orch.discover(
+        api_key="k", steam_id="7656", types=frozenset({"dlc"})
+    )
+
+    assert result == [1, 5]
+    assert seen["api_key"] == "k"
+    assert seen["types"] == frozenset({"dlc"})
+    # owned — из лицензий (2) и GetOwnedGames (7): к ним DLC берётся
+    assert seen["owned"] == {2, 7}
+    assert seen["exclude"] == {2, 7, 3, 4}
+
+
+def test_discover_owned_games_failure_keeps_license_owned(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    seen: dict = {}
+
+    def fake_discover(**kw):
+        seen.update(kw)
+        return []
+
+    def boom(key, sid):
+        raise RuntimeError("GetOwnedGames: сбой")
+
+    monkeypatch.setattr(orch.discovery, "discover_candidates", fake_discover)
+    monkeypatch.setattr(orch, "find_steam_path", lambda: "C:/steam")
+    monkeypatch.setattr(
+        orch, "cm_session", _fake_cm_session(_FakeClient({999: object()}))
+    )
+    monkeypatch.setattr(orch, "expand_packages_to_apps", lambda _p, _pk: [2])
+    monkeypatch.setattr(orch, "fetch_owned_games", boom)
+
+    orch.discover(api_key="k", steam_id="7656")
+
+    assert seen["owned"] == {2}
+
+
+def test_run_passes_key_steam_id_and_types_to_discover(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+    seen: dict = {}
+    monkeypatch.setattr(orch, "discover", lambda **kw: seen.update(kw) or [])
+    monkeypatch.setattr(orch.report, "report_result", lambda **kw: None)
+
+    orch.run(
+        do_add=False,
+        list_only=False,
+        limit=None,
+        cfg=SimpleNamespace(steam_api_key="k", steam_id="7656"),
+        types=frozenset({"games"}),
+    )
+
+    assert seen == {
+        "api_key": "k",
+        "steam_id": "7656",
+        "types": frozenset({"games"}),
+    }
+
+
 # ── add(): resume-skip + limit + cm_session=None ────────────────────────────
 
 

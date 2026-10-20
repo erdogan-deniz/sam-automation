@@ -1,7 +1,7 @@
 """Пакет авто-добавления demo-версий игр Steam в библиотеку.
 
 Отделён от app/free_games (2026-09-12, B-11) — раньше демо были побочным
-эффектом add_free_games.py (category1=10 внутри общей discovery). Собственный
+эффектом add_free_content.py (category1=10 внутри общей discovery). Собственный
 resume-state, не пересекается с free_games.
 
 Субмодули:

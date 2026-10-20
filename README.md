@@ -85,16 +85,20 @@ found. The account is modified only when you pass `--add`. All are resumable:
 state lives in `data/games/ids/` and a re-run picks up where it stopped.
 
 ```bash
-# Add every free Steam game/app to your library (CM request_free_license)
-python scripts/library/add_free_games.py            # dry-run: how many candidates
-python scripts/library/add_free_games.py --add      # actually add
+# Add all free, released Steam content to your library (CM request_free_license).
+# Candidates come from the whole Steam catalog; DLC only for games you own.
+python scripts/library/add_free_content.py            # dry-run: how many candidates
+python scripts/library/add_free_content.py --add      # actually add
+python scripts/library/add_free_content.py --add --dlc  # only free DLC for your games
 
+#    --games --dlc --software --videos --hardware
+#                    content types, flags combine (default: all)
 #    --list          show current candidates and exit
 #    --reset         wipe resume state
 #    --retry-errors  retry transient failures (clears error.txt)
 #    --limit N       cap how many are added per run
 
-# Add every demo to your library (same CM mechanism, separate from add_free_games.py)
+# Add every demo to your library (same CM mechanism, separate from add_free_content.py)
 python scripts/library/add_demos.py           # dry-run: how many candidates
 python scripts/library/add_demos.py --add     # actually add
 
@@ -104,7 +108,7 @@ python scripts/library/add_demos.py --add     # actually add
 #    --limit N       cap how many are added per run
 
 # Add paid, released Steam content to your wishlist (IWishlistService/AddToWishlist);
-# free content is skipped (add_free_games.py puts it in the library), unreleased too
+# free content is skipped (add_free_content.py puts it in the library), unreleased too
 python scripts/library/fill_wishlist.py         # dry-run: how many candidates
 python scripts/library/fill_wishlist.py --add   # actually add
 
@@ -138,7 +142,7 @@ python scripts/library/sell_inventory.py --grind  # grind into gems (irreversibl
 #    --reset         forget what was done (e.g. after cancelling lots)
 ```
 
-All three stop honestly rather than pretending to finish: `add_free_games.py` and
+All three stop honestly rather than pretending to finish: `add_free_content.py` and
 `add_demos.py` stop when the account hits its free-license ceiling, and
 `fill_wishlist.py` backs off on Steam's rate limit and stops after five
 consecutive throttles. None report success when they stopped early.
@@ -236,7 +240,7 @@ sam-automation/
 │   ├── cards/
 │   │   └── farm_cards.py         # Idle games to collect card drops
 │   ├── library/
-│   │   ├── add_free_games.py     # Add every free Steam game/app to the library
+│   │   ├── add_free_content.py   # Add all free content (games, DLC, …) to the library
 │   │   ├── add_demos.py          # Add every demo to the library
 │   │   ├── fill_wishlist.py      # Add paid, released Steam content to the wishlist
 │   │   ├── clean_wishlist.py     # Remove free and unreleased items from the wishlist
@@ -296,7 +300,7 @@ Delete or edit them manually if needed.
 | --- | --- |
 | `done.txt` | Games with no remaining card drops |
 
-**Free games** (`data/games/ids/free/`), **Demos** (`data/games/ids/demos/`)
+**Free content** (`data/games/ids/free/`), **Demos** (`data/games/ids/demos/`)
 and **Wishlist** (`data/games/ids/wishlist/`) share the same four-file layout:
 
 | File | Purpose |
