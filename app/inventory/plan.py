@@ -3,9 +3,9 @@
 Решения владельца 18-19.10.2026:
   * карточки — только когда значок игры собран до максимума;
   * бустер-паки не трогаем никогда;
-  * есть заявка: на руки по заявке против самоцветов × заявка на мешок / 1000,
-    самоцветы дороже — разбираем, иначе продаём по заявке;
-  * заявок нет — выставляем по самой низкой цене продажи, пусть висит;
+  * цена — самая низкая цена продажи (правило 20.10.2026), её нет — лучшая
+    заявка; на руки по этой цене против самоцветов × заявка на мешок / 1000,
+    самоцветы дороже — разбираем, иначе выставляем, лот висит до покупателя;
   * при сомнении (нет данных, другая валюта) предмет пропускается.
 Суммы в минимальных единицах валюты, целые.
 """
@@ -83,23 +83,31 @@ def decide(
     if quote.currency != sack_currency:
         return _skip("валюта рынка не совпала с валютой кошелька")
 
-    if quote.max_buy is not None:
-        net = fees.received_from_buyer(quote.max_buy, m)
-        if net > 0:
-            can_grind = (
-                item.goo is not None
-                and item.amount == 1
-                and goo_value is not None
-                and sack_bid is not None
-            )
-            if can_grind:
-                assert goo_value is not None and sack_bid is not None
-                if goo_value * sack_bid // _GEMS_PER_SACK > net:
-                    return Decision("grind", gems=goo_value)
-            return Decision("sell_bid", received=net)
+    sale = _best_sale(quote, m)
+    if sale is None:
+        return _skip("нет заявок и цен продажи")
+    can_grind = (
+        item.goo is not None
+        and item.amount == 1
+        and goo_value is not None
+        and sack_bid is not None
+    )
+    if can_grind:
+        assert goo_value is not None and sack_bid is not None
+        if goo_value * sack_bid // _GEMS_PER_SACK > sale.received:
+            return Decision("grind", gems=goo_value)
+    return sale
 
-    if quote.min_sell is not None:
-        net = fees.received_from_buyer(quote.min_sell, m)
-        if net > 0:
-            return Decision("sell_ask", received=net)
-    return _skip("нет заявок и цен продажи")
+
+def _best_sale(quote: Quote, m: int) -> Decision | None:
+    """Продажа по самой низкой цене продажи; нет её — по лучшей заявке."""
+    options: tuple[tuple[Action, int | None], ...] = (
+        ("sell_ask", quote.min_sell),
+        ("sell_bid", quote.max_buy),
+    )
+    for action, price in options:
+        if price is not None:
+            net = fees.received_from_buyer(price, m)
+            if net > 0:
+                return Decision(action, received=net)
+    return None
