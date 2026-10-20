@@ -2,6 +2,43 @@
 
 Все значимые изменения проекта. Формат — по [semver](https://semver.org).
 
+## [1.18.0]
+
+### Новое
+
+- **`scripts/library/sell_inventory.py`** — распродажа инвентаря Steam.
+  Каждый предмет выставляется на маркет по самой низкой цене продажи (никто
+  не продаёт — по лучшей заявке) или разбирается на самоцветы, если они
+  дороже. Наборы карточек и карточки недособранных значков не трогает. По
+  умолчанию — только план и суммы; действия — по `--sell` и `--grind`. Лоты
+  подтверждаются в мобильном Steam Guard; на потолке Steam в 250
+  неподтверждённых лотов прогон останавливается.
+- **`scripts/library/clean_wishlist.py`** — удаляет из вишлиста бесплатное и
+  не вышедшее (`--free`, `--unreleased`; без флагов — всё). По умолчанию —
+  подсчёт, удаление — по `--remove`.
+- **Вишлист**: в него добавляется только платное и вышедшее; бесплатное
+  забирает `add_free_games.py`, демо — `add_demos.py`. Флаги типов
+  `--games`, `--dlc`, `--software`, `--videos`, `--hardware` складываются,
+  без флагов — все типы.
+- **Флаги** во всех скриптах понимают любой регистр: `--RESET` = `--reset`.
+
+### Изменено
+
+- **Имена скриптов** — по схеме «глагол_существительное»:
+
+  | Было | Стало |
+  |---|---|
+  | `achievements/farm.py` | `achievements/farm_achievements.py` |
+  | `cards/farm.py` | `cards/farm_cards.py` |
+  | `playtime/boost.py` | `playtime/boost_playtime.py` |
+  | `scan.py` | `scan_library.py` |
+  | `verify/ground_truth.py` | `verify/verify_state.py` |
+  | `library/add_free.py` | `library/add_free_games.py` |
+  | `library/wishlist_add.py` | `library/fill_wishlist.py` |
+
+  Логи пишутся в папку по пути скрипта (`logs/library/fill_wishlist/`);
+  каталоги состояния в `data/` прежние.
+
 ## [1.17.0]
 
 ### Новое
