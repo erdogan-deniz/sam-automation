@@ -125,8 +125,23 @@ def test_build_plan_queries_market_only_for_candidates() -> None:
     assert len(orderbooks) == 1
 
 
-def test_build_plan_does_not_ask_goo_when_there_is_no_bid() -> None:
+def test_build_plan_asks_goo_when_there_is_only_an_ask() -> None:
+    # Правило 20.10.2026: цена продажи сравнивается с самоцветами и без заявки.
     http = FakeHttp({BG: _book(None, 252)})
+    inv_run.build_plan(
+        http,
+        [_item("1", BG)],
+        badge_levels={},
+        sack_quote=Quote(5508, 5590, 5),
+        m=84,
+        pause=0.0,
+        sleep=lambda s: None,
+    )
+    assert len([u for u in http.gets if "ajaxgetgoo" in u]) == 1
+
+
+def test_build_plan_does_not_ask_goo_without_any_price() -> None:
+    http = FakeHttp({BG: _book(None, None)})
     inv_run.build_plan(
         http,
         [_item("1", BG)],
@@ -153,9 +168,9 @@ def test_build_plan_one_orderbook_per_unique_name() -> None:
     assert len([u for u in http.gets if "/market/orderbook" in u]) == 1
 
 
-def test_build_plan_grinds_when_gems_beat_bid() -> None:
-    # заявка 384 -> на руки 216; 80 самоцветов * 5508 / 1000 = 440
-    http = FakeHttp({BG: _book(384, 638)}, goo={1: 80})
+def test_build_plan_grinds_when_gems_beat_lowest_ask() -> None:
+    # цена 638 -> на руки 470; 100 самоцветов * 5508 / 1000 = 550
+    http = FakeHttp({BG: _book(384, 638)}, goo={1: 100})
     [row] = inv_run.build_plan(
         http,
         [_item("1", BG)],
@@ -165,7 +180,7 @@ def test_build_plan_grinds_when_gems_beat_bid() -> None:
         pause=0.0,
         sleep=lambda s: None,
     )
-    assert row.decision == Decision("grind", gems=80)
+    assert row.decision == Decision("grind", gems=100)
 
 
 # --- sell / grind ---------------------------------------------------------
@@ -394,11 +409,12 @@ def test_run_grind_flag_grinds_only_grind_rows(
     world, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     books = _books()
-    books[BG] = _book(384, 638)  # самоцветы дороже заявки
+    books[BG] = _book(384, 638)  # самоцветы (550) дороже цены (470)
+    books[EMO] = _book(None, 8273)  # цена (7195) дороже самоцветов
     http = FakeHttp(
         books,
-        goo={1: 80},
-        post=(200, {"success": 1, "goo_value_received ": "80"}),
+        goo={1: 100},
+        post=(200, {"success": 1, "goo_value_received ": "100"}),
     )
     inv_run.run(
         do_sell=False,
@@ -546,7 +562,7 @@ def test_run_list_hides_non_marketable_items(world, capsys) -> None:
 def test_run_sells_bid_rows_before_ask_rows(world) -> None:
     """--limit 1 сначала проверяет лот по заявке (мгновенная продажа)."""
     books = _books()
-    books[EMO] = _book(5671, 8273)  # у второго предмета есть заявка
+    books[EMO] = _book(5671, None)  # у второго только заявка, цен продажи нет
     http = FakeHttp(books, goo={1: 10})
     inv_run.run(
         do_sell=True,

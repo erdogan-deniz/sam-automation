@@ -318,9 +318,9 @@ a candidate once it is out.
 `listed.txt` (lot placed), `pending.txt` (lot placed, waiting for your
 confirmation in Steam Guard — not sold yet), `ground.txt` (turned into gems) and
 `refused.txt` (Steam said no, never retried). Errors are not recorded; the item
-is tried again on the next run. Items with a buy order are sold at that bid
-unless their gems are worth more; items nobody bids on are listed at the lowest
-asking price and left hanging. Steam allows at most 250 lots waiting for
+is tried again on the next run. Each item is listed at the lowest asking
+price on the market (at the best buy order if nobody sells it) unless its gems
+are worth more; the lot stays up until someone buys it. Steam allows at most 250 lots waiting for
 confirmation: the run stops at that ceiling, you confirm the batch in Steam
 Guard, then run `--sell` again.
 
