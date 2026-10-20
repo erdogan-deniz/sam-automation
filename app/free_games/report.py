@@ -1,4 +1,4 @@
-"""Честный итоговый отчёт авто-добавления бесплатных игр (toast + Telegram).
+"""Честный итоговый отчёт авто-добавления бесплатного контента (toast + Telegram).
 
 status="ok" с hit_cap=True НИКОГДА не даёт ✅ — упор в потолок лицензий не
 считается чистым успехом (инвариант честного отчёта проекта, см. другие
@@ -47,13 +47,14 @@ def report_result(
     else:
         head, ok = "готово", True
 
-    detail = f"добавлено {added}, отказано {refused}, ошибок {error}"
+    done = "к добавлению" if status == "dry_run" else "добавлено"
+    detail = f"{done} {added}, отказано {refused}, ошибок {error}"
     if hit_cap:
         detail += " — дальше стена"
 
     log.info(SEPARATOR)
-    log.info("Добавление бесплатных игр — %s. %s", head, detail)
+    log.info("Добавление бесплатного контента — %s. %s", head, detail)
     log.info(SEPARATOR)
-    toast("SAM Automation — Free Games", f"{head}: {detail}")
+    toast("SAM Automation — Free content", f"{head}: {detail}")
     mark = "✅" if ok else "⚠️"
-    send_telegram(f"{mark} Free games — {head}: {detail}", cfg)
+    send_telegram(f"{mark} Free content — {head}: {detail}", cfg)
