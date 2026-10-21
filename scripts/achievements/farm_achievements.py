@@ -24,14 +24,21 @@ from app.cache import (
     load_error_ids,
     load_game_names,
     load_no_achievements_ids,
+    load_not_owned_ids,
     mark_done,
     mark_error_id,
     mark_no_achievements,
+    mark_not_owned,
     unmark_no_achievements,
 )
 from app.cli import casefold_options
 from app.config import load_config
-from app.exceptions import SAMError, SAMPickerBroken, SAMTooManyErrors
+from app.exceptions import (
+    SAMError,
+    SAMGameNotOwned,
+    SAMPickerBroken,
+    SAMTooManyErrors,
+)
 from app.game_list import load_game_ids
 from app.logging_setup import SEPARATOR, centered, setup_logging
 from app.notify import send_telegram, toast
@@ -144,6 +151,15 @@ def _process_one_game(
         # SAMPickerBroken — сломан Picker, а не игра: решает
         # _process_with_recovery (перезапуск, без записи в error.txt).
         raise
+    except SAMGameNotOwned as e:
+        # Не ошибка и не успех: игры нет в библиотеке — в серию ошибок подряд
+        # не идёт (иначе хвост all.txt из таких игр взводил аварийный стоп).
+        log.info("APP STATUS: NOT OWNED — %s", e.message)
+        results.append(
+            UnlockResult(game_id=game_id, skipped=True, skip_reason="not owned")
+        )
+        mark_not_owned(game_id)
+        return False
     except SAMError as e:
         reason = e.message if hasattr(e, "message") else str(e)
         log.warning("APP STATUS: ERROR — %s", reason)
@@ -254,8 +270,13 @@ def _prepare_progress(args: argparse.Namespace) -> None:
 
 
 def _apply_resume_filter(game_ids: list[int]) -> list[int]:
-    """Исключает уже обработанные игры (done + error + no_achievements)."""
-    skip = load_done_ids() | load_error_ids() | load_no_achievements_ids()
+    """Исключает уже обработанные игры (done, error, without, not_owned)."""
+    skip = (
+        load_done_ids()
+        | load_error_ids()
+        | load_no_achievements_ids()
+        | load_not_owned_ids()
+    )
     if not skip:
         return game_ids
     before = len(game_ids)
@@ -263,7 +284,8 @@ def _apply_resume_filter(game_ids: list[int]) -> list[int]:
     skipped = before - len(filtered)
     if skipped:
         log.info(
-            "Пропущено %d игр из done/error/without (--reset чтобы начать "
+            "Пропущено %d игр из done/error/without/not_owned (--reset "
+            "чтобы начать "
             "заново, --retry-without/--retry-done для их среза)",
             skipped,
         )
@@ -312,6 +334,8 @@ def _log_summary(results: list[UnlockResult], errors: int) -> None:
             log.info("  %d: STATUS: UNLOCK (+%d)", r.game_id, r.newly_unlocked)
         elif r.skip_reason == "no achievements":
             log.info("  %d: STATUS: NO ACHIEVEMENTS", r.game_id)
+        elif r.skip_reason == "not owned":
+            log.info("  %d: STATUS: NOT OWNED", r.game_id)
         else:
             reason = f" — {r.skip_reason}" if r.skip_reason != "error" else ""
             log.info("  %d: STATUS: ERROR%s", r.game_id, reason)

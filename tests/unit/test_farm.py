@@ -602,3 +602,41 @@ def test_report_picker_broken_is_not_success(
     toast_msg, tg_msg = _capture_report(monkeypatch, "picker_broken", 2, 1, 10)
     assert "✅" not in tg_msg
     assert "SAM.Picker" in toast_msg
+
+
+# ── «нет в библиотеке» от SAM: отдельный список, не ошибка ───────────────────
+
+
+def test_not_owned_goes_to_own_list_not_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.exceptions import SAMGameNotOwned
+
+    class _NotOwned:
+        def add_and_open_game(self, game_id: int, timeout: float) -> object:
+            raise SAMGameNotOwned(game_id, "нет в библиотеке")
+
+    marked: dict[str, list[int]] = {"not_owned": [], "error": []}
+    monkeypatch.setattr(farm, "mark_not_owned", marked["not_owned"].append)
+    monkeypatch.setattr(farm, "mark_error_id", marked["error"].append)
+    monkeypatch.setattr(farm, "close_game", lambda app: None)
+    tracker = ErrorTracker(max_consecutive=2)
+    results: list[UnlockResult] = []
+
+    for gid in (1, 2, 3):  # больше лимита подряд — стопа нет
+        assert (
+            farm._process_one_game(_NotOwned(), gid, _Cfg(), tracker, results)
+            is False
+        )
+
+    assert marked == {"not_owned": [1, 2, 3], "error": []}
+    assert tracker.total_errors == 0
+    assert results[0].skip_reason == "not owned"
+
+
+def test_resume_filter_skips_not_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(farm, "load_done_ids", lambda: {1})
+    monkeypatch.setattr(farm, "load_error_ids", lambda: {2})
+    monkeypatch.setattr(farm, "load_no_achievements_ids", lambda: {3})
+    monkeypatch.setattr(farm, "load_not_owned_ids", lambda: {4})
+    assert farm._apply_resume_filter([1, 2, 3, 4, 5]) == [5]

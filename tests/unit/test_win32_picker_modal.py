@@ -62,6 +62,7 @@ def _setup(monkeypatch, *, button_closes: bool, close_closes: bool):  # type: ig
     monkeypatch.setattr(wu, "_click_first_button", _click)
     monkeypatch.setattr(wu, "_is_window_enabled", lambda h: not state["open"])
     monkeypatch.setattr(wu, "_window_title", lambda h: "Error")
+    monkeypatch.setattr(wu, "_dialog_text", lambda h: "")
     monkeypatch.setattr(wu.time, "time", clock.time)
     monkeypatch.setattr(wu.time, "sleep", clock.sleep)
     return user32, state
@@ -69,14 +70,14 @@ def _setup(monkeypatch, *, button_closes: bool, close_closes: bool):  # type: ig
 
 def test_button_closes_dialog_no_wm_close(monkeypatch: pytest.MonkeyPatch):
     user32, state = _setup(monkeypatch, button_closes=True, close_closes=True)
-    assert wu._close_picker_modal(_PICKER, 1) is True
+    assert wu._close_picker_modal(_PICKER, 1) == ""
     assert not state["open"]
     assert user32.posted == []
 
 
 def test_wm_close_when_button_did_not_help(monkeypatch: pytest.MonkeyPatch):
     user32, state = _setup(monkeypatch, button_closes=False, close_closes=True)
-    assert wu._close_picker_modal(_PICKER, 1) is True
+    assert wu._close_picker_modal(_PICKER, 1) == ""
     assert user32.posted == [(_POPUP, wu._WM_CLOSE)]
     assert not state["open"]
 
@@ -85,4 +86,52 @@ def test_no_dialog_returns_false(monkeypatch: pytest.MonkeyPatch):
     _setup(monkeypatch, button_closes=True, close_closes=True)
     monkeypatch.setattr(wu, "_user32", _User32(popup=0))
     monkeypatch.setattr(wu, "_find_picker_dialog", lambda pid, main: 0)
-    assert wu._close_picker_modal(_PICKER, 1) is False
+    assert wu._close_picker_modal(_PICKER, 1) is None
+
+
+def test_returns_dialog_text(monkeypatch: pytest.MonkeyPatch):
+    # По тексту вызывающий отличает «нет в библиотеке» от прочих отказов.
+    _setup(monkeypatch, button_closes=True, close_closes=True)
+    monkeypatch.setattr(
+        wu, "_dialog_text", lambda h: "You don't own that game."
+    )
+    assert wu._close_picker_modal(_PICKER, 1) == "You don't own that game."
+
+
+class _DialogUser32:
+    """Дети диалога: (hwnd, класс, текст) — как у Win32 MessageBox."""
+
+    def __init__(self, children: list[tuple[int, str, str]]) -> None:
+        self._kids = {h: (cls, txt) for h, cls, txt in children}
+
+    def EnumChildWindows(self, hwnd: int, cb, lparam: int) -> int:  # type: ignore[no-untyped-def]
+        for child in self._kids:
+            cb(child, lparam)
+        return 1
+
+    def GetClassNameW(self, hwnd: int, buf, n: int) -> int:  # type: ignore[no-untyped-def]
+        buf.value = self._kids[hwnd][0]
+        return len(buf.value)
+
+    def GetWindowTextW(self, hwnd: int, buf, n: int) -> int:  # type: ignore[no-untyped-def]
+        buf.value = self._kids[hwnd][1]
+        return len(buf.value)
+
+
+def test_dialog_text_reads_static_children_not_buttons(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Заголовок «Error» причины не говорит — текст лежит в Static-детях.
+    monkeypatch.setattr(
+        wu,
+        "_user32",
+        _DialogUser32(
+            [
+                (1, "Static", ""),
+                (2, "Static", "You don't own the game."),
+                (3, "Button", "OK"),
+            ]
+        ),
+    )
+    monkeypatch.setattr(wu, "_WNDENUMPROC", lambda f: f)
+    assert wu._dialog_text(_POPUP) == "You don't own the game."

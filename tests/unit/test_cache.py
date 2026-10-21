@@ -22,6 +22,7 @@ def _patch_all(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         cache_mod, "NO_ACHIEVEMENTS_FILE", tmp_path / "no_ach.txt"
     )
+    monkeypatch.setattr(cache_mod, "NOT_OWNED_FILE", tmp_path / "not_owned.txt")
 
 
 # ── load/mark done ─────────────────────────────────────────────────────────
@@ -107,12 +108,23 @@ def test_clear_progress_removes_files(
     cache_mod.mark_done(730)
     cache_mod.mark_error_id(440)
     cache_mod.mark_no_achievements(10)
+    cache_mod.mark_not_owned(20)
 
     cache_mod.clear_progress()
 
     assert not (tmp_path / "done_ids.txt").exists()
     assert not (tmp_path / "error_ids.txt").exists()
     assert not (tmp_path / "no_ach.txt").exists()
+    assert not (tmp_path / "not_owned.txt").exists()
+
+
+def test_not_owned_roundtrip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_all(monkeypatch, tmp_path)
+    cache_mod.mark_not_owned(30)
+    cache_mod.mark_not_owned(5)
+    assert cache_mod.load_not_owned_ids() == {5, 30}
 
 
 def test_clear_progress_idempotent(
