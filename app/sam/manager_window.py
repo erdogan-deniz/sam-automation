@@ -7,9 +7,11 @@ import time
 
 from pywinauto import Application, keyboard, mouse
 
-from ..exceptions import SAMGameError
+from ..exceptions import SAMGameError, SAMGameNotOwned, SAMPickerBroken
 from ..unlock_result import UnlockResult
+from .sam_downloader import check_steam_running
 from .sam_status import _check_game_status
+from .win32_utils import _dialog_text
 
 log = logging.getLogger("sam_automation")
 
@@ -55,6 +57,32 @@ def _find_manager_window(app: Application):
         if _is_manager_window(win):
             return win
     return None
+
+
+# Текст окна «Error» SAM.Game, когда Steam API не стартует для игры.
+_STEAM_NOT_RUNNING_TEXT = "steam is not running"
+
+
+def _steam_not_running_error(app: Application) -> bool:
+    """True, если SAM.Game показал окно «Error» со «Steam is not running».
+
+    Живьём 21.10.2026 SAM так отвечал при запущенном Steam на игры, которых
+    нет в библиотеке. Ждать окно Manager после этого бессмысленно.
+    """
+    try:
+        wins = app.windows()
+    except Exception:
+        return False
+    for win in wins:
+        try:
+            if win.window_text() != "Error":
+                continue
+            text = _dialog_text(win.handle).lower()
+        except Exception:
+            continue
+        if _STEAM_NOT_RUNNING_TEXT in text:
+            return True
+    return False
 
 
 def _log_window_diag(app: Application, game_id: int) -> None:
@@ -208,6 +236,14 @@ def process_game(
         game_window = _find_manager_window(app)
         if game_window is not None:
             break
+        if _steam_not_running_error(app):
+            # Steam правда упал — сбой среды, не игры: farm перезапустит
+            # Picker и остановится, а не запишет все игры в not_owned.
+            if not check_steam_running():
+                raise SAMPickerBroken("SAM.Game: Steam не запущен")
+            raise SAMGameNotOwned(
+                game_id, "нет в библиотеке (SAM: Steam is not running)"
+            )
         time.sleep(0.1)
 
     if game_window is None:
@@ -217,9 +253,9 @@ def process_game(
     # Ранний выход: нет достижений или SAM не смог их загрузить
     skip_reason, total = _check_game_status(game_window, timeout=load_timeout)
 
-    # Статистика не успела ("retry") или SAM показал error (часто транзиент) —
-    # даём ОДИН шанс через Refresh + полная перепроверка.
-    if skip_reason in ("retry", "error"):
+    # Статистика не успела ("retry"), SAM показал error (часто транзиент) или
+    # «you don't own the game» — даём ОДИН шанс через Refresh + перепроверка.
+    if skip_reason in ("retry", "error", "not owned"):
         # Окно могло подмениться за время загрузки — перевыберем Manager.
         refreshed = _find_manager_window(app)
         if refreshed is not None:
@@ -241,6 +277,10 @@ def process_game(
         # (retryable через --retry-errors), а не крутим вечный retry.
         if skip_reason == "retry":
             skip_reason = "error"
+        if skip_reason == "not owned":
+            raise SAMGameNotOwned(
+                game_id, "нет в библиотеке (SAM: you don't own the game)"
+            )
 
     if skip_reason:
         status = (

@@ -219,3 +219,19 @@ def test_count_must_stabilize_before_returning(monkeypatch):
         None,
         54,
     )
+
+
+def test_status_dont_own_is_not_owned(monkeypatch):
+    # Живая проба 21.10.2026 (Zen of Sudoku и др.): SAM пишет «Error while
+    # retrieving stats: generic error -- this usually means you don't own the
+    # game». Это не транзиент, а «нет в библиотеке».
+    _patch(
+        monkeypatch,
+        count=0,
+        status="error while retrieving stats: generic error -- this usually "
+        "means you don't own the game",
+    )
+    assert _check_game_status(MagicMock(), timeout=2.0, settle=0.1) == (
+        "not owned",
+        0,
+    )
