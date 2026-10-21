@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 import app.sam.picker_session as ps
-from app.exceptions import SAMGameError
+from app.exceptions import SAMGameError, SAMPickerBroken
 from app.sam.picker_session import PickerSession
 
 _PICKER_HWND = 4242
@@ -48,13 +48,16 @@ class _Item:
 
 
 class _Edit:
-    def __init__(self) -> None:
+    def __init__(self, error: Exception | None = None) -> None:
         self.text: str | None = None
+        self._error = error
 
     def friendly_class_name(self) -> str:
         return "Edit"
 
     def set_edit_text(self, t: str) -> None:
+        if self._error is not None:
+            raise self._error
         self.text = t
 
 
@@ -143,12 +146,16 @@ def _session(
     *,
     items: list | None = None,
     with_controls: bool = True,
+    edit: _Edit | None = None,
 ) -> PickerSession:
     clock = _Clock()
     monkeypatch.setattr(ps.time, "time", clock.time)
     monkeypatch.setattr(ps.time, "sleep", clock.sleep)
     monkeypatch.setattr(ps.mouse, "double_click", lambda coords: None)
-    kids: list = [_Edit(), _AddBtn()] if with_controls else []
+    # По умолчанию Picker живой и диалогов нет; тест меняет это сам.
+    monkeypatch.setattr(ps, "_is_window_enabled", lambda _h: True)
+    monkeypatch.setattr(ps, "_close_picker_modal", lambda _h, _p: False)
+    kids: list = [edit or _Edit(), _AddBtn()] if with_controls else []
     win = _PickerWin(_Toolbar(kids), _ListView(items if items else []))
     return PickerSession(_PickerApp(win))
 
@@ -160,14 +167,105 @@ def test_missing_picker_controls_raises(monkeypatch):
         session.add_and_open_game(730)
 
 
+class _Dialog:
+    """Modal SAM: открывается кликом Add, закрытие можно «сломать»."""
+
+    def __init__(self, *, open_now: bool = False, closes: bool = True) -> None:
+        self.open = open_now
+        self.closes = closes
+        self.close_calls = 0
+
+    def enabled(self, _hwnd: int) -> bool:
+        return not self.open
+
+    def close(self, _hwnd: int, _pid: int) -> bool:
+        if not self.open:
+            return False
+        self.close_calls += 1
+        if self.closes:
+            self.open = False
+        return True
+
+
+def _with_dialog(monkeypatch, session, dialog: _Dialog, *, on_add: bool):  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(ps, "_is_window_enabled", dialog.enabled)
+    monkeypatch.setattr(ps, "_close_picker_modal", dialog.close)
+    if on_add:
+        add = session._add_btn
+        orig = add.click_input
+
+        def _click() -> None:
+            orig()
+            dialog.open = True
+
+        add.click_input = _click
+
+
 def test_modal_dialog_means_sam_rejected_game(monkeypatch):
     # Picker стал disabled → modal («You don't own the game»): SAM отверг игру.
     # Список может содержать ПРЕДЫДУЩУЮ игру — успех отдавать нельзя.
     session = _session(monkeypatch, items=[_Item()])
-    monkeypatch.setattr(ps, "_is_window_enabled", lambda _h: False)
-    monkeypatch.setattr(ps, "_close_picker_modal", lambda _h, _p: True)
+    dialog = _Dialog()
+    _with_dialog(monkeypatch, session, dialog, on_add=True)
     with pytest.raises(SAMGameError, match="ошибка добавления игры"):
         session.add_and_open_game(730)
+    assert dialog.close_calls == 1
+
+
+def test_dialog_that_does_not_close_means_picker_broken(monkeypatch):
+    # Живой прогон 21.10.2026: после диалога на appid 5 Picker так и остался
+    # disabled, и 99 следующих игр упали с ElementNotEnabled в error.txt.
+    # Не закрывшийся диалог — поломка Picker, а не ошибка этой игры.
+    session = _session(monkeypatch, items=[_Item()])
+    _with_dialog(monkeypatch, session, _Dialog(closes=False), on_add=True)
+    with pytest.raises(SAMPickerBroken):
+        session.add_and_open_game(5)
+
+
+def test_disabled_picker_before_input_is_recovered(monkeypatch):
+    # Висящий с прошлой игры диалог закрываем ДО ввода ID, а не роняем игру.
+    edit = _Edit()
+    session = _session(monkeypatch, items=[], edit=edit)
+    dialog = _Dialog(open_now=True)
+    _with_dialog(monkeypatch, session, dialog, on_add=False)
+    with pytest.raises(SAMGameError, match="игра недоступна"):
+        session.add_and_open_game(730)
+    assert dialog.close_calls == 1
+    assert edit.text == "730"
+
+
+def test_picker_stuck_disabled_raises_broken_before_input(monkeypatch):
+    edit = _Edit()
+    session = _session(monkeypatch, items=[_Item()], edit=edit)
+    _with_dialog(
+        monkeypatch, session, _Dialog(open_now=True, closes=False), on_add=False
+    )
+    with pytest.raises(SAMPickerBroken):
+        session.add_and_open_game(7)
+    assert edit.text is None  # ID в мёртвый Picker не вводили
+
+
+class ElementNotEnabled(Exception):
+    """Как у pywinauto: str() пустой."""
+
+
+def test_edit_rejecting_input_means_picker_broken(monkeypatch):
+    session = _session(
+        monkeypatch, items=[_Item()], edit=_Edit(error=ElementNotEnabled())
+    )
+    with pytest.raises(SAMPickerBroken, match="ElementNotEnabled"):
+        session.add_and_open_game(7)
+
+
+def test_picker_window_gone_means_picker_broken(monkeypatch):
+    session = _session(monkeypatch, items=[_Item()])
+
+    def _dead() -> None:
+        raise RuntimeError("процесс SAM.Picker.exe завершился")
+
+    monkeypatch.setattr(session.win, "set_focus", _dead)
+    with pytest.raises(SAMPickerBroken, match="завершился"):
+        session.add_and_open_game(7)
 
 
 def test_no_items_and_no_dialog_means_game_unavailable(monkeypatch):
