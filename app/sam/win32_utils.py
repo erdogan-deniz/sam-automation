@@ -164,8 +164,10 @@ def _has_error_window(pid: int) -> bool:
 
 def _close_picker_modal(
     picker_hwnd: int, picker_pid: int, wait_timeout: float = 3.0
-) -> bool:
-    """Ищет и закрывает modal dialog Picker. Возвращает True, если диалог был.
+) -> str | None:
+    """Ищет и закрывает modal dialog Picker. Возвращает его текст или None.
+
+    None — диалога нет; "" — диалог без текста.
 
     Сначала жмёт первую кнопку диалога; если Picker за wait_timeout не ожил,
     шлёт диалогу WM_CLOSE и ждёт ещё столько же. Ожил ли Picker в итоге,
@@ -175,15 +177,18 @@ def _close_picker_modal(
     if not popup or popup == picker_hwnd:
         popup = _find_picker_dialog(picker_pid, picker_hwnd)
     if not popup:
-        return False
-    log.warning("Диалог SAM: «%s»", _window_title(popup))
+        return None
+    text = _dialog_text(popup)
+    log.info(
+        "Диалог SAM: «%s» — %s", _window_title(popup), text or "без текста"
+    )
     _click_first_button(popup)
     if _wait_enabled(picker_hwnd, wait_timeout):
-        return True
+        return text
     log.warning("Диалог SAM не закрылся кнопкой — закрываю WM_CLOSE")
     _user32.PostMessageW(popup, _WM_CLOSE, 0, 0)
     _wait_enabled(picker_hwnd, wait_timeout)
-    return True
+    return text
 
 
 def _wait_enabled(hwnd: int, timeout: float) -> bool:
@@ -194,6 +199,23 @@ def _wait_enabled(hwnd: int, timeout: float) -> bool:
         if _is_window_enabled(hwnd):
             return True
     return False
+
+
+def _dialog_text(hwnd: int) -> str:
+    """Текст диалога: Static-дети окна (у Win32 MessageBox текст там)."""
+    texts: list[str] = []
+    buf = ctypes.create_unicode_buffer(1024)
+
+    def _cb(child: int, _: int) -> bool:
+        _user32.GetClassNameW(child, buf, 1024)
+        if buf.value.lower() == "static":
+            _user32.GetWindowTextW(child, buf, 1024)
+            if buf.value.strip():
+                texts.append(buf.value.strip())
+        return True
+
+    _user32.EnumChildWindows(hwnd, _WNDENUMPROC(_cb), 0)
+    return " ".join(texts)
 
 
 def _window_title(hwnd: int) -> str:
