@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 import app.sam.picker_session as ps
-from app.exceptions import SAMGameError, SAMPickerBroken
+from app.exceptions import SAMGameError, SAMGameNotOwned, SAMPickerBroken
 from app.sam.picker_session import PickerSession
 
 _PICKER_HWND = 4242
@@ -154,7 +154,7 @@ def _session(
     monkeypatch.setattr(ps.mouse, "double_click", lambda coords: None)
     # По умолчанию Picker живой и диалогов нет; тест меняет это сам.
     monkeypatch.setattr(ps, "_is_window_enabled", lambda _h: True)
-    monkeypatch.setattr(ps, "_close_picker_modal", lambda _h, _p: False)
+    monkeypatch.setattr(ps, "_close_picker_modal", lambda _h, _p: None)
     kids: list = [edit or _Edit(), _AddBtn()] if with_controls else []
     win = _PickerWin(_Toolbar(kids), _ListView(items if items else []))
     return PickerSession(_PickerApp(win))
@@ -170,21 +170,24 @@ def test_missing_picker_controls_raises(monkeypatch):
 class _Dialog:
     """Modal SAM: открывается кликом Add, закрытие можно «сломать»."""
 
-    def __init__(self, *, open_now: bool = False, closes: bool = True) -> None:
+    def __init__(
+        self, *, open_now: bool = False, closes: bool = True, text: str = ""
+    ) -> None:
         self.open = open_now
         self.closes = closes
+        self.text = text
         self.close_calls = 0
 
     def enabled(self, _hwnd: int) -> bool:
         return not self.open
 
-    def close(self, _hwnd: int, _pid: int) -> bool:
+    def close(self, _hwnd: int, _pid: int) -> str | None:
         if not self.open:
-            return False
+            return None
         self.close_calls += 1
         if self.closes:
             self.open = False
-        return True
+        return self.text
 
 
 def _with_dialog(monkeypatch, session, dialog: _Dialog, *, on_add: bool):  # type: ignore[no-untyped-def]
@@ -210,6 +213,31 @@ def test_modal_dialog_means_sam_rejected_game(monkeypatch):
     with pytest.raises(SAMGameError, match="ошибка добавления игры"):
         session.add_and_open_game(730)
     assert dialog.close_calls == 1
+
+
+def test_not_owned_dialog_raises_not_owned(monkeypatch):
+    # Живая проба 21.10.2026: на 607 отказах SAM пишет «You don't own that
+    # game.» — игры нет в библиотеке (истёкшая лицензия, демо, семейный
+    # доступ), это не ошибка.
+    session = _session(monkeypatch, items=[_Item()])
+    _with_dialog(
+        monkeypatch,
+        session,
+        _Dialog(text="You don't own that game."),
+        on_add=True,
+    )
+    with pytest.raises(SAMGameNotOwned):
+        session.add_and_open_game(1572260)
+
+
+def test_other_dialog_text_goes_into_error(monkeypatch):
+    session = _session(monkeypatch, items=[_Item()])
+    _with_dialog(
+        monkeypatch, session, _Dialog(text="Something else."), on_add=True
+    )
+    with pytest.raises(SAMGameError, match="Something else") as exc:
+        session.add_and_open_game(7)
+    assert not isinstance(exc.value, SAMGameNotOwned)
 
 
 def test_dialog_that_does_not_close_means_picker_broken(monkeypatch):

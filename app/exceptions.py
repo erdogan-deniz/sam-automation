@@ -22,6 +22,14 @@ class SAMGameError(SAMError):
         super().__init__(f"Game {game_id}: {message}")
 
 
+class SAMGameNotOwned(SAMGameError):
+    """SAM: «You don't own that game» — игры нет в библиотеке аккаунта.
+
+    Не ошибка: истёкшая лицензия, бесплатные выходные, демо, семейный доступ.
+    Игра идёт в not_owned.txt и больше не прогоняется.
+    """
+
+
 class SAMTooManyErrors(SAMError):
     """Превышен лимит последовательных ошибок — аварийная остановка."""
 
