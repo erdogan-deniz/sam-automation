@@ -330,3 +330,71 @@ def test_process_game_survives_set_focus_failure(monkeypatch):
 
     assert clicked["n"] == 2  # Unlock All + Commit всё равно кликнуты
     assert result.newly_unlocked == 7
+
+
+# ── «нет в библиотеке» от SAM.Game ───────────────────────────────────────────
+
+
+def test_not_owned_status_twice_raises_not_owned(monkeypatch):
+    # Один Refresh-шанс, как у error; снова «don't own» — игры нет.
+    from app.exceptions import SAMGameNotOwned
+
+    with pytest.raises(SAMGameNotOwned):
+        _run(
+            monkeypatch,
+            statuses=[("not owned", 0), ("not owned", 0)],
+            click_results=[True],
+        )
+
+
+def test_not_owned_then_error_is_error(monkeypatch):
+    result, _, clicks = _run(
+        monkeypatch,
+        statuses=[("not owned", 0), ("error", 0)],
+        click_results=[True],
+    )
+    assert clicks == 1
+    assert result.skipped and result.skip_reason == "error"
+
+
+class _ErrorWindow(_Window):
+    handle = 77
+
+    def __init__(self) -> None:
+        super().__init__(aid="", title="Error")
+
+
+def _steam_not_running_window(monkeypatch, *, steam_running: bool):  # type: ignore[no-untyped-def]
+    # Живая проба 21.10.2026 (appid 8, 533732): SAM.Game показывает окно
+    # «Error» с «Steam is not running», хотя Steam запущен, — Steam API не
+    # стартует для игры, которой нет в библиотеке.
+    monkeypatch.setattr(mw.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(mw, "_WINDOW_WAIT_FLOOR", 0.2)
+    monkeypatch.setattr(
+        mw,
+        "_dialog_text",
+        lambda h: (
+            "Steam is not running. Please start Steam then run this tool again."
+        ),
+    )
+    monkeypatch.setattr(mw, "check_steam_running", lambda: steam_running)
+    return _App(_ErrorWindow())
+
+
+def test_steam_not_running_window_with_steam_up_is_not_owned(monkeypatch):
+    from app.exceptions import SAMGameNotOwned
+
+    app = _steam_not_running_window(monkeypatch, steam_running=True)
+    with pytest.raises(SAMGameNotOwned):
+        process_game(app, 8, load_timeout=0.2)
+
+
+def test_steam_not_running_window_with_steam_down_breaks_run(monkeypatch):
+    # Steam правда упал — это сбой среды: не хоронить игры в not_owned,
+    # farm перезапустит Picker и остановится, если не поможет.
+    from app.exceptions import SAMGameNotOwned, SAMPickerBroken
+
+    app = _steam_not_running_window(monkeypatch, steam_running=False)
+    with pytest.raises(SAMPickerBroken) as exc:
+        process_game(app, 8, load_timeout=0.2)
+    assert not isinstance(exc.value, SAMGameNotOwned)

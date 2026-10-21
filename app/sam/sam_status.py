@@ -102,6 +102,8 @@ def _check_game_status(
         None              — достижения загружены (count = сколько строк)
         "no achievements" — SAM сообщил 'Retrieved 0 achievements' —
                             единственный прямой сигнал «нет достижений»
+        "not owned"       — SAM: «this usually means you don't own the game»
+                            (игры нет в библиотеке; caller даёт Refresh-шанс)
         "error"           — SAM показал error в статус-баре: часто транзиент
                             (Steam/сеть) — caller даёт Refresh-шанс; финально
                             игра идёт в error.txt (retryable), НЕ в without
@@ -128,6 +130,10 @@ def _check_game_status(
         else:
             # Список пуст/не готов — быстрый выход по статус-бару
             text = _read_status_panel(game_window)
+            # «Error while retrieving stats … you don't own the game» тоже
+            # содержит «error» — проверяем раньше.
+            if "don't own" in text:
+                return "not owned", 0
             if "error" in text:
                 return "error", 0
             match = re.search(r"retrieved\s+(\d+)", text)
