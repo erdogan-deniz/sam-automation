@@ -24,3 +24,11 @@ class SAMGameError(SAMError):
 
 class SAMTooManyErrors(SAMError):
     """Превышен лимит последовательных ошибок — аварийная остановка."""
+
+
+class SAMPickerBroken(SAMError):
+    """SAM.Picker.exe не принимает ввод (висящий диалог, окно умерло).
+
+    Поломка самого Picker, а не ошибка игры: farm перезапускает Picker и
+    повторяет игру, не записывая её в error.txt.
+    """

@@ -457,3 +457,148 @@ def test_teardown_picker_survives_sweep_failure(
     monkeypatch.setattr(farm, "kill_all_sam_games", _boom_sweep)
 
     farm._teardown_picker(object())  # не должно бросить
+
+
+# ── поломка SAM.Picker: перезапуск вместо ложных error ──────────────────────
+# Живой прогон 21.10.2026: после диалога на appid 5 Picker перестал принимать
+# ввод, 99 следующих игр упали за минуту и легли в error.txt, разблокировано 0.
+
+
+class _Ok:
+    def add_and_open_game(self, game_id: int, timeout: float) -> object:
+        return object()
+
+
+class _Broken:
+    def __init__(self, bad: set[int] | None = None) -> None:
+        self.bad = bad  # None — ломается на любой игре
+
+    def add_and_open_game(self, game_id: int, timeout: float) -> object:
+        if self.bad is None or game_id in self.bad:
+            raise farm.SAMPickerBroken("окно SAM.Picker не принимает ввод")
+        return object()
+
+
+class _RecCfg(_Cfg):
+    sam_game_exe_path = "x"
+    launch_delay = 0
+
+
+def _recovery_env(monkeypatch: pytest.MonkeyPatch, sessions: list) -> dict:
+    """Подменяет SAM вокруг _process_with_recovery; sessions — по запускам."""
+    calls: dict = {"done": [], "error": [], "launch": 0, "teardown": []}
+    queue = list(sessions)
+
+    def _launch(path, launch_delay=0):  # type: ignore[no-untyped-def]
+        calls["launch"] += 1
+        return f"proc{calls['launch']}", queue.pop(0)
+
+    monkeypatch.setattr(farm, "launch_picker", _launch)
+    monkeypatch.setattr(farm, "_teardown_picker", calls["teardown"].append)
+    monkeypatch.setattr(
+        farm,
+        "process_game",
+        lambda app, gid, **k: UnlockResult(game_id=gid, total=3),
+    )
+    monkeypatch.setattr(farm, "mark_done", calls["done"].append)
+    monkeypatch.setattr(farm, "mark_error_id", calls["error"].append)
+    monkeypatch.setattr(farm, "unmark_no_achievements", lambda g: None)
+    monkeypatch.setattr(farm, "close_game", lambda app: None)
+    return calls
+
+
+def _run_games(picker, games: list[int], tracker=None) -> list:  # type: ignore[no-untyped-def]
+    results: list = []
+    tracker = tracker or ErrorTracker(max_consecutive=100)
+    for gid in games:
+        farm._process_with_recovery(picker, gid, _RecCfg(), tracker, results)
+    return results
+
+
+def test_broken_picker_is_restarted_and_game_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _recovery_env(monkeypatch, [_Ok()])
+    picker = farm._Picker("proc0", _Broken())
+
+    _run_games(picker, [7])
+
+    assert calls["error"] == []  # игра не виновата — не в error.txt
+    assert calls["done"] == [7]
+    assert calls["teardown"] == ["proc0"]
+    assert calls["launch"] == 1
+    assert picker.proc == "proc1"
+    assert picker.breaks_in_row == 0
+
+
+def test_game_breaking_picker_twice_goes_to_error_and_run_goes_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _recovery_env(monkeypatch, [_Broken({5}), _Broken({5})])
+    picker = farm._Picker("proc0", _Broken({5}))
+    tracker = ErrorTracker(max_consecutive=100)
+
+    results = _run_games(picker, [5, 7], tracker)
+
+    assert calls["error"] == [5]
+    assert calls["done"] == [7]
+    assert calls["launch"] == 2
+    assert tracker.total_errors == 1
+    assert results[0].skip_reason  # причина не пустая
+
+
+def test_picker_unrecoverable_after_three_restarts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _recovery_env(monkeypatch, [_Broken() for _ in range(5)])
+    picker = farm._Picker("proc0", _Broken())
+
+    with pytest.raises(farm._PickerUnrecoverable):
+        _run_games(picker, [5, 7, 8, 9])
+
+    assert calls["launch"] == 3
+    assert calls["error"] == [5]  # только игра, сломавшая Picker дважды
+
+
+def test_failed_picker_restart_is_unrecoverable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.exceptions import SAMLaunchError
+
+    _recovery_env(monkeypatch, [])
+
+    def _fail(path, launch_delay=0):  # type: ignore[no-untyped-def]
+        raise SAMLaunchError("SAM.Picker.exe завершился с кодом 1")
+
+    monkeypatch.setattr(farm, "launch_picker", _fail)
+    picker = farm._Picker("proc0", _Broken())
+
+    with pytest.raises(farm._PickerUnrecoverable, match="кодом 1"):
+        _run_games(picker, [7])
+
+
+def test_exception_with_empty_text_reports_its_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ElementNotEnabled(Exception):
+        pass
+
+    def _boom(*a, **k):  # type: ignore[no-untyped-def]
+        raise ElementNotEnabled()
+
+    monkeypatch.setattr(farm, "process_game", _boom)
+    monkeypatch.setattr(farm, "mark_error_id", lambda g: None)
+    monkeypatch.setattr(farm, "close_game", lambda app: None)
+    results: list = []
+    farm._process_one_game(
+        _FakeSession(), 7, _Cfg(), ErrorTracker(max_consecutive=100), results
+    )
+    assert results[0].skip_reason == "ElementNotEnabled"
+
+
+def test_report_picker_broken_is_not_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    toast_msg, tg_msg = _capture_report(monkeypatch, "picker_broken", 2, 1, 10)
+    assert "✅" not in tg_msg
+    assert "SAM.Picker" in toast_msg
