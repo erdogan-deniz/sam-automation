@@ -35,6 +35,7 @@ _INVALID_HANDLE = ctypes.wintypes.HANDLE(-1).value
 
 _TH32CS_SNAPPROCESS = 0x00000002
 _GW_ENABLEDPOPUP = 6
+_WM_CLOSE = 0x0010
 _WNDENUMPROC = ctypes.WINFUNCTYPE(
     ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
 )
@@ -164,20 +165,39 @@ def _has_error_window(pid: int) -> bool:
 def _close_picker_modal(
     picker_hwnd: int, picker_pid: int, wait_timeout: float = 3.0
 ) -> bool:
-    """Ищет и закрывает modal dialog Picker. Возвращает True если диалог был закрыт.
+    """Ищет и закрывает modal dialog Picker. Возвращает True, если диалог был.
 
-    После клика ждёт пока Picker снова станет enabled (до wait_timeout секунд).
+    Сначала жмёт первую кнопку диалога; если Picker за wait_timeout не ожил,
+    шлёт диалогу WM_CLOSE и ждёт ещё столько же. Ожил ли Picker в итоге,
+    вызывающий проверяет сам (_is_window_enabled).
     """
     popup = _user32.GetWindow(picker_hwnd, _GW_ENABLEDPOPUP)
     if not popup or popup == picker_hwnd:
         popup = _find_picker_dialog(picker_pid, picker_hwnd)
     if not popup:
         return False
-    log.debug("Modal диалог SAM найден: hwnd=%d", popup)
+    log.warning("Диалог SAM: «%s»", _window_title(popup))
     _click_first_button(popup)
-    deadline = time.time() + wait_timeout
+    if _wait_enabled(picker_hwnd, wait_timeout):
+        return True
+    log.warning("Диалог SAM не закрылся кнопкой — закрываю WM_CLOSE")
+    _user32.PostMessageW(popup, _WM_CLOSE, 0, 0)
+    _wait_enabled(picker_hwnd, wait_timeout)
+    return True
+
+
+def _wait_enabled(hwnd: int, timeout: float) -> bool:
+    """Ждёт до timeout секунд, пока окно снова станет enabled."""
+    deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(0.05)
-        if _is_window_enabled(picker_hwnd):
-            break
-    return True
+        if _is_window_enabled(hwnd):
+            return True
+    return False
+
+
+def _window_title(hwnd: int) -> str:
+    """Заголовок окна (для лога диалогов SAM)."""
+    buf = ctypes.create_unicode_buffer(256)
+    _user32.GetWindowTextW(hwnd, buf, 256)
+    return buf.value
