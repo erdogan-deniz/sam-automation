@@ -154,7 +154,7 @@ def test_build_plan_lists_item_without_any_price_above_gems() -> None:
     )
     assert len([u for u in http.gets if "ajaxgetgoo" in u]) == 1
     assert rows[0].decision.action == "sell_ask"
-    assert rows[0].decision.received == 80 * 5508 // 1000 + 1
+    assert rows[0].decision.received == 80 * 4790 // 1000 + 1
 
 
 def test_build_plan_grinds_non_marketable_without_orderbook() -> None:
@@ -188,7 +188,7 @@ def test_build_plan_one_orderbook_per_unique_name() -> None:
 
 
 def test_build_plan_grinds_when_gems_beat_bid() -> None:
-    # заявка 384 -> на руки 216; 80 самоцветов * 5508 / 1000 = 440
+    # заявка 384 -> на руки 216; 80 самоцветов * 4790 (мешок на руки) / 1000 = 383
     http = FakeHttp({BG: _book(384, 638)}, goo={1: 80})
     [row] = inv_run.build_plan(
         http,
