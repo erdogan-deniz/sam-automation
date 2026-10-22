@@ -108,7 +108,7 @@ def test_build_plan_queries_market_only_for_candidates() -> None:
     http = FakeHttp({BG: _book(None, 252)})
     inv = [
         _item("1", BG),
-        _item("2", "753-Gems", marketable=False),
+        _item("2", "753-Gems", marketable=False, goo=None),
         _item("3", "454460-Booster", item_class="item_class_5"),
     ]
     rows = inv_run.build_plan(
@@ -155,6 +155,22 @@ def test_build_plan_lists_item_without_any_price_above_gems() -> None:
     assert len([u for u in http.gets if "ajaxgetgoo" in u]) == 1
     assert rows[0].decision.action == "sell_ask"
     assert rows[0].decision.received == 80 * 5508 // 1000 + 1
+
+
+def test_build_plan_grinds_non_marketable_without_orderbook() -> None:
+    http = FakeHttp({}, goo={1: 80})
+    rows = inv_run.build_plan(
+        http,
+        [_item("1", "442810-Welcome back", marketable=False)],
+        badge_levels={},
+        sack_quote=Quote(5508, 5590, 5),
+        m=84,
+        pause=0.0,
+        sleep=lambda s: None,
+    )
+    assert not [u for u in http.gets if "/market/orderbook" in u]
+    assert rows[0].decision.action == "grind"
+    assert rows[0].decision.gems == 80
 
 
 def test_build_plan_one_orderbook_per_unique_name() -> None:
@@ -543,7 +559,7 @@ def test_items_module_is_used_through_module_attribute() -> None:
 
 
 def test_run_list_hides_non_marketable_items(world, capsys) -> None:
-    world["inv"].append(_item("30", "753-Gems", marketable=False))
+    world["inv"].append(_item("30", "753-Gems", marketable=False, goo=None))
     http = FakeHttp(_books())
     inv_run.run(
         do_sell=False,

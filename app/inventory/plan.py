@@ -10,6 +10,8 @@
     самоцветы дороже — разбираем, иначе продаём;
   * ни заявок, ни цен продажи — лот по самой низкой цене, которая выгоднее
     разбора: на руки стоимость самоцветов + 1 (правило 22.10.2026);
+  * не продаётся на маркете совсем, но разбирается — разбираем; временный
+    запрет («Tradable After …») — пропуск до его конца (правило 22.10.2026);
   * при сомнении (нет данных, другая валюта) предмет пропускается.
 Суммы в минимальных единицах валюты, целые.
 """
@@ -54,10 +56,13 @@ def skip_reason(
     item: Item, badge_levels: dict[tuple[int, int], int]
 ) -> str | None:
     """Причина пропуска, известная без запросов к маркету; None — кандидат."""
-    if not item.marketable:
-        return "не продаётся на маркете"
     if item.item_class == _BOOSTER:
         return "бустер-пак не трогаем"
+    if not item.marketable:
+        if item.trade_locked:
+            return "временно не продаётся"
+        if item.goo is None:
+            return "не продаётся на маркете"
     if item.item_class == _CARD:
         if item.game_appid is None or item.card_border is None:
             return "карточка без игры или рамки"
@@ -82,6 +87,11 @@ def decide(
     reason = skip_reason(item, badge_levels)
     if reason is not None:
         return _skip(reason)
+    if not item.marketable:
+        # продать нельзя совсем: самоцветы лучше, чем ничего
+        if item.amount == 1 and goo_value is not None and goo_value > 0:
+            return Decision("grind", gems=goo_value)
+        return _skip("не продаётся, разбор не удался")
     if quote is None:
         return _skip("нет данных рынка")
     if quote.currency != sack_currency:
