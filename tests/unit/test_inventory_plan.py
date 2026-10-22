@@ -120,17 +120,17 @@ def test_bid_is_taken_even_when_lowest_ask_is_higher() -> None:
     assert d.received == 4932
 
 
-def test_no_bids_and_no_asks_grinds() -> None:
-    # Правило владельца 21.10.2026: продать нельзя совсем — разбор (больше 0).
+def test_no_bids_and_no_asks_lists_just_above_gems() -> None:
+    # Правило владельца 22.10.2026: ни заявок, ни лотов — выставляем по самой
+    # низкой цене, которая выгоднее разбора: самоцветы × мешок / 1000 + 1.
     d = _decide(_item(), goo_value=80)
-    assert d.action == "grind"
-    assert d.gems == 80
+    assert d.action == "sell_ask"
+    assert d.received == 80 * SACK_BID // 1000 + 1
 
 
-def test_no_bids_and_no_asks_grinds_without_sack_price() -> None:
-    # Сравнивать не с чем: любые самоцветы лучше, чем ничего.
+def test_no_bids_and_no_asks_without_sack_price_is_skipped() -> None:
     d = _decide(_item(), goo_value=80, sack_bid=None)
-    assert d.action == "grind"
+    assert d.action == "skip"
 
 
 def test_no_bids_and_no_asks_without_goo_is_skipped() -> None:
