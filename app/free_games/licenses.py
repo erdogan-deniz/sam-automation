@@ -18,10 +18,18 @@ app.steam.steam_cm.cm_session().
                              исходом потом реально появлялись owned — сервер
                              их всё равно обрабатывал, просто не уложился в
                              ответ.
-  оба выше                — не окончательный отказ ("неизвестно"/"позже", не
-                             "нет") — ретрай каждые 30с БЕЗ ограничения по
-                             числу попыток (точный cooldown Steam нигде не
+  RateLimitExceeded       — ретрай каждые 30с без ограничения по числу
+                             попыток (точный cooldown Steam нигде не
                              документирован); Ctrl+C прерывает как обычно.
+  Timeout / пустой ответ  — не отказ: сервер часто выдаёт лицензию позже.
+  Busy, ServiceUnavailable   Поздний ответ ловит слушатель
+                             ClientRequestFreeLicenseResponse (библиотека
+                             снимает jobid через 10с и теряет его). Пачка
+                             делится пополам после 2 таких исходов подряд,
+                             одиночный appid после 3 — в error; 10 подряд
+                             по всему прогону без единого ответа — стоп
+                             (stalled). Живьём 21.10.2026 без этого: 47
+                             Timeout подряд на первой пачке DLC, выдано 0.
   всё остальное           — granted_appids авторитетен независимо от
                              точного eresult (напр. DuplicateRequest на
                              частично уже выданном батче всё равно granted'ит
@@ -50,24 +58,24 @@ log = logging.getLogger("sam_automation")
 # запасом (33x) от границы отказа, не гадание.
 BATCH_SIZE = 20
 
-# Живая находка: RateLimitExceeded и Timeout (granted_appids=None) под
-# реальной нагрузкой держатся штормом на протяжении МИНУТ (наблюдалось ~4.5
-# минуты подряд), а не секунд — точное время cooldown нигде не
-# документировано (ни в самом protobuf-ответе, ни у Valve, ни в комьюнити
-# ValvePython/steam) и явно варьируется. Ни один из двух исходов — НЕ
-# окончательный отказ: RateLimitExceeded по формулировке самой Valve
-# ("different from k_EResultLimitExceeded which may be permanent") ВСЕГДА
-# временный; appid с Timeout потом реально появлялись owned (сервер их
-# всё равно обрабатывал, просто не уложился в 10с ответа). Экспоненциальный
-# backoff с ограниченным числом попыток гадал бы число вслепую и сдавался
-# ДО конца шторма — поэтому ретраим ОБА исхода каждые 30с БЕЗ ограничения по
-# числу попыток, пока не пройдёт или пользователь не прервёт Ctrl+C (INT
-# долетает как KeyboardInterrupt, честный отчёт "прервано" уже обрабатывает
-# это на уровне run()). LimitExceeded (потолок лицензий, МОЖЕТ быть
-# перманентным) — отдельная, не ретраящаяся стена, останавливает батч
-# немедленно.
+# Живая находка: RateLimitExceeded под реальной нагрузкой держится штормом
+# МИНУТАМИ (наблюдалось ~4.5 минуты подряд); точное время cooldown нигде не
+# документировано. По формулировке Valve ("different from
+# k_EResultLimitExceeded which may be permanent") он ВСЕГДА временный —
+# ретраим каждые 30с без ограничения по числу попыток, пока не пройдёт или
+# пользователь не прервёт Ctrl+C. LimitExceeded (потолок лицензий, МОЖЕТ
+# быть перманентным) — отдельная стена, стоп немедленно.
 _TRANSIENT_RETRY_DELAY = 30.0
 _BATCH_PAUSE = 1.0  # пауза между батчами — не долбить CM без нужды
+
+# Timeout и пустой ответ «сервер занят» — ограниченно (живьём 21.10.2026:
+# 47 Timeout подряд без предела, выдано 0, прогон остановлен вручную).
+_EMPTY_TRANSIENT = frozenset(
+    {"Timeout", "Busy", "ServiceUnavailable", "TryAnotherCM"}
+)
+_SPLIT_AFTER_TIMEOUTS = 2  # пачка > 1 appid делится пополам
+_SINGLE_GIVE_UP_TIMEOUTS = 3  # одиночный appid → error (--retry-errors)
+_STALL_ABORT_TIMEOUTS = 10  # подряд по всему прогону без ответа → стоп
 
 
 @dataclass
@@ -79,6 +87,7 @@ class AddResult:
     error: list[int] = field(default_factory=list)
     hit_cap: bool = False
     session_dead: bool = False
+    stalled: bool = False  # Steam не ответил на _STALL_ABORT_TIMEOUTS подряд
 
 
 @dataclass
@@ -88,20 +97,91 @@ class _BatchOutcome:
     error: list[int] = field(default_factory=list)
     hit_cap: bool = False
     session_dead: bool = False
+    stalled: bool = False
+
+    @property
+    def stop(self) -> bool:
+        return self.hit_cap or self.session_dead or self.stalled
+
+    def merge(self, other: _BatchOutcome) -> None:
+        self.added += other.added
+        self.refused += other.refused
+        self.error += other.error
+        self.hit_cap |= other.hit_cap
+        self.session_dead |= other.session_dead
+        self.stalled |= other.stalled
 
 
 def _batches(appids: list[int], size: int) -> list[list[int]]:
     return [appids[i : i + size] for i in range(0, len(appids), size)]
 
 
-def _request_batch_with_backoff(
-    client: Any, batch: list[int], eresult_cls: Any
-) -> _BatchOutcome:
-    """Один батч; RateLimitExceeded и Timeout (granted_appids=None) ретраятся
-    каждые 30с БЕЗ ограничения по числу попыток — ни один не окончательный
-    отказ ("неизвестно"/"позже", не "нет"), в отличие от LimitExceeded
-    (потолок, МОЖЕТ быть перманентным — стена немедленно).
+def _sleep(client: Any, seconds: float) -> None:
+    """Пауза через client.sleep (gevent): time.sleep замораживает CM-клиент —
+    входящие ответы не читаются, heartbeat не уходит."""
+    sleep = getattr(client, "sleep", None)
+    (sleep or time.sleep)(seconds)
+
+
+class _LateGrants:
+    """Собирает granted_appids из ВСЕХ ответов ClientRequestFreeLicense.
+
+    send_job_and_wait ждёт ответ по jobid 10с и снимает ожидание: ответ,
+    пришедший позже, библиотека молча выбрасывает. Слушатель на сам EMsg
+    ловит и такие.
     """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self.granted: set[int] = set()
+        self._emsg: Any = None
+        if hasattr(client, "on"):
+            from steam.enums.emsg import EMsg
+
+            self._emsg = EMsg.ClientRequestFreeLicenseResponse
+            client.on(self._emsg, self._on_response)
+
+    def _on_response(self, msg: Any) -> None:
+        body = getattr(msg, "body", None)
+        for appid in getattr(body, "granted_appids", None) or []:
+            self.granted.add(int(appid))
+
+    def take(self, batch: list[int]) -> list[int]:
+        return [a for a in batch if a in self.granted]
+
+    def close(self) -> None:
+        if self._emsg is not None:
+            self._client.remove_listener(self._emsg, self._on_response)
+
+
+class _Run:
+    """Счётчик Timeout подряд по всему прогону (сбрасывается любым ответом)."""
+
+    def __init__(self) -> None:
+        self.silent = 0
+
+
+def _is_silent(eresult: Any, granted_appids: Any) -> bool:
+    """Ответа по существу нет: Timeout (None) или пустой «сервер занят»."""
+    if granted_appids is None:
+        return True
+    return (
+        not granted_appids and getattr(eresult, "name", "") in _EMPTY_TRANSIENT
+    )
+
+
+def _request_batch_with_backoff(
+    client: Any,
+    batch: list[int],
+    eresult_cls: Any,
+    late: _LateGrants | None = None,
+    run: _Run | None = None,
+) -> _BatchOutcome:
+    """Один батч до окончательного исхода (см. классификацию в docstring модуля)."""
+    late = late if late is not None else _LateGrants(object())
+    run = run if run is not None else _Run()
+    out = _BatchOutcome()
+    silent = 0
     while True:
         try:
             eresult, granted_appids, _granted_packageids = (
@@ -109,40 +189,76 @@ def _request_batch_with_backoff(
             )
         except Exception as e:
             log.warning("Steam CM: request_free_license упал: %s", e)
-            return _BatchOutcome(error=list(batch))
+            out.error += batch
+            return out
 
         if eresult == eresult_cls.LimitExceeded:
-            return _BatchOutcome(hit_cap=True)
+            out.added += late.take(batch)
+            out.hit_cap = True
+            return out
 
-        if eresult == eresult_cls.RateLimitExceeded or granted_appids is None:
-            # RateLimitExceeded — временный (комментарий Valve: "different
-            # from k_EResultLimitExceeded which may be permanent").
-            # granted_appids=None — API не сообщил исход (напр. Timeout: CM
-            # не ответил за 10с — ЗНАЧЕНИЕ ВОЗВРАТА, не исключение); appid с
-            # таким исходом потом реально появлялись owned. Ни то ни другое
-            # не повод сдаваться — ретраим одинаково.
-            #
-            # ИСКЛЮЧЕНИЕ: если сама CM-сессия умерла (сон ноутбука, роуминг
-            # WiFi, вход с другого устройства), client.send() тихо отбрасывает
-            # сообщение — КАЖДЫЙ следующий вызов даст тот же Timeout, неотличимый
-            # по EResult от штатного шторма. "Ретрай без ограничения по числу
-            # попыток" на мёртвой сессии — навсегда, а не временно. Честный
-            # abort вместо бесконечного hang.
+        rate_limited = eresult == eresult_cls.RateLimitExceeded
+        if rate_limited or _is_silent(eresult, granted_appids):
+            # Мёртвая CM-сессия (сон ноутбука, роуминг WiFi, вход с другого
+            # устройства): client.send() тихо отбрасывает сообщение, каждый
+            # вызов даёт тот же Timeout — честный abort вместо hang.
             if not getattr(client, "connected", True):
                 log.error(
                     "Steam CM: сессия умерла (client.connected=False) — "
                     "дальнейшие попытки бессмысленны, стоп"
                 )
-                return _BatchOutcome(session_dead=True)
+                out.added += late.take(batch)
+                out.session_dead = True
+                return out
             log.warning(
                 "Steam CM: %s — жду %.0fс и пробую снова",
                 getattr(eresult, "name", eresult),
                 _TRANSIENT_RETRY_DELAY,
             )
-            time.sleep(_TRANSIENT_RETRY_DELAY)
+            _sleep(client, _TRANSIENT_RETRY_DELAY)
+            got = late.take(batch)
+            if got:
+                log.info("Steam CM: поздний ответ — выдано %s", got)
+                out.added += got
+                batch = [a for a in batch if a not in got]
+                if not batch:
+                    return out
+            if rate_limited:
+                run.silent = 0
+                continue
+            silent += 1
+            run.silent += 1
+            if run.silent >= _STALL_ABORT_TIMEOUTS:
+                log.error(
+                    "Steam CM: нет ответа на %d запросов подряд — стоп",
+                    run.silent,
+                )
+                out.stalled = True
+                return out
+            if len(batch) > 1 and silent >= _SPLIT_AFTER_TIMEOUTS:
+                mid = len(batch) // 2
+                log.info(
+                    "Steam CM: делю пачку %d → %d + %d",
+                    len(batch),
+                    mid,
+                    len(batch) - mid,
+                )
+                for half in (batch[:mid], batch[mid:]):
+                    part = _request_batch_with_backoff(
+                        client, half, eresult_cls, late, run
+                    )
+                    out.merge(part)
+                    if part.stop:
+                        break
+                return out
+            if len(batch) == 1 and silent >= _SINGLE_GIVE_UP_TIMEOUTS:
+                log.warning("Steam CM: нет ответа по %s — в error", batch)
+                out.error += batch
+                return out
             continue
 
-        granted = {int(a) for a in granted_appids}
+        run.silent = 0
+        granted = {int(a) for a in granted_appids} | set(late.take(batch))
         refused = [a for a in batch if a not in granted]
         if refused:
             log.info(
@@ -150,7 +266,9 @@ def _request_batch_with_backoff(
                 getattr(eresult, "name", eresult),
                 refused,
             )
-        return _BatchOutcome(added=sorted(granted), refused=refused)
+        out.added += sorted(a for a in granted if a in batch)
+        out.refused += refused
+        return out
 
 
 def add_licenses(
@@ -165,9 +283,11 @@ def add_licenses(
     Останавливается немедленно при EResult.LimitExceeded (потолок аккаунта —
     hit_cap=True, оставшиеся батчи НЕ запрашиваются) и при обнаруженной
     мёртвой CM-сессии (session_dead=True, тот же немедленный стоп — см.
-    _request_batch_with_backoff). RateLimitExceeded и Timeout
-    (granted_appids=None) на ЖИВОЙ сессии — ретрай каждые 30с без ограничения
-    по числу попыток. Прочие неуспехи — refused (appid из батча, которого нет
+    _request_batch_with_backoff), и когда Steam молчит
+    _STALL_ABORT_TIMEOUTS запросов подряд (stalled=True). RateLimitExceeded
+    на ЖИВОЙ сессии — ретрай каждые 30с без ограничения по числу попыток;
+    Timeout — ограниченно, с делением пачки и сбором поздних ответов
+    (см. docstring модуля). Прочие неуспехи — refused (appid из батча, которого нет
     в granted_appids). Исключение при вызове — error (appid из батча,
     транзиент — восстановим --retry-errors).
 
@@ -185,9 +305,39 @@ def add_licenses(
 
     result = AddResult()
     batches = _batches(appids, batch_size)
+    late = _LateGrants(client)
+    run = _Run()
+    try:
+        _add_batches(client, batches, EResult, late, run, result, persist)
+    finally:
+        late.close()
+    return result
 
+
+def _add_batches(
+    client: Any,
+    batches: list[list[int]],
+    eresult_cls: Any,
+    late: _LateGrants,
+    run: _Run,
+    result: AddResult,
+    persist: Callable[[int, str], None] | None,
+) -> None:
     for i, batch in enumerate(batches):
-        outcome = _request_batch_with_backoff(client, batch, EResult)
+        outcome = _request_batch_with_backoff(
+            client, batch, eresult_cls, late, run
+        )
+        # выданное до стопа (поздние ответы) тоже сохраняется
+        if persist is not None:
+            for appid in outcome.added:
+                persist(appid, "added")
+            for appid in outcome.refused:
+                persist(appid, "refused")
+            for appid in outcome.error:
+                persist(appid, "error")
+        result.added.extend(outcome.added)
+        result.refused.extend(outcome.refused)
+        result.error.extend(outcome.error)
         if outcome.hit_cap:
             result.hit_cap = True
             log.warning(
@@ -204,17 +354,13 @@ def add_licenses(
                 len(result.added),
             )
             break
-        if persist is not None:
-            for appid in outcome.added:
-                persist(appid, "added")
-            for appid in outcome.refused:
-                persist(appid, "refused")
-            for appid in outcome.error:
-                persist(appid, "error")
-        result.added.extend(outcome.added)
-        result.refused.extend(outcome.refused)
-        result.error.extend(outcome.error)
+        if outcome.stalled:
+            result.stalled = True
+            log.error(
+                "Steam CM: Steam не отвечает — стоп. Добавлено в этом "
+                "прогоне: %d",
+                len(result.added),
+            )
+            break
         if i < len(batches) - 1:
-            time.sleep(_BATCH_PAUSE)
-
-    return result
+            _sleep(client, _BATCH_PAUSE)
