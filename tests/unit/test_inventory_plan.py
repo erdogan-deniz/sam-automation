@@ -120,8 +120,31 @@ def test_bid_is_taken_even_when_lowest_ask_is_higher() -> None:
     assert d.received == 4932
 
 
-def test_no_bids_and_no_asks_is_skipped() -> None:
-    d = _decide(_item())
+def test_no_bids_and_no_asks_grinds() -> None:
+    # Правило владельца 21.10.2026: продать нельзя совсем — разбор (больше 0).
+    d = _decide(_item(), goo_value=80)
+    assert d.action == "grind"
+    assert d.gems == 80
+
+
+def test_no_bids_and_no_asks_grinds_without_sack_price() -> None:
+    # Сравнивать не с чем: любые самоцветы лучше, чем ничего.
+    d = _decide(_item(), goo_value=80, sack_bid=None)
+    assert d.action == "grind"
+
+
+def test_no_bids_and_no_asks_without_goo_is_skipped() -> None:
+    d = _decide(_item(goo=None), goo_value=None)
+    assert d.action == "skip"
+
+
+def test_no_bids_and_no_asks_zero_gems_is_skipped() -> None:
+    d = _decide(_item(), goo_value=0)
+    assert d.action == "skip"
+
+
+def test_no_bids_and_no_asks_stack_is_skipped() -> None:
+    d = _decide(_item(amount=3), goo_value=80)
     assert d.action == "skip"
 
 
