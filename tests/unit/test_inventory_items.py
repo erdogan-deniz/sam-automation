@@ -16,6 +16,7 @@ def _desc(
     game_app: int | None = 241720,
     goo: tuple[int, int, int] | None = (241720, 27, 0),
     cardborder: str | None = None,
+    owner_note: str | None = None,
 ) -> dict[str, Any]:
     tags = [{"category": "item_class", "internal_name": item_class}]
     if game_app is not None:
@@ -32,7 +33,7 @@ def _desc(
                 "name": "Turn into Gems...",
             }
         )
-    return {
+    desc: dict[str, Any] = {
         "classid": classid,
         "instanceid": "0",
         "market_hash_name": name,
@@ -40,6 +41,9 @@ def _desc(
         "tags": tags,
         "owner_actions": owner_actions,
     }
+    if owner_note is not None:
+        desc["owner_descriptions"] = [{"type": "html", "value": owner_note}]
+    return desc
 
 
 def _asset(assetid: str, classid: str, amount: str = "1") -> dict[str, Any]:
@@ -80,6 +84,41 @@ def test_non_marketable_flag_is_kept() -> None:
         "descriptions": [_desc("1", name="753-Gems", marketable=0)],
     }
     assert items.parse_inventory(body)[0].marketable is False
+
+
+def test_temporary_trade_lock_is_detected() -> None:
+    # Живьём 22.10.2026: недавно полученный фон — marketable 0 и
+    # «Tradable After: 26 Oct @ 12:00am» в owner_descriptions.
+    body = {
+        "assets": [_asset("1", "1"), _asset("2", "2")],
+        "descriptions": [
+            _desc(
+                "1",
+                name="1280260-Juno Gun",
+                marketable=0,
+                owner_note="Tradable After: 26 Oct @ 12:00am",
+            ),
+            _desc("2", name="442810-Welcome back", marketable=0),
+        ],
+    }
+    locked, forever = items.parse_inventory(body)
+    assert locked.trade_locked is True
+    assert forever.trade_locked is False
+
+
+def test_other_owner_note_is_not_a_lock() -> None:
+    body = {
+        "assets": [_asset("1", "1")],
+        "descriptions": [
+            _desc(
+                "1",
+                name="x",
+                marketable=0,
+                owner_note="Received from claiming a free sale reward.",
+            )
+        ],
+    }
+    assert items.parse_inventory(body)[0].trade_locked is False
 
 
 def test_card_border_tag_is_parsed() -> None:
