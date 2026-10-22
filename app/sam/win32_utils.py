@@ -139,6 +139,48 @@ def _find_picker_dialog(picker_pid: int, main_hwnd: int) -> int:
     return found[0] if found else 0
 
 
+def _find_message_box(pid: int) -> int:
+    """Видимое окно-сообщение (класс #32770) процесса, иначе 0.
+
+    Живьём 22.10.2026 у SAM.Game есть и другие видимые top-level окна без
+    заголовка и текста — их не трогаем.
+    """
+    found: list[int] = []
+    pid_buf = ctypes.wintypes.DWORD()
+    cls = ctypes.create_unicode_buffer(16)
+
+    def _cb(hwnd: int, _: int) -> bool:
+        if _user32.IsWindowVisible(hwnd):
+            _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
+            if pid_buf.value == pid:
+                _user32.GetClassNameW(hwnd, cls, 16)
+                if cls.value == "#32770":
+                    found.append(hwnd)
+        return True
+
+    _user32.EnumWindows(_WNDENUMPROC(_cb), 0)
+    return found[0] if found else 0
+
+
+def _take_dialog(pid: int) -> tuple[str, str] | None:
+    """Читает окно-сообщение процесса (заголовок, текст) и закрывает его."""
+    box = _find_message_box(pid)
+    if not box:
+        return None
+    title, text = _window_title(box), _dialog_text(box)
+    _click_first_button(box)
+    return title, text
+
+
+def _foreground_pid() -> int:
+    """PID процесса, чьё окно сейчас на переднем плане (0 — нет такого)."""
+    pid_buf = ctypes.wintypes.DWORD()
+    _user32.GetWindowThreadProcessId(
+        _user32.GetForegroundWindow(), ctypes.byref(pid_buf)
+    )
+    return int(pid_buf.value)
+
+
 def _has_error_window(pid: int) -> bool:
     """True если у процесса есть видимое top-level окно с заголовком 'Error'.
 
