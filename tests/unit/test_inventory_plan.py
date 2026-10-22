@@ -10,6 +10,7 @@ from app.inventory import badges, fees, items, plan
 
 M = fees.min_fee(5)
 SACK_BID = 5508  # живая лучшая заявка на мешок самоцветов 19.10.2026
+SACK_NET = 4790  # на руки за мешок по этой заявке (комиссия с минимумом 84)
 
 
 def _item(**kw: Any) -> items.Item:
@@ -93,7 +94,7 @@ def test_booster_pack_is_never_touched() -> None:
 
 
 def test_best_bid_wins_over_gems_sells_at_bid() -> None:
-    # заявка 5671 на руки 4932, самоцветы на 10 шт. = 55 коп.
+    # заявка 5671 на руки 4932, самоцветы на 10 шт. = 47 коп. на руки
     d = _decide(
         _item(),
         quote=plan.Quote(max_buy=5671, min_sell=8273, currency=5),
@@ -104,7 +105,7 @@ def test_best_bid_wins_over_gems_sells_at_bid() -> None:
 
 
 def test_gems_worth_more_than_bid_grinds() -> None:
-    # заявка 384 на руки 216, 80 самоцветов = 440 коп.
+    # заявка 384 на руки 216, 80 самоцветов = 383 коп. на руки
     d = _decide(
         _item(),
         quote=plan.Quote(max_buy=384, min_sell=638, currency=5),
@@ -163,7 +164,20 @@ def test_no_bids_and_no_asks_lists_just_above_gems() -> None:
     # низкой цене, которая выгоднее разбора: самоцветы × мешок / 1000 + 1.
     d = _decide(_item(), goo_value=80)
     assert d.action == "sell_ask"
-    assert d.received == 80 * SACK_BID // 1000 + 1
+    assert d.received == 80 * SACK_NET // 1000 + 1
+
+
+def test_gems_are_valued_net_of_market_fee() -> None:
+    # Аудит 21.10.2026 (B-21 #8): самоцветы продаются мешком через маркет, на
+    # руки за 80 шт. 383, а не 440 по заявке. Цена 600 даёт 432 на руки —
+    # продажа выгоднее; по брутто код ошибочно разбирал (440 > 432).
+    d = _decide(
+        _item(),
+        quote=plan.Quote(max_buy=None, min_sell=600, currency=5),
+        goo_value=80,
+    )
+    assert d.action == "sell_ask"
+    assert d.received == 432
 
 
 def test_no_bids_and_no_asks_without_sack_price_is_skipped() -> None:
