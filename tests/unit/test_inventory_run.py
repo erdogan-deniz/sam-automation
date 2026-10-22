@@ -140,9 +140,10 @@ def test_build_plan_asks_goo_when_there_is_only_an_ask() -> None:
     assert len([u for u in http.gets if "ajaxgetgoo" in u]) == 1
 
 
-def test_build_plan_does_not_ask_goo_without_any_price() -> None:
-    http = FakeHttp({BG: _book(None, None)})
-    inv_run.build_plan(
+def test_build_plan_grinds_item_without_any_price() -> None:
+    # Ни заявок, ни цен продажи — продать нельзя, разбираем.
+    http = FakeHttp({BG: _book(None, None)}, goo={1: 80})
+    rows = inv_run.build_plan(
         http,
         [_item("1", BG)],
         badge_levels={},
@@ -151,7 +152,8 @@ def test_build_plan_does_not_ask_goo_without_any_price() -> None:
         pause=0.0,
         sleep=lambda s: None,
     )
-    assert not [u for u in http.gets if "ajaxgetgoo" in u]
+    assert len([u for u in http.gets if "ajaxgetgoo" in u]) == 1
+    assert rows[0].decision.action == "grind"
 
 
 def test_build_plan_one_orderbook_per_unique_name() -> None:
