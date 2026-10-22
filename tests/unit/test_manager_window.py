@@ -48,6 +48,29 @@ class _Toolbar:
         return self._kids
 
 
+_PID = 4242
+_STORED = ("Information", "Stored 7 achievements and 0 statistics.")
+
+
+def _sam_answers(monkeypatch, *dialogs, foreground=_PID, settle=0.0):
+    """Окна-сообщения SAM.Game по очереди (None — окна нет) и чей передний план."""
+    seq = list(dialogs)
+    taken: list[tuple[str, str]] = []
+
+    def take(pid):
+        assert pid == _PID
+        d = seq.pop(0) if seq else None
+        if d is not None:
+            taken.append(d)
+        return d
+
+    monkeypatch.setattr(mw, "_take_dialog", take)
+    monkeypatch.setattr(mw, "_foreground_pid", lambda: foreground)
+    monkeypatch.setattr(mw, "_DIALOG_SETTLE", settle)
+    monkeypatch.setattr(mw, "_COMMIT_CONFIRM_TIMEOUT", 0.2)
+    return taken
+
+
 class _Window:
     def __init__(self, *top_level, aid: str = "", title: str = ""):
         self._kids = list(top_level)
@@ -69,6 +92,9 @@ class _Window:
     def set_focus(self):
         # Реальный метод UIAWrapper; фейк по умолчанию — no-op.
         return None
+
+    def process_id(self):
+        return _PID
 
 
 class _BrokenWindow:
@@ -260,7 +286,11 @@ def test_error_status_recovers_after_refresh(monkeypatch):
     cache._calibrated = True
     monkeypatch.setattr(mw, "_cache", cache)
     monkeypatch.setattr(mw.mouse, "click", lambda coords: None)
-    monkeypatch.setattr(mw.keyboard, "send_keys", lambda _k: None)
+    _sam_answers(
+        monkeypatch,
+        None,
+        ("Information", "Stored 54 achievements and 0 statistics."),
+    )
 
     result, _, _ = _run(
         monkeypatch,
@@ -274,8 +304,9 @@ def test_error_status_recovers_after_refresh(monkeypatch):
 # ── process_game: set_focus перед координатными кликами (M1) ──────────────────
 
 
-def _run_unlock_path(monkeypatch, *, focus_window):
+def _run_unlock_path(monkeypatch, *, focus_window, dialogs=(_STORED,), **kw):
     """Прогоняет happy-path process_game до координатных кликов на focus_window."""
+    _sam_answers(monkeypatch, None, *dialogs, **kw)
     cache = mw._ButtonCache()
     cache.unlock_all_dx = cache.unlock_all_dy = 10
     cache.commit_dx = cache.commit_dy = 20
@@ -283,7 +314,6 @@ def _run_unlock_path(monkeypatch, *, focus_window):
     monkeypatch.setattr(mw, "_cache", cache)
     monkeypatch.setattr(mw, "_find_manager_window", lambda _a: focus_window)
     monkeypatch.setattr(mw, "_check_game_status", lambda *a, **k: (None, 7))
-    monkeypatch.setattr(mw.keyboard, "send_keys", lambda _k: None)
     monkeypatch.setattr(mw.time, "sleep", lambda _s: None)
     return process_game(_App(focus_window), 123, load_timeout=1)
 
@@ -311,8 +341,7 @@ def test_process_game_sets_focus_before_coordinate_clicks(monkeypatch):
 
 
 def test_process_game_survives_set_focus_failure(monkeypatch):
-    # set_focus best-effort: сбой фокуса (окно занято/свёрнуто) НЕ должен ронять
-    # прогон — клики выполняются как раньше (без регресса работающих игр).
+    # set_focus best-effort: если окно всё равно на переднем плане, клики идут.
     clicked = {"n": 0}
 
     class _UnfocusableWindow(_Window):
@@ -330,6 +359,117 @@ def test_process_game_survives_set_focus_failure(monkeypatch):
 
     assert clicked["n"] == 2  # Unlock All + Commit всё равно кликнуты
     assert result.newly_unlocked == 7
+
+
+# ── проверка сохранения: окно итога SAM (аудит 21.10.2026, B-21 #6) ──────────
+
+
+def _clicks(monkeypatch):
+    n = {"n": 0}
+    monkeypatch.setattr(
+        mw.mouse, "click", lambda coords: n.__setitem__("n", n["n"] + 1)
+    )
+    return n
+
+
+def test_unlock_counts_what_sam_stored(monkeypatch):
+    # Живьём 22.10.2026: «Information» — «Stored N achievements and M
+    # statistics.» Открыто столько, сколько SAM сохранил, а не total.
+    _clicks(monkeypatch)
+    result = _run_unlock_path(
+        monkeypatch,
+        focus_window=_manager_window(),
+        dialogs=(("Information", "Stored 3 achievements and 0 statistics."),),
+    )
+    assert result.total == 7
+    assert result.newly_unlocked == 3
+
+
+def test_unlock_without_sam_confirmation_is_error(monkeypatch):
+    # Окна итога нет — сохранение не подтверждено: не done (unverified ≠ done).
+    _clicks(monkeypatch)
+    with pytest.raises(SAMGameError, match="не подтвердил"):
+        _run_unlock_path(
+            monkeypatch, focus_window=_manager_window(), dialogs=()
+        )
+
+
+def test_unlock_store_error_is_error(monkeypatch):
+    _clicks(monkeypatch)
+    with pytest.raises(SAMGameError, match="error occurred while storing"):
+        _run_unlock_path(
+            monkeypatch,
+            focus_window=_manager_window(),
+            dialogs=(("Error", "An error occurred while storing, aborting."),),
+        )
+
+
+def test_protected_achievement_dialogs_are_closed_before_commit(monkeypatch):
+    # Unlock All на защищённом достижении — модальное «Error» на каждое; пока
+    # оно открыто, клик Commit уходит в никуда.
+    protected = (
+        "Error",
+        "Sorry, but this is a protected achievement and cannot be managed "
+        "with Steam Achievement Manager.",
+    )
+    events: list[str] = []
+    # окна SAM зависят от того, сколько кликов уже было
+    pending = {1: [protected, protected], 2: [_STORED]}
+    clicks = {"n": 0}
+
+    def click(coords):
+        clicks["n"] += 1
+        events.append("c")
+
+    def take(pid):
+        queue = pending.get(clicks["n"], [])
+        if not queue:
+            return None
+        d = queue.pop(0)
+        events.append(d[0])
+        return d
+
+    cache = mw._ButtonCache()
+    cache.unlock_all_dx = cache.unlock_all_dy = 10
+    cache.commit_dx = cache.commit_dy = 20
+    cache._calibrated = True
+    monkeypatch.setattr(mw, "_cache", cache)
+    win = _manager_window()
+    monkeypatch.setattr(mw, "_find_manager_window", lambda _a: win)
+    monkeypatch.setattr(mw, "_check_game_status", lambda *a, **k: (None, 7))
+    monkeypatch.setattr(mw.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(mw.mouse, "click", click)
+    monkeypatch.setattr(mw, "_take_dialog", take)
+    monkeypatch.setattr(mw, "_foreground_pid", lambda: _PID)
+    monkeypatch.setattr(mw, "_DIALOG_SETTLE", 0.05)
+    monkeypatch.setattr(mw, "_COMMIT_CONFIRM_TIMEOUT", 0.2)
+
+    result = process_game(_App(win), 123, load_timeout=1)
+
+    assert events == ["c", "Error", "Error", "c", "Information"]
+    assert result.newly_unlocked == 7
+
+
+def test_unexpected_dialog_after_unlock_all_is_error(monkeypatch):
+    _clicks(monkeypatch)
+    with pytest.raises(SAMGameError, match="после Unlock All"):
+        _run_unlock_path(
+            monkeypatch,
+            focus_window=_manager_window(),
+            dialogs=(("Error", "something else"),),
+            settle=0.05,
+        )
+
+
+def test_clicks_need_sam_in_foreground(monkeypatch):
+    # Окно SAM.Game не на переднем плане — координатные клики уйдут в чужое
+    # окно: не кликаем и не пишем done.
+    clicks = _clicks(monkeypatch)
+    with pytest.raises(SAMGameError, match="переднем плане"):
+        _run_unlock_path(
+            monkeypatch, focus_window=_manager_window(), foreground=1
+        )
+    assert clicks["n"] == 0
 
 
 # ── «нет в библиотеке» от SAM.Game ───────────────────────────────────────────
