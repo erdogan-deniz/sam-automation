@@ -1,17 +1,18 @@
-"""Автоматизация окна SAM Manager — Unlock All → Commit Changes → закрыть popup."""
+"""Автоматизация окна SAM Manager — Unlock All → Commit Changes → окно итога."""
 
 from __future__ import annotations
 
 import logging
+import re
 import time
 
-from pywinauto import Application, keyboard, mouse
+from pywinauto import Application, mouse
 
 from ..exceptions import SAMGameError, SAMGameNotOwned, SAMPickerBroken
 from ..unlock_result import UnlockResult
 from .sam_downloader import check_steam_running
 from .sam_status import _check_game_status
-from .win32_utils import _dialog_text
+from .win32_utils import _dialog_text, _foreground_pid, _take_dialog
 
 log = logging.getLogger("sam_automation")
 
@@ -176,6 +177,53 @@ class _ButtonCache:
 _cache = _ButtonCache()
 
 
+# Окно итога Commit (живьём 22.10.2026): «Information» — «Stored N achievements
+# and M statistics.»; сбой — «Error» с текстом причины.
+_STORED_RE = re.compile(r"stored\s+(\d+)\s+achievements", re.IGNORECASE)
+_PROTECTED_TEXT = "protected achievement"
+_COMMIT_CONFIRM_TIMEOUT = 10.0  # сек на окно итога после Commit
+_DIALOG_SETTLE = 0.5  # сек без новых окон — защищённые достижения закрыты
+
+
+def _close_protected_dialogs(pid: int, game_id: int) -> int:
+    """Закрывает окна «protected achievement» после Unlock All, считает их.
+
+    SAM показывает модальное окно на КАЖДОЕ защищённое достижение по очереди;
+    пока оно открыто, клик Commit не доходит.
+    """
+    closed = 0
+    quiet_since = time.monotonic()
+    while time.monotonic() - quiet_since < _DIALOG_SETTLE:
+        dialog = _take_dialog(pid)
+        if dialog is None:
+            time.sleep(0.05)
+            continue
+        title, text = dialog
+        if _PROTECTED_TEXT not in text.lower():
+            raise SAMGameError(
+                game_id, f"SAM после Unlock All: {text or title}"
+            )
+        closed += 1
+        quiet_since = time.monotonic()
+    return closed
+
+
+def _await_stored(pid: int, game_id: int) -> int:
+    """Ждёт окно итога Commit; возвращает число сохранённых достижений."""
+    deadline = time.monotonic() + _COMMIT_CONFIRM_TIMEOUT
+    while time.monotonic() < deadline:
+        dialog = _take_dialog(pid)
+        if dialog is None:
+            time.sleep(0.05)
+            continue
+        title, text = dialog
+        match = _STORED_RE.search(text)
+        if match:
+            return int(match.group(1))
+        raise SAMGameError(game_id, f"SAM не сохранил: {text or title}")
+    raise SAMGameError(game_id, "SAM не подтвердил сохранение")
+
+
 def _click_refresh(game_window) -> bool:
     """Находит и нажимает кнопку Refresh в _MainToolStrip SAM.Game.
 
@@ -308,18 +356,18 @@ def process_game(
     # --- Всё ниже — чистые coordinate clicks, без UIA ---
 
     # Координатные клики попадают только в АКТИВНОЕ окно: если SAM.Game не в
-    # фокусе (пользователь переключился, окно за другим), клики уходят в никуда,
-    # а игра всё равно помечается done с 0 разблокированных (нарушение инварианта
-    # unverified ≠ done). Явно поднимаем окно на передний план перед кликами.
-    # Best-effort: set_focus может бросить на занятом/свёрнутом окне — тогда
-    # действуем как раньше (без регресса игр, работавших и без явного фокуса).
-    # ПРИМЕЧАНИЕ: это устраняет ОСНОВНУЮ причину промаха, но не даёт строгой
-    # пост-верификации коммита — надёжная проверка «достижения реально
-    # применились» требует live-SAM интеграционного теста (см. правила проекта).
+    # фокусе (пользователь переключился, окно за другим), клики уходят в чужое
+    # окно. Поднимаем окно и проверяем, что на переднем плане именно SAM.Game.
+    pid = game_window.process_id()
     try:
         game_window.set_focus()
     except Exception as e:
-        log.warning("set_focus не удался (клики best-effort): %s", e)
+        log.warning("set_focus не удался: %s", e)
+    if _foreground_pid() != pid:
+        raise SAMGameError(
+            game_id, "окно SAM.Game не на переднем плане — клики не дойдут"
+        )
+    _take_dialog(pid)  # старое окно-сообщение перехватило бы клики
 
     wr = game_window.rectangle()
 
@@ -328,20 +376,19 @@ def process_game(
         coords=(wr.left + _cache.unlock_all_dx, wr.top + _cache.unlock_all_dy)
     )
     log.info("Unlock All")
+    protected = _close_protected_dialogs(pid, game_id)
+    if protected:
+        log.info("Защищённых достижений (SAM не меняет): %d", protected)
 
-    # Commit Changes
-    time.sleep(0.05)
+    # Commit Changes — итог читается из окна SAM, а не закрывается вслепую:
+    # done только по подтверждённому сохранению (unverified ≠ done).
     mouse.click(coords=(wr.left + _cache.commit_dx, wr.top + _cache.commit_dy))
-
-    # Enter для popup
-    time.sleep(0.05)
-    keyboard.send_keys("{ENTER}")
+    stored = _await_stored(pid, game_id)
 
     if post_commit_delay > 0:
         time.sleep(post_commit_delay)
 
-    # Инвариант: skip_reason is None ⇒ total > 0 (см. _check_game_status)
     result.total = total
-    result.newly_unlocked = total
-    log.info("APP STATUS: UNLOCK (+%d)", total)
+    result.newly_unlocked = stored
+    log.info("APP STATUS: UNLOCK (+%d)", stored)
     return result
