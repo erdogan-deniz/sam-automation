@@ -123,3 +123,18 @@ def test_report_dry_run_marks_success_without_adding(monkeypatch):
     )
     assert "dry-run" in calls["toast"][1]
     assert "✅" in calls["tg"]
+
+
+def test_stalled_run_is_not_ok(monkeypatch):
+    calls = _capture(monkeypatch)
+    report_mod.report_result(
+        status="ok",
+        added=3,
+        refused=0,
+        error=0,
+        hit_cap=False,
+        stalled=True,
+        cfg=_cfg(),
+    )
+    assert "Steam не отвечает" in calls["toast"][1]
+    assert calls["tg"].startswith("⚠️")
