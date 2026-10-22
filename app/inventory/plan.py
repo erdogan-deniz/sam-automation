@@ -8,8 +8,8 @@
     самоцветами);
   * на руки по этой цене против самоцветов × заявка на мешок / 1000,
     самоцветы дороже — разбираем, иначе продаём;
-  * ни заявок, ни цен продажи — разбираем: самоцветы лучше, чем ничего
-    (правило 21.10.2026);
+  * ни заявок, ни цен продажи — лот по самой низкой цене, которая выгоднее
+    разбора: на руки стоимость самоцветов + 1 (правило 22.10.2026);
   * при сомнении (нет данных, другая валюта) предмет пропускается.
 Суммы в минимальных единицах валюты, целые.
 """
@@ -93,16 +93,18 @@ def decide(
         and goo_value is not None
         and goo_value > 0
     )
+    gems_worth = (
+        goo_value * sack_bid // _GEMS_PER_SACK
+        if can_grind and goo_value is not None and sack_bid is not None
+        else None
+    )
     sale = _sale(quote, m)
     if sale is None:
-        if can_grind:
-            assert goo_value is not None
-            return Decision("grind", gems=goo_value)
-        return _skip("нет заявок и цен продажи")
-    if can_grind and sack_bid is not None:
-        assert goo_value is not None
-        if goo_value * sack_bid // _GEMS_PER_SACK > sale.received:
-            return Decision("grind", gems=goo_value)
+        if gems_worth is None:
+            return _skip("нет заявок и цен продажи")
+        return Decision("sell_ask", received=gems_worth + 1)
+    if gems_worth is not None and gems_worth > sale.received:
+        return Decision("grind", gems=goo_value or 0)
     return sale
 
 
