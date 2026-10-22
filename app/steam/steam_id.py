@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
 from .steam_api import _api_get
 
@@ -16,7 +17,7 @@ def resolve_vanity_url(api_key: str, vanity_name: str) -> str:
     """
     url = (
         f"{BASE_URL}/ISteamUser/ResolveVanityURL/v1/"
-        f"?key={api_key}&vanityurl={vanity_name}"
+        f"?key={api_key}&vanityurl={quote(vanity_name, safe='')}"
     )
     data = _api_get(url)
     resp = data.get("response", {})

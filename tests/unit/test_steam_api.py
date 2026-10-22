@@ -323,3 +323,49 @@ def test_fetch_owned_games_count_positive_empty_games_recovers_on_retry(
     result = steam_api.fetch_owned_games("key", _VALID_ID)
 
     assert [g["appid"] for g in result] == [10, 20]
+
+
+# ── ключ API не уходит в текст ошибок (аудит 21.10.2026, B-21 #3) ────────────
+
+
+def _invalid_url(*_a: object, **_k: object) -> None:
+    # Так urllib отвечает на пробел в адресе: URL целиком, с ключом, в тексте.
+    import http.client
+
+    raise http.client.InvalidURL(
+        "URL can't contain control characters. "
+        "'/ISteamUser/ResolveVanityURL/v1/?key=SECRET123&vanityurl=a b' "
+        "(found at least ' ')"
+    )
+
+
+def test_invalid_url_error_hides_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("urllib.request.urlopen", _invalid_url)
+    monkeypatch.setattr(steam_api.time, "sleep", lambda _s: None)
+    with pytest.raises(RuntimeError) as exc:
+        steam_api._api_get("https://x/?key=SECRET123&vanityurl=a b")
+    assert "SECRET123" not in str(exc.value)
+    # traceback с exc_info печатает и причину — в ней ключ тоже был
+    assert exc.value.__cause__ is None
+    assert exc.value.__suppress_context__
+
+
+def test_invalid_url_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def _once(*a: object, **k: object) -> None:
+        calls.append(1)
+        _invalid_url()
+
+    monkeypatch.setattr("urllib.request.urlopen", _once)
+    monkeypatch.setattr(steam_api.time, "sleep", lambda _s: None)
+    with pytest.raises(RuntimeError):
+        steam_api._api_get("https://x/?key=SECRET123")
+    assert len(calls) == 1
+
+
+def test_redact_key_masks_only_the_key() -> None:
+    text = "GET /v1/?key=ABC123&steamid=7656 failed"
+    assert steam_api.redact_key(text) == "GET /v1/?key=***&steamid=7656 failed"
