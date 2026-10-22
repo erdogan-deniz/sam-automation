@@ -197,6 +197,7 @@ def run(
             error=len(result.error),
             hit_cap=result.hit_cap,
             session_dead=result.session_dead,
+            stalled=result.stalled,
             cfg=cfg,
         )
     except BaseException:

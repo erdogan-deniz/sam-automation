@@ -238,3 +238,122 @@ def test_add_licenses_empty_input_no_calls():
     result = licenses.add_licenses(client, [], batch_size=50)
     assert result == licenses.AddResult()
     assert client.calls == []
+
+
+# ── зависание выдачи DLC (живьём 21.10.2026, аудит B-21 #5) ─────────────────
+# 47 Timeout подряд на первой пачке, выдано 0: поздний ответ сервера
+# приходил на снятый jobid и терялся, time.sleep замораживал gevent-клиент,
+# Timeout ретраился без предела.
+
+
+class _Msg:
+    def __init__(self, granted):
+        self.body = type("B", (), {"granted_appids": list(granted)})()
+
+
+class _LiveClient(_FakeClient):
+    """Двойник с событиями: поздний ответ CM приходит во время client.sleep."""
+
+    def __init__(self, responses, late=None):
+        super().__init__(responses)
+        self._late = list(late or [])  # granted, приходящие на каждый sleep
+        self._listeners: dict = {}
+        self.sleeps: list[float] = []
+
+    def on(self, event, cb):
+        self._listeners.setdefault(event, []).append(cb)
+
+    def remove_listener(self, event, cb):
+        self._listeners[event].remove(cb)
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        if self._late:
+            granted = self._late.pop(0)
+            for cb in list(self._listeners.get(_RESPONSE_EMSG, [])):
+                cb(_Msg(granted))
+
+
+from steam.enums.emsg import EMsg  # noqa: E402
+
+_RESPONSE_EMSG = EMsg.ClientRequestFreeLicenseResponse
+
+
+@pytest.fixture
+def _no_time_sleep(monkeypatch):
+    monkeypatch.setattr(
+        licenses.time,
+        "sleep",
+        lambda s: pytest.fail("time.sleep замораживает gevent-клиент"),
+    )
+
+
+def test_late_response_after_timeout_counts_as_added(_no_time_sleep):
+    client = _LiveClient([(EResult.Timeout, None, None)], late=[[1, 2]])
+    result = licenses.add_licenses(client, [1, 2], batch_size=20)
+    assert result.added == [1, 2]
+    assert len(client.calls) == 1  # ответ дошёл — повтор не нужен
+    assert client.sleeps  # ждали через client.sleep, не time.sleep
+
+
+def test_late_grant_is_not_refused_on_retry(_no_time_sleep):
+    # Выданное в фоне на повторе приходит без этого appid — это не отказ.
+    client = _LiveClient(
+        [(EResult.Timeout, None, None), (EResult.OK, [2], [])], late=[[1]]
+    )
+    result = licenses.add_licenses(client, [1, 2, 3], batch_size=20)
+    assert result.added == [1, 2]
+    assert result.refused == [3]
+    assert client.calls == [[1, 2, 3], [2, 3]]
+
+
+def test_batch_is_split_after_two_timeouts(_no_time_sleep):
+    client = _LiveClient(
+        [
+            (EResult.Timeout, None, None),
+            (EResult.Timeout, None, None),
+            (EResult.OK, [1, 2], []),
+            (EResult.OK, [3], []),
+        ]
+    )
+    result = licenses.add_licenses(client, [1, 2, 3, 4], batch_size=20)
+    assert result.added == [1, 2, 3]
+    assert result.refused == [4]
+    assert client.calls == [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2], [3, 4]]
+
+
+def test_single_appid_goes_to_error_after_three_timeouts(_no_time_sleep):
+    client = _LiveClient([(EResult.Timeout, None, None)] * 3)
+    result = licenses.add_licenses(client, [7], batch_size=20)
+    assert result.error == [7]
+    assert result.added == [] and result.refused == []
+    assert len(client.calls) == 3
+
+
+def test_steam_silence_stops_the_run(_no_time_sleep):
+    # Ни одного ответа за 10 запросов подряд — честный стоп, а не часы
+    # повторов по пачкам (20 DLC × 3 попытки на каждое).
+    client = _LiveClient([(EResult.Timeout, None, None)] * 100)
+    persisted: list[tuple[int, str]] = []
+    result = licenses.add_licenses(
+        client,
+        list(range(1, 41)),
+        batch_size=20,
+        persist=lambda a, o: persisted.append((a, o)),
+    )
+    assert result.stalled is True
+    assert len(client.calls) == licenses._STALL_ABORT_TIMEOUTS
+    assert result.added == [] and result.refused == []
+
+
+def test_busy_with_empty_grant_is_retried_not_refused(_no_time_sleep):
+    client = _LiveClient([(EResult.Busy, [], []), (EResult.OK, [1, 2], [])])
+    result = licenses.add_licenses(client, [1, 2], batch_size=20)
+    assert result.added == [1, 2]
+    assert result.refused == []
+
+
+def test_listener_is_removed_after_run(_no_time_sleep):
+    client = _LiveClient([(EResult.OK, [1], [])])
+    licenses.add_licenses(client, [1], batch_size=20)
+    assert client._listeners[_RESPONSE_EMSG] == []
