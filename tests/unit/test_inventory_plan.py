@@ -40,9 +40,47 @@ def _decide(it: items.Item, **kw: Any) -> plan.Decision:
     return plan.decide(it, **args)
 
 
-def test_not_marketable_is_skipped() -> None:
-    d = _decide(_item(marketable=False))
+def test_not_marketable_without_gems_is_skipped() -> None:
+    d = _decide(_item(marketable=False, goo=None), goo_value=None)
     assert d.action == "skip"
+
+
+def test_not_marketable_but_grindable_is_ground() -> None:
+    # Правило владельца 22.10.2026: продать нельзя совсем — разбираем.
+    d = _decide(_item(marketable=False), quote=None, goo_value=80)
+    assert d.action == "grind"
+    assert d.gems == 80
+
+
+def test_not_marketable_grind_does_not_need_sack_price() -> None:
+    d = _decide(
+        _item(marketable=False), quote=None, goo_value=80, sack_bid=None
+    )
+    assert d.action == "grind"
+
+
+def test_temporarily_locked_item_is_skipped() -> None:
+    # Через несколько дней предмет можно будет продать — не разбирать.
+    d = _decide(
+        _item(marketable=False, trade_locked=True), quote=None, goo_value=80
+    )
+    assert d.action == "skip"
+    assert "временно" in d.reason
+
+
+def test_not_marketable_stack_is_skipped() -> None:
+    d = _decide(_item(marketable=False, amount=3), quote=None, goo_value=80)
+    assert d.action == "skip"
+
+
+def test_not_marketable_booster_is_never_touched() -> None:
+    d = _decide(
+        _item(marketable=False, item_class="item_class_5"),
+        quote=None,
+        goo_value=80,
+    )
+    assert d.action == "skip"
+    assert "бустер" in d.reason
 
 
 def test_booster_pack_is_never_touched() -> None:
@@ -291,7 +329,12 @@ def test_skip_reason_none_for_plain_marketable_item() -> None:
 
 
 def test_skip_reason_for_non_marketable_booster_and_unfinished_card() -> None:
-    assert plan.skip_reason(_item(marketable=False), {}) is not None
+    assert plan.skip_reason(_item(marketable=False, goo=None), {}) is not None
+    assert (
+        plan.skip_reason(_item(marketable=False, trade_locked=True), {})
+        is not None
+    )
+    assert plan.skip_reason(_item(marketable=False), {}) is None
     assert plan.skip_reason(_item(item_class="item_class_5"), {}) is not None
     assert plan.skip_reason(_card(), {(440, 0): 2}) is not None
     assert plan.skip_reason(_card(), {(440, 0): 5}) is None
