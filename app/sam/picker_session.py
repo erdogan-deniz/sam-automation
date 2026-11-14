@@ -7,7 +7,12 @@ import time
 
 from pywinauto import Application, mouse
 
-from ..exceptions import SAMGameError
+from ..exceptions import (
+    SAMError,
+    SAMGameError,
+    SAMGameNotOwned,
+    SAMPickerBroken,
+)
 from .win32_utils import (
     _close_picker_modal,
     _get_sam_game_pids,
@@ -16,6 +21,23 @@ from .win32_utils import (
 )
 
 log = logging.getLogger("sam_automation")
+
+
+# Текст диалога SAM, когда игры нет в библиотеке аккаунта.
+_NOT_OWNED_TEXT = "don't own"
+
+
+def _rejection(game_id: int, text: str) -> SAMGameError:
+    """Исключение по тексту диалога, которым SAM отверг игру."""
+    if _NOT_OWNED_TEXT in text.lower():
+        return SAMGameNotOwned(game_id, f"нет в библиотеке (SAM: {text})")
+    detail = f" — {text}" if text else ""
+    return SAMGameError(game_id, f"SAM: ошибка добавления игры{detail}")
+
+
+def _describe(e: Exception) -> str:
+    """Текст исключения; у pywinauto ElementNotEnabled str() пустой."""
+    return str(e) or type(e).__name__
 
 
 class PickerSession:
@@ -42,34 +64,53 @@ class PickerSession:
             elif cls == "Button" and "add" in c.window_text().lower():
                 self._add_btn = c
 
+    def _require_enabled(self, picker_hwnd: int) -> None:
+        """Диалог закрыт, но Picker так и не ожил → SAMPickerBroken."""
+        if not _is_window_enabled(picker_hwnd):
+            raise SAMPickerBroken("окно SAM.Picker не принимает ввод")
+
     def add_and_open_game(
         self, game_id: int, timeout: float = 10.0
     ) -> Application:
-        """Ввод ID → Add Game → двойной клик → ждём SAM.Game."""
-        self.win.set_focus()
-        picker_hwnd = (
-            self.win.wrapper_object().handle
-        )  # кэшируем пока Picker активен
+        """Ввод ID → Add Game → двойной клик → ждём SAM.Game.
+
+        SAMPickerBroken — Picker не принимает ввод (диалог не закрылся, окно
+        умерло): виноват Picker, а не игра, вызывающий перезапускает Picker.
+        """
+        try:
+            self.win.set_focus()
+            picker_hwnd = (
+                self.win.wrapper_object().handle
+            )  # кэшируем пока Picker активен
+        except Exception as e:
+            raise SAMPickerBroken(_describe(e)) from e
 
         if not self._edit or not self._add_btn:
             raise SAMGameError(game_id, "Элементы Picker не найдены")
 
-        self._edit.set_edit_text(str(game_id))
-        self._add_btn.click_input()
+        # Диалог, оставшийся от прошлой игры, держит Picker disabled — тогда
+        # ввод ID падает с ElementNotEnabled на каждой следующей игре.
+        if not _is_window_enabled(picker_hwnd):
+            _close_picker_modal(picker_hwnd, self.picker_pid)
+            self._require_enabled(picker_hwnd)
+
+        try:
+            self._edit.set_edit_text(str(game_id))
+            self._add_btn.click_input()
+        except Exception as e:
+            raise SAMPickerBroken(_describe(e)) from e
 
         # Ждём появления игры в списке (до 1с).
         # ВАЖНО: проверяем IsWindowEnabled ДО вызова UIA —
         # когда открыт modal dialog, Picker становится disabled и UIA зависает.
         items = []
-        dialog_closed = False
+        dialog_text: str | None = None
         deadline_items = time.time() + 1.0
         while time.time() < deadline_items:
             time.sleep(0.1)
             if not _is_window_enabled(picker_hwnd):
                 log.debug("Picker disabled — ищем modal dialog")
-                dialog_closed = _close_picker_modal(
-                    picker_hwnd, self.picker_pid
-                )
+                dialog_text = _close_picker_modal(picker_hwnd, self.picker_pid)
                 break
             try:
                 items = [
@@ -84,8 +125,9 @@ class PickerSession:
 
         # Диалог = SAM отверг игру (например "You don't own the game").
         # Список может содержать предыдущую игру — не трогаем его.
-        if dialog_closed:
-            raise SAMGameError(game_id, "SAM: ошибка добавления игры")
+        if dialog_text is not None:
+            self._require_enabled(picker_hwnd)
+            raise _rejection(game_id, dialog_text)
 
         if not items:
             # Диалог мог появиться после цикла — даём ещё 2с
@@ -94,12 +136,11 @@ class PickerSession:
                 while time.time() < deadline_dialog:
                     time.sleep(0.1)
                     if not _is_window_enabled(picker_hwnd):
-                        _close_picker_modal(picker_hwnd, self.picker_pid)
-                        raise SAMGameError(
-                            game_id, "SAM: ошибка добавления игры"
-                        )
+                        text = _close_picker_modal(picker_hwnd, self.picker_pid)
+                        self._require_enabled(picker_hwnd)
+                        raise _rejection(game_id, text or "")
                 log.debug("Диалог не появился за 2с")
-            except SAMGameError:
+            except SAMError:
                 raise
             except Exception:
                 log.exception("Ошибка при закрытии диалога SAM")

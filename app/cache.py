@@ -36,6 +36,8 @@ ALL_IDS_FILE = _IDS_DIR / "all.txt"
 DONE_IDS_FILE = _ACHIEVEMENTS_IDS_DIR / "unlocked.txt"
 ERROR_IDS_FILE = _ACHIEVEMENTS_IDS_DIR / "error.txt"
 NO_ACHIEVEMENTS_FILE = _ACHIEVEMENTS_IDS_DIR / "without.txt"
+# SAM: «You don't own that game» — игры нет в библиотеке, достижения не открыть.
+NOT_OWNED_FILE = _ACHIEVEMENTS_IDS_DIR / "not_owned.txt"
 
 
 def load_game_names() -> dict[int, str]:
@@ -103,6 +105,16 @@ def unmark_no_achievements(game_id: int) -> None:
     _remove_id(NO_ACHIEVEMENTS_FILE, game_id)
 
 
+def load_not_owned_ids() -> set[int]:
+    """Игры, которых по ответу SAM нет в библиотеке."""
+    return load_ids_file(NOT_OWNED_FILE)
+
+
+def mark_not_owned(game_id: int) -> None:
+    """Записывает игру, которой по ответу SAM нет в библиотеке."""
+    _append_id(NOT_OWNED_FILE, game_id)
+
+
 def load_playtime_skip_ids() -> set[int]:
     """Читает playtime/skip.txt → set[int] (игры, не подключающиеся к Steam)."""
     return load_ids_file(PLAYTIME_SKIP_FILE)
@@ -145,8 +157,13 @@ def clear_error_ids() -> None:
 
 
 def clear_progress() -> None:
-    """Удаляет unlocked.txt, error.txt и without.txt."""
-    for path in (DONE_IDS_FILE, ERROR_IDS_FILE, NO_ACHIEVEMENTS_FILE):
+    """Удаляет unlocked.txt, error.txt, without.txt и not_owned.txt."""
+    for path in (
+        DONE_IDS_FILE,
+        ERROR_IDS_FILE,
+        NO_ACHIEVEMENTS_FILE,
+        NOT_OWNED_FILE,
+    ):
         if path.exists():
             path.unlink()
             log.debug("Удалён файл прогресса: %s", path)

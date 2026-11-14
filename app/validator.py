@@ -16,8 +16,10 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 from app.config import Config
+from app.steam.steam_api import redact_key
 
 log = logging.getLogger("sam_automation")
 
@@ -142,7 +144,7 @@ def _check_steam_api(cfg: Config) -> list[str]:
     """Делает тестовый запрос к Steam API, проверяет ключ и Steam ID."""
     url = (
         "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/"
-        f"?key={cfg.steam_api_key}&steamids={cfg.steam_id}"
+        f"?key={cfg.steam_api_key}&steamids={quote(cfg.steam_id, safe='')}"
     )
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:
@@ -159,7 +161,8 @@ def _check_steam_api(cfg: Config) -> list[str]:
     except urllib.error.URLError as exc:
         return [f"Could not reach Steam API: {exc.reason}"]
     except (OSError, http.client.HTTPException) as exc:
-        return [f"Could not reach Steam API: {exc}"]
+        # InvalidURL (HTTPException) несёт в тексте весь URL с ключом
+        return [f"Could not reach Steam API: {redact_key(str(exc))}"]
     except ValueError as exc:
         # HTTP 200 с не-JSON телом (Cloudflare/captive-portal HTML) →
         # JSONDecodeError (подкласс ValueError). validate() обещает «никогда

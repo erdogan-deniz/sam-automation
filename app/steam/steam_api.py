@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.request
@@ -31,6 +32,14 @@ _NETWORK_RETRY_DELAY = 2.0
 # частичный ответ). Повторяем запрос, прежде чем считать источник недоступным.
 _AMBIGUOUS_OWNED_RETRIES = 2
 _AMBIGUOUS_OWNED_RETRY_DELAY = 5.0
+
+
+_KEY_RE = re.compile(r"(\bkey=)[^&\s'\"]+", re.IGNORECASE)
+
+
+def redact_key(text: str) -> str:
+    """Прячет значение key= в тексте (URL с ключом API попадает в ошибки)."""
+    return _KEY_RE.sub(r"\1***", text)
 
 
 class _RateLimitError(RuntimeError):
@@ -70,6 +79,13 @@ def _api_get_once(url: str) -> dict:
                 "Steam API rate limit (429)", _parse_retry_after(e)
             ) from e
         raise RuntimeError(f"Steam API вернул {e.code}: {e.reason}") from e
+    except http.client.InvalidURL as e:
+        # Пробел в адресе: urllib кладёт URL целиком, с ключом, в текст
+        # ошибки. Причину не цепляем — traceback напечатал бы и её. Не сетевой
+        # сбой, а неверный адрес — без ретрая.
+        raise RuntimeError(
+            f"Steam API: недопустимый адрес запроса — {redact_key(str(e))}"
+        ) from None
     except urllib.error.URLError as e:
         raise _TransientNetworkError(
             f"Ошибка подключения к Steam API: {e.reason}"

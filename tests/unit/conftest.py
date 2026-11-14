@@ -31,3 +31,22 @@ def ids_file(tmp_path: Path) -> Callable[..., Path]:
         return f
 
     return factory
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sam_process_kills(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Тесты не видят и не убивают настоящие SAM.Game.exe.
+
+    Иначе `pytest` во время живого фарма убивал его процессы: тест доходил до
+    настоящего kill_all_sam_games (свип по всем SAM.Game.exe машины). Тест,
+    которому нужны эти функции, подменяет их сам — его monkeypatch главнее.
+    """
+    import app.sam.launcher as launcher
+    import app.sam.picker_session as picker_session
+
+    def _refuse_kill(pid: int) -> None:
+        raise AssertionError(f"тест пытался убить настоящий процесс PID={pid}")
+
+    for mod in (launcher, picker_session):
+        monkeypatch.setattr(mod, "_get_sam_game_pids", set)
+        monkeypatch.setattr(mod, "_kill_pid", _refuse_kill)

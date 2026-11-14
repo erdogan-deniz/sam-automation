@@ -15,6 +15,7 @@ import argparse
 import atexit
 import logging
 import time
+from typing import Any
 
 from app.cache import (
     clear_error_ids,
@@ -23,14 +24,21 @@ from app.cache import (
     load_error_ids,
     load_game_names,
     load_no_achievements_ids,
+    load_not_owned_ids,
     mark_done,
     mark_error_id,
     mark_no_achievements,
+    mark_not_owned,
     unmark_no_achievements,
 )
 from app.cli import casefold_options
 from app.config import load_config
-from app.exceptions import SAMError, SAMTooManyErrors
+from app.exceptions import (
+    SAMError,
+    SAMGameNotOwned,
+    SAMPickerBroken,
+    SAMTooManyErrors,
+)
 from app.game_list import load_game_ids
 from app.logging_setup import SEPARATOR, centered, setup_logging
 from app.notify import send_telegram, toast
@@ -51,6 +59,42 @@ from app.unlock_result import UnlockResult
 from app.validator import validate
 
 log = logging.getLogger("sam_automation")
+
+# Сколько перезапусков SAM.Picker подряд без единой обработанной игры терпим,
+# прежде чем остановить прогон (Picker сломан не на одной игре, а вообще).
+_MAX_PICKER_BREAKS = 3
+
+
+class _Picker:
+    """Текущий SAM.Picker.exe: процесс, сессия и поломки подряд."""
+
+    def __init__(self, proc: Any, session: Any) -> None:
+        self.proc = proc
+        self.session = session
+        self.breaks_in_row = 0
+
+
+class _PickerUnrecoverable(Exception):
+    """SAM.Picker не восстанавливается перезапуском — прогон останавливается."""
+
+
+def _fail_game(
+    game_id: int,
+    reason: str,
+    exc: Exception,
+    tracker: ErrorTracker,
+    results: list[UnlockResult],
+) -> None:
+    """Пишет игру в error.txt и в итоги, затем считает ошибку.
+
+    persist ПЕРЕД record_error: на N-й подряд ошибке record_error бросает
+    SAMTooManyErrors, и всё, что шло бы после него, пропускается.
+    """
+    results.append(
+        UnlockResult(game_id=game_id, skipped=True, skip_reason=reason)
+    )
+    mark_error_id(game_id)
+    tracker.record_error(game_id, exc)
 
 
 def _process_one_game(
@@ -103,28 +147,84 @@ def _process_one_game(
             unmark_no_achievements(game_id)
         return False
 
-    except SAMTooManyErrors:
+    except (SAMTooManyErrors, SAMPickerBroken):
+        # SAMPickerBroken — сломан Picker, а не игра: решает
+        # _process_with_recovery (перезапуск, без записи в error.txt).
         raise
+    except SAMGameNotOwned as e:
+        # Не ошибка и не успех: игры нет в библиотеке — в серию ошибок подряд
+        # не идёт (иначе хвост all.txt из таких игр взводил аварийный стоп).
+        log.info("APP STATUS: NOT OWNED — %s", e.message)
+        results.append(
+            UnlockResult(game_id=game_id, skipped=True, skip_reason="not owned")
+        )
+        mark_not_owned(game_id)
+        return False
     except SAMError as e:
         reason = e.message if hasattr(e, "message") else str(e)
         log.warning("APP STATUS: ERROR — %s", reason)
-        # persist ПЕРЕД record_error — см. комментарий выше в soft-error пути.
-        results.append(
-            UnlockResult(game_id=game_id, skipped=True, skip_reason=reason)
-        )
-        mark_error_id(game_id)
-        tracker.record_error(game_id, e)
+        _fail_game(game_id, reason, e, tracker, results)
         return True
     except Exception as e:
-        log.error("APP STATUS: ERROR — %s", e, exc_info=True)
-        results.append(
-            UnlockResult(game_id=game_id, skipped=True, skip_reason=str(e))
-        )
-        mark_error_id(game_id)
-        tracker.record_error(game_id, e)
+        # У части исключений pywinauto (ElementNotEnabled) str() пустой.
+        reason = str(e) or type(e).__name__
+        log.error("APP STATUS: ERROR — %s", reason, exc_info=True)
+        _fail_game(game_id, reason, e, tracker, results)
         return True
     finally:
         close_game(game_app)
+
+
+def _restart_picker(picker: _Picker, cfg) -> None:
+    """Убивает текущий SAM.Picker (и сирот SAM.Game) и запускает новый."""
+    _teardown_picker(picker.proc)
+    try:
+        picker.proc, picker.session = launch_picker(
+            cfg.sam_game_exe_path, launch_delay=cfg.launch_delay
+        )
+    except SAMError as e:
+        raise _PickerUnrecoverable(f"SAM.Picker не перезапустился: {e}") from e
+
+
+def _process_with_recovery(
+    picker: _Picker,
+    game_id: int,
+    cfg,
+    tracker: ErrorTracker,
+    results: list[UnlockResult],
+    name: str = "",
+) -> None:
+    """_process_one_game с перезапуском сломанного SAM.Picker.
+
+    Picker сломался — игра не виновата: перезапуск и повтор той же игры, в
+    error.txt она не идёт. Сломала Picker и на повторе — значит, ломает его
+    именно она: в error.txt, Picker перезапускается для следующей игры.
+    Поломка сверх _MAX_PICKER_BREAKS подряд без единой обработанной игры —
+    _PickerUnrecoverable, прогон останавливается.
+    """
+    for attempt in (1, 2):
+        try:
+            _process_one_game(
+                picker.session, game_id, cfg, tracker, results, name
+            )
+        except SAMPickerBroken as e:
+            picker.breaks_in_row += 1
+            # Сначала стоп: Picker сломан вообще — игру, на которой это
+            # выяснилось, не обвиняем, следующий прогон повторит её.
+            if picker.breaks_in_row > _MAX_PICKER_BREAKS:
+                raise _PickerUnrecoverable(
+                    "SAM.Picker не восстанавливается: "
+                    f"{_MAX_PICKER_BREAKS} перезапуска подряд не помогли"
+                ) from e
+            if attempt == 2:
+                reason = f"ломает SAM.Picker: {e}"
+                log.warning("APP STATUS: ERROR — %s", reason)
+                _fail_game(game_id, reason, e, tracker, results)
+            log.warning("SAM.Picker не отвечает (%s) — перезапускаю", e)
+            _restart_picker(picker, cfg)
+            continue
+        picker.breaks_in_row = 0
+        return
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -170,8 +270,13 @@ def _prepare_progress(args: argparse.Namespace) -> None:
 
 
 def _apply_resume_filter(game_ids: list[int]) -> list[int]:
-    """Исключает уже обработанные игры (done + error + no_achievements)."""
-    skip = load_done_ids() | load_error_ids() | load_no_achievements_ids()
+    """Исключает уже обработанные игры (done, error, without, not_owned)."""
+    skip = (
+        load_done_ids()
+        | load_error_ids()
+        | load_no_achievements_ids()
+        | load_not_owned_ids()
+    )
     if not skip:
         return game_ids
     before = len(game_ids)
@@ -179,7 +284,8 @@ def _apply_resume_filter(game_ids: list[int]) -> list[int]:
     skipped = before - len(filtered)
     if skipped:
         log.info(
-            "Пропущено %d игр из done/error/without (--reset чтобы начать "
+            "Пропущено %d игр из done/error/without/not_owned (--reset "
+            "чтобы начать "
             "заново, --retry-without/--retry-done для их среза)",
             skipped,
         )
@@ -228,6 +334,8 @@ def _log_summary(results: list[UnlockResult], errors: int) -> None:
             log.info("  %d: STATUS: UNLOCK (+%d)", r.game_id, r.newly_unlocked)
         elif r.skip_reason == "no achievements":
             log.info("  %d: STATUS: NO ACHIEVEMENTS", r.game_id)
+        elif r.skip_reason == "not owned":
+            log.info("  %d: STATUS: NOT OWNED", r.game_id)
         else:
             reason = f" — {r.skip_reason}" if r.skip_reason != "error" else ""
             log.info("  %d: STATUS: ERROR%s", r.game_id, reason)
@@ -246,6 +354,8 @@ def _report_result(
         head, ok = "прервано (Ctrl+C)", False
     elif status == "aborted":
         head, ok = "прервано (слишком много ошибок)", False
+    elif status == "picker_broken":
+        head, ok = "прервано (SAM.Picker не восстанавливается)", False
     elif errors:
         head, ok = "готово с оговорками", False
     else:
@@ -374,6 +484,7 @@ def main() -> None:
         log.error(str(e))
         sys.exit(1)
 
+    picker = _Picker(proc, session)
     # Счётчики итогов — ДО try: при Ctrl+C на подготовке их читает отчёт ниже.
     tracker = ErrorTracker(max_consecutive=cfg.max_consecutive_errors)
     results: list[UnlockResult] = []
@@ -398,20 +509,23 @@ def main() -> None:
             header = f"[{i}/{total}]"
             log.info(centered(header))
             log.info("APP ID: %d", game_id)
-            _process_one_game(session, game_id, cfg, tracker, results, name)
+            _process_with_recovery(picker, game_id, cfg, tracker, results, name)
             if i < total:
                 time.sleep(cfg.between_games_delay)
 
     except SAMTooManyErrors:
         status = "aborted"
         log.error("Прервано. Перезапусти скрипт — продолжит с места остановки.")
+    except _PickerUnrecoverable as e:
+        status = "picker_broken"
+        log.error("%s. Перезапусти скрипт — продолжит с места остановки.", e)
     except KeyboardInterrupt:
         status = "interrupted"
         log.info(
             "Прервано (Ctrl+C). Перезапусти — продолжит с места остановки."
         )
     finally:
-        _teardown_picker(proc)
+        _teardown_picker(picker.proc)
 
     print()
     log.info(SEPARATOR)

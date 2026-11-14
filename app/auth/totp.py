@@ -31,5 +31,5 @@ def _compute_steam_totp(shared_secret: str) -> str:
     code = ""
     for _ in range(5):
         code_int, i = divmod(code_int, len(chars))
-        code = chars[i] + code
+        code += chars[i]
     return code

@@ -293,6 +293,7 @@ Delete or edit them manually if needed.
 | `unlocked.txt` | Successfully processed games |
 | `error.txt` | Games that errored out (retryable) |
 | `without.txt` | Games **SAM** confirmed have no achievements (skipped permanently) |
+| `not_owned.txt` | Games **SAM** reports as not owned ("You don't own that game": expired licenses, free weekends, demos, family sharing). Skipped permanently; `--reset` clears them |
 
 **Cards** (`data/games/ids/cards/`)
 

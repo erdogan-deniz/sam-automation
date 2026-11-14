@@ -10,6 +10,7 @@ from app.inventory import badges, fees, items, plan
 
 M = fees.min_fee(5)
 SACK_BID = 5508  # живая лучшая заявка на мешок самоцветов 19.10.2026
+SACK_NET = 4790  # на руки за мешок по этой заявке (комиссия с минимумом 84)
 
 
 def _item(**kw: Any) -> items.Item:
@@ -40,9 +41,47 @@ def _decide(it: items.Item, **kw: Any) -> plan.Decision:
     return plan.decide(it, **args)
 
 
-def test_not_marketable_is_skipped() -> None:
-    d = _decide(_item(marketable=False))
+def test_not_marketable_without_gems_is_skipped() -> None:
+    d = _decide(_item(marketable=False, goo=None), goo_value=None)
     assert d.action == "skip"
+
+
+def test_not_marketable_but_grindable_is_ground() -> None:
+    # Правило владельца 22.10.2026: продать нельзя совсем — разбираем.
+    d = _decide(_item(marketable=False), quote=None, goo_value=80)
+    assert d.action == "grind"
+    assert d.gems == 80
+
+
+def test_not_marketable_grind_does_not_need_sack_price() -> None:
+    d = _decide(
+        _item(marketable=False), quote=None, goo_value=80, sack_bid=None
+    )
+    assert d.action == "grind"
+
+
+def test_temporarily_locked_item_is_skipped() -> None:
+    # Через несколько дней предмет можно будет продать — не разбирать.
+    d = _decide(
+        _item(marketable=False, trade_locked=True), quote=None, goo_value=80
+    )
+    assert d.action == "skip"
+    assert "временно" in d.reason
+
+
+def test_not_marketable_stack_is_skipped() -> None:
+    d = _decide(_item(marketable=False, amount=3), quote=None, goo_value=80)
+    assert d.action == "skip"
+
+
+def test_not_marketable_booster_is_never_touched() -> None:
+    d = _decide(
+        _item(marketable=False, item_class="item_class_5"),
+        quote=None,
+        goo_value=80,
+    )
+    assert d.action == "skip"
+    assert "бустер" in d.reason
 
 
 def test_booster_pack_is_never_touched() -> None:
@@ -55,7 +94,7 @@ def test_booster_pack_is_never_touched() -> None:
 
 
 def test_best_bid_wins_over_gems_sells_at_bid() -> None:
-    # заявка 5671 на руки 4932, самоцветы на 10 шт. = 55 коп.
+    # заявка 5671 на руки 4932, самоцветы на 10 шт. = 47 коп. на руки
     d = _decide(
         _item(),
         quote=plan.Quote(max_buy=5671, min_sell=8273, currency=5),
@@ -66,7 +105,7 @@ def test_best_bid_wins_over_gems_sells_at_bid() -> None:
 
 
 def test_gems_worth_more_than_bid_grinds() -> None:
-    # заявка 384 на руки 216, 80 самоцветов = 440 коп.
+    # заявка 384 на руки 216, 80 самоцветов = 383 коп. на руки
     d = _decide(
         _item(),
         quote=plan.Quote(max_buy=384, min_sell=638, currency=5),
@@ -120,8 +159,44 @@ def test_bid_is_taken_even_when_lowest_ask_is_higher() -> None:
     assert d.received == 4932
 
 
-def test_no_bids_and_no_asks_is_skipped() -> None:
-    d = _decide(_item())
+def test_no_bids_and_no_asks_lists_just_above_gems() -> None:
+    # Правило владельца 22.10.2026: ни заявок, ни лотов — выставляем по самой
+    # низкой цене, которая выгоднее разбора: самоцветы × мешок / 1000 + 1.
+    d = _decide(_item(), goo_value=80)
+    assert d.action == "sell_ask"
+    assert d.received == 80 * SACK_NET // 1000 + 1
+
+
+def test_gems_are_valued_net_of_market_fee() -> None:
+    # Аудит 21.10.2026 (B-21 #8): самоцветы продаются мешком через маркет, на
+    # руки за 80 шт. 383, а не 440 по заявке. Цена 600 даёт 432 на руки —
+    # продажа выгоднее; по брутто код ошибочно разбирал (440 > 432).
+    d = _decide(
+        _item(),
+        quote=plan.Quote(max_buy=None, min_sell=600, currency=5),
+        goo_value=80,
+    )
+    assert d.action == "sell_ask"
+    assert d.received == 432
+
+
+def test_no_bids_and_no_asks_without_sack_price_is_skipped() -> None:
+    d = _decide(_item(), goo_value=80, sack_bid=None)
+    assert d.action == "skip"
+
+
+def test_no_bids_and_no_asks_without_goo_is_skipped() -> None:
+    d = _decide(_item(goo=None), goo_value=None)
+    assert d.action == "skip"
+
+
+def test_no_bids_and_no_asks_zero_gems_is_skipped() -> None:
+    d = _decide(_item(), goo_value=0)
+    assert d.action == "skip"
+
+
+def test_no_bids_and_no_asks_stack_is_skipped() -> None:
+    d = _decide(_item(amount=3), goo_value=80)
     assert d.action == "skip"
 
 
@@ -268,7 +343,12 @@ def test_skip_reason_none_for_plain_marketable_item() -> None:
 
 
 def test_skip_reason_for_non_marketable_booster_and_unfinished_card() -> None:
-    assert plan.skip_reason(_item(marketable=False), {}) is not None
+    assert plan.skip_reason(_item(marketable=False, goo=None), {}) is not None
+    assert (
+        plan.skip_reason(_item(marketable=False, trade_locked=True), {})
+        is not None
+    )
+    assert plan.skip_reason(_item(marketable=False), {}) is None
     assert plan.skip_reason(_item(item_class="item_class_5"), {}) is not None
     assert plan.skip_reason(_card(), {(440, 0): 2}) is not None
     assert plan.skip_reason(_card(), {(440, 0): 5}) is None

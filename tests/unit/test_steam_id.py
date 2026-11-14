@@ -68,3 +68,16 @@ def test_vanity_failure_raises_runtimeerror(
     )
     with pytest.raises(RuntimeError, match="vanity"):
         resolve_steam_id("key", "nonexistent-vanity")
+
+
+def test_vanity_is_url_quoted(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Пробел или «&» в steam_id не должен ломать адрес запроса (B-21 #3).
+    calls: dict[str, str] = {}
+
+    def _fake(url: str) -> dict:
+        calls["url"] = url
+        return {"response": {"success": 1, "steamid": _ID64}}
+
+    monkeypatch.setattr(steam_id, "_api_get", _fake)
+    resolve_steam_id("key", "my name&x=1")
+    assert calls["url"].endswith("&vanityurl=my%20name%26x%3D1")

@@ -172,6 +172,30 @@ def test_bounds_between_games_delay_too_high() -> None:
 # ── _check_steam_api ──────────────────────────────────────────────────────
 
 
+def test_steam_api_error_hides_api_key() -> None:
+    import http.client
+
+    cfg = Config(steam_api_key="SECRET123", steam_id="my name")
+    err = http.client.InvalidURL(
+        "URL can't contain control characters. "
+        "'/ISteamUser/GetPlayerSummaries/v0002/?key=SECRET123&steamids=my name'"
+    )
+    with patch("urllib.request.urlopen", side_effect=err):
+        errors = _check_steam_api(cfg)
+    assert errors
+    assert all("SECRET123" not in e for e in errors)
+
+
+def test_steam_api_quotes_steam_id() -> None:
+    body = b'{"response":{"players":[{"steamid":"1"}]}}'
+    cfg = Config(steam_api_key="key", steam_id="my name")
+    with patch(
+        "urllib.request.urlopen", return_value=_make_response(body)
+    ) as op:
+        _check_steam_api(cfg)
+    assert op.call_args[0][0].endswith("steamids=my%20name")
+
+
 def _make_response(body: bytes) -> MagicMock:
     """Создаёт mock ответа urllib.request.urlopen с заданным телом."""
     resp = MagicMock()

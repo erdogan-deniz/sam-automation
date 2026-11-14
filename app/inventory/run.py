@@ -72,19 +72,20 @@ def build_plan(
     ]
     quotes: dict[str, Quote | None] = {}
     for it in candidates:
+        if not it.marketable:
+            continue  # продать нельзя: стакан не нужен, только самоцветы
         name = it.market_hash_name
         if name not in quotes:
             quotes[name] = market.get_quote(http, name)
             sleep(gap)
     goo_values: dict[items.GooParams, int | None] = {}
     for it in candidates:
-        quote = quotes[it.market_hash_name]
-        # самоцветы нужны, когда есть с чем сравнить: заявка или цена продажи
+        # самоцветы сравниваются с продажей; у непродаваемого — сразу разбор
+        has_market = not it.marketable or quotes[it.market_hash_name]
         if (
             it.goo is not None
             and it.amount == 1
-            and quote is not None
-            and (quote.max_buy is not None or quote.min_sell is not None)
+            and has_market
             and it.goo not in goo_values
         ):
             goo_values[it.goo] = market.get_goo_value(http, it.goo)
@@ -239,7 +240,7 @@ def _rub(kopecks: int) -> str:
 
 def _print_plan(rows: list[Row]) -> None:
     for r in rows:
-        if not r.item.marketable:
+        if not r.item.marketable and r.decision.action == "skip":
             continue  # не продаётся на маркете: сотни строк без решения
         d = r.decision
         if d.action == "skip":

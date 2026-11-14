@@ -6,8 +6,13 @@
   * есть заявка — цена по самой дорогой заявке; заявок нет — по самой низкой
     цене продажи, лот висит (правило 20.10.2026: и тогда сравниваем с
     самоцветами);
-  * на руки по этой цене против самоцветов × заявка на мешок / 1000,
-    самоцветы дороже — разбираем, иначе продаём;
+  * на руки по этой цене против самоцветов × на руки за мешок по заявке
+    / 1000 (мешок продаётся через маркет — тоже с комиссией), самоцветы
+    дороже — разбираем, иначе продаём;
+  * ни заявок, ни цен продажи — лот по самой низкой цене, которая выгоднее
+    разбора: на руки стоимость самоцветов + 1 (правило 22.10.2026);
+  * не продаётся на маркете совсем, но разбирается — разбираем; временный
+    запрет («Tradable After …») — пропуск до его конца (правило 22.10.2026);
   * при сомнении (нет данных, другая валюта) предмет пропускается.
 Суммы в минимальных единицах валюты, целые.
 """
@@ -52,10 +57,13 @@ def skip_reason(
     item: Item, badge_levels: dict[tuple[int, int], int]
 ) -> str | None:
     """Причина пропуска, известная без запросов к маркету; None — кандидат."""
-    if not item.marketable:
-        return "не продаётся на маркете"
     if item.item_class == _BOOSTER:
         return "бустер-пак не трогаем"
+    if not item.marketable:
+        if item.trade_locked:
+            return "временно не продаётся"
+        if item.goo is None:
+            return "не продаётся на маркете"
     if item.item_class == _CARD:
         if item.game_appid is None or item.card_border is None:
             return "карточка без игры или рамки"
@@ -80,24 +88,34 @@ def decide(
     reason = skip_reason(item, badge_levels)
     if reason is not None:
         return _skip(reason)
+    if not item.marketable:
+        # продать нельзя совсем: самоцветы лучше, чем ничего
+        if item.amount == 1 and goo_value is not None and goo_value > 0:
+            return Decision("grind", gems=goo_value)
+        return _skip("не продаётся, разбор не удался")
     if quote is None:
         return _skip("нет данных рынка")
     if quote.currency != sack_currency:
         return _skip("валюта рынка не совпала с валютой кошелька")
 
-    sale = _sale(quote, m)
-    if sale is None:
-        return _skip("нет заявок и цен продажи")
     can_grind = (
         item.goo is not None
         and item.amount == 1
         and goo_value is not None
-        and sack_bid is not None
+        and goo_value > 0
     )
-    if can_grind:
-        assert goo_value is not None and sack_bid is not None
-        if goo_value * sack_bid // _GEMS_PER_SACK > sale.received:
-            return Decision("grind", gems=goo_value)
+    gems_worth = (
+        goo_value * fees.received_from_buyer(sack_bid, m) // _GEMS_PER_SACK
+        if can_grind and goo_value is not None and sack_bid is not None
+        else None
+    )
+    sale = _sale(quote, m)
+    if sale is None:
+        if gems_worth is None:
+            return _skip("нет заявок и цен продажи")
+        return Decision("sell_ask", received=gems_worth + 1)
+    if gems_worth is not None and gems_worth > sale.received:
+        return Decision("grind", gems=goo_value or 0)
     return sale
 
 

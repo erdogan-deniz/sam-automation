@@ -16,6 +16,8 @@ _MAX_PAGES = 50  # защита от бесконечной пагинации
 _GOO_RE = re.compile(
     r"GetGooValue\(\s*'%contextid%',\s*'%assetid%',\s*(\d+),\s*(\d+),\s*(\d+)"
 )
+# Временный запрет (снят живьём 22.10.2026): «Tradable After: 26 Oct @ 12:00am»
+_LOCK_RE = re.compile(r"\b(?:tradable|marketable)\b[^:]*\bafter\b", re.I)
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,8 @@ class Item:
     game_appid: int | None  # тег Game: app_N
     card_border: int | None  # тег cardborder_N: 0 обычная, 1 металлическая
     goo: GooParams | None
+    # Недавно получен: продать нельзя до даты из owner_descriptions
+    trade_locked: bool = False
 
 
 def _tag(desc: dict[str, Any], category: str) -> str | None:
@@ -65,6 +69,13 @@ def _goo(desc: dict[str, Any]) -> GooParams | None:
     return None
 
 
+def _trade_locked(desc: dict[str, Any]) -> bool:
+    return any(
+        _LOCK_RE.search(str(note.get("value", "")))
+        for note in desc.get("owner_descriptions", []) or []
+    )
+
+
 def parse_inventory(body: dict[str, Any]) -> list[Item]:
     """assets + descriptions одной страницы → предметы (без описания — пропуск)."""
     descs = {
@@ -86,6 +97,7 @@ def parse_inventory(body: dict[str, Any]) -> list[Item]:
                 game_appid=_suffix_int(_tag(d, "Game"), "app_"),
                 card_border=_suffix_int(_tag(d, "cardborder"), "cardborder_"),
                 goo=_goo(d),
+                trade_locked=_trade_locked(d),
             )
         )
     return result

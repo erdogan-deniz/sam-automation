@@ -35,6 +35,7 @@ _INVALID_HANDLE = ctypes.wintypes.HANDLE(-1).value
 
 _TH32CS_SNAPPROCESS = 0x00000002
 _GW_ENABLEDPOPUP = 6
+_WM_CLOSE = 0x0010
 _WNDENUMPROC = ctypes.WINFUNCTYPE(
     ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
 )
@@ -138,6 +139,48 @@ def _find_picker_dialog(picker_pid: int, main_hwnd: int) -> int:
     return found[0] if found else 0
 
 
+def _find_message_box(pid: int) -> int:
+    """Видимое окно-сообщение (класс #32770) процесса, иначе 0.
+
+    Живьём 22.10.2026 у SAM.Game есть и другие видимые top-level окна без
+    заголовка и текста — их не трогаем.
+    """
+    found: list[int] = []
+    pid_buf = ctypes.wintypes.DWORD()
+    cls = ctypes.create_unicode_buffer(16)
+
+    def _cb(hwnd: int, _: int) -> bool:
+        if _user32.IsWindowVisible(hwnd):
+            _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_buf))
+            if pid_buf.value == pid:
+                _user32.GetClassNameW(hwnd, cls, 16)
+                if cls.value == "#32770":
+                    found.append(hwnd)
+        return True
+
+    _user32.EnumWindows(_WNDENUMPROC(_cb), 0)
+    return found[0] if found else 0
+
+
+def _take_dialog(pid: int) -> tuple[str, str] | None:
+    """Читает окно-сообщение процесса (заголовок, текст) и закрывает его."""
+    box = _find_message_box(pid)
+    if not box:
+        return None
+    title, text = _window_title(box), _dialog_text(box)
+    _click_first_button(box)
+    return title, text
+
+
+def _foreground_pid() -> int:
+    """PID процесса, чьё окно сейчас на переднем плане (0 — нет такого)."""
+    pid_buf = ctypes.wintypes.DWORD()
+    _user32.GetWindowThreadProcessId(
+        _user32.GetForegroundWindow(), ctypes.byref(pid_buf)
+    )
+    return int(pid_buf.value)
+
+
 def _has_error_window(pid: int) -> bool:
     """True если у процесса есть видимое top-level окно с заголовком 'Error'.
 
@@ -163,21 +206,62 @@ def _has_error_window(pid: int) -> bool:
 
 def _close_picker_modal(
     picker_hwnd: int, picker_pid: int, wait_timeout: float = 3.0
-) -> bool:
-    """Ищет и закрывает modal dialog Picker. Возвращает True если диалог был закрыт.
+) -> str | None:
+    """Ищет и закрывает modal dialog Picker. Возвращает его текст или None.
 
-    После клика ждёт пока Picker снова станет enabled (до wait_timeout секунд).
+    None — диалога нет; "" — диалог без текста.
+
+    Сначала жмёт первую кнопку диалога; если Picker за wait_timeout не ожил,
+    шлёт диалогу WM_CLOSE и ждёт ещё столько же. Ожил ли Picker в итоге,
+    вызывающий проверяет сам (_is_window_enabled).
     """
     popup = _user32.GetWindow(picker_hwnd, _GW_ENABLEDPOPUP)
     if not popup or popup == picker_hwnd:
         popup = _find_picker_dialog(picker_pid, picker_hwnd)
     if not popup:
-        return False
-    log.debug("Modal диалог SAM найден: hwnd=%d", popup)
+        return None
+    text = _dialog_text(popup)
+    log.info(
+        "Диалог SAM: «%s» — %s", _window_title(popup), text or "без текста"
+    )
     _click_first_button(popup)
-    deadline = time.time() + wait_timeout
+    if _wait_enabled(picker_hwnd, wait_timeout):
+        return text
+    log.warning("Диалог SAM не закрылся кнопкой — закрываю WM_CLOSE")
+    _user32.PostMessageW(popup, _WM_CLOSE, 0, 0)
+    _wait_enabled(picker_hwnd, wait_timeout)
+    return text
+
+
+def _wait_enabled(hwnd: int, timeout: float) -> bool:
+    """Ждёт до timeout секунд, пока окно снова станет enabled."""
+    deadline = time.time() + timeout
     while time.time() < deadline:
         time.sleep(0.05)
-        if _is_window_enabled(picker_hwnd):
-            break
-    return True
+        if _is_window_enabled(hwnd):
+            return True
+    return False
+
+
+def _dialog_text(hwnd: int) -> str:
+    """Текст диалога: Static-дети окна (у Win32 MessageBox текст там)."""
+    texts: list[str] = []
+    buf = ctypes.create_unicode_buffer(1024)
+
+    def _cb(child: int, _: int) -> bool:
+        _user32.GetClassNameW(child, buf, 1024)
+        if buf.value.lower() == "static":
+            _user32.GetWindowTextW(child, buf, 1024)
+            if buf.value.strip():
+                texts.append(buf.value.strip())
+        return True
+
+    _user32.EnumChildWindows(hwnd, _WNDENUMPROC(_cb), 0)
+    return " ".join(texts)
+
+
+def _window_title(hwnd: int) -> str:
+    """Заголовок окна (для лога диалогов SAM)."""
+    buf = ctypes.create_unicode_buffer(256)
+    _user32.GetWindowTextW(hwnd, buf, 256)
+    return buf.value

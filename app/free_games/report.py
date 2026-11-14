@@ -24,6 +24,7 @@ def report_result(
     error: int,
     hit_cap: bool,
     session_dead: bool = False,
+    stalled: bool = False,
     cfg: Any,
 ) -> None:
     """Честный финальный отчёт (лог + toast + Telegram).
@@ -42,6 +43,8 @@ def report_result(
         head, ok = "упор в стену (потолок лицензий)", False
     elif session_dead:
         head, ok = "прервано: сессия Steam умерла", False
+    elif stalled:
+        head, ok = "прервано: Steam не отвечает", False
     elif refused or error:
         head, ok = "готово с оговорками", False
     else:
