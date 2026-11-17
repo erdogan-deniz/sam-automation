@@ -238,7 +238,7 @@ def test_add_no_pending_returns_empty_without_cm_login(
     assert result == orch.licenses.AddResult()
 
 
-def test_add_cm_login_failed_marks_all_pending_as_error(
+def test_add_cm_login_failed_does_not_persist_candidates_as_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_state(monkeypatch, tmp_path)
@@ -247,8 +247,8 @@ def test_add_cm_login_failed_marks_all_pending_as_error(
 
     result = orch.add()
 
-    assert result.error == [1, 2]
-    assert state_mod.load_error_ids() == {1, 2}
+    assert result.error == [1, 2]  # в отчёте они есть
+    assert state_mod.load_error_ids() == set()  # но терминально не помечены
 
 
 def test_add_wires_working_persist_callback_to_add_licenses(

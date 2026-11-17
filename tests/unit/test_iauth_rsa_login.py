@@ -125,6 +125,25 @@ def test_rsa_login_returns_invalid_password_on_definitive_rejection(
     assert result == EResult.InvalidPassword
 
 
+def test_rsa_login_recognises_raw_int_invalid_password(monkeypatch):
+    # Живой Steam отдаёт header.eresult обычным int (в логе «ошибка: 5»), а не
+    # EResult. Вердикт «неверный пароль» обязан распознаваться и для int,
+    # иначе сохранённая сессия не стирается и пароль не переспрашивается.
+    from steam.enums import EResult
+
+    def _fake_web(username, password, *, for_steam_client=False, _outcome=None):
+        if _outcome is not None:
+            _outcome.append(5)
+        return None
+
+    monkeypatch.setattr(iauth, "_jwt_web_cookies", _fake_web)
+    monkeypatch.setattr(iauth, "_cm_login_with_jwt", _must_not_call)
+
+    result = iauth._rsa_jwt_login(_FakeClient(), "user", "pass", 30)
+
+    assert result == EResult.InvalidPassword
+
+
 def test_rsa_login_returns_none_on_transient_without_verdict(monkeypatch):
     # Сеть/таймаут: cookies=None, но _outcome пуст (Begin не дошёл до вердикта) →
     # НЕ выдаём InvalidPassword, возвращаем None (креды выше не трогаются).

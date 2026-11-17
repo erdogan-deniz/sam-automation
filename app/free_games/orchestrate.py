@@ -116,9 +116,9 @@ def add(*, limit: int | None = None) -> licenses.AddResult:
 
     with cm_session() as client:
         if client is None:
+            # Отказ входа — сбой аккаунта, а не игр: в error.txt (терминальный
+            # файл, пропускается при следующих запусках) кандидатов не пишем.
             log.error("Steam CM: вход не удался — добавление невозможно")
-            for appid in pending:
-                state.mark_error(appid)
             return licenses.AddResult(error=list(pending))
         result = licenses.add_licenses(client, pending, persist=_persist)
 
