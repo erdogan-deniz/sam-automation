@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import time
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -205,6 +206,12 @@ def _jwt_web_cookies(
         request_id = b.request_id
         steamid = str(b.steamid)
         interval = max(b.interval or 5.0, 1.0)
+        begun_at = time.monotonic()
+        log.debug(
+            "IAuthService: Begin OK, подтверждения=%s, interval=%s",
+            [int(c.confirmation_type) for c in b.allowed_confirmations],
+            interval,
+        )
 
         # ── Шаг 4: Steam Guard (2FA) по типам allowed_confirmations ──
         # _guard_action различает код (email/TOTP) и внешнее подтверждение
@@ -295,7 +302,14 @@ def _jwt_web_cookies(
             if poll is None:
                 continue
             if poll.header.eresult != EResult.OK:
-                log.debug("IAuthService: poll eresult=%s", poll.header.eresult)
+                log.debug(
+                    "IAuthService: poll eresult=%s (%s) через %.0f с "
+                    "после Begin, попытка %d",
+                    poll.header.eresult,
+                    poll.header.error_message,
+                    time.monotonic() - begun_at,
+                    _attempt + 1,
+                )
                 break
             p = poll.body
             if p.access_token:
