@@ -353,9 +353,11 @@ def _rsa_jwt_login(
         username, password, for_steam_client=True, _outcome=outcome
     )
     if not cookies:
-        if outcome and getattr(outcome[-1], "name", None) == "InvalidPassword":
-            from steam.enums import EResult
+        from steam.enums import EResult
 
+        # header.eresult у живого Steam — обычный int, не EResult; IntEnum
+        # сравнивается с int, поэтому проверка работает для обоих видов.
+        if outcome and outcome[-1] == EResult.InvalidPassword:
             return EResult.InvalidPassword
         return None
     refresh_token = cookies.get("refresh_token")
