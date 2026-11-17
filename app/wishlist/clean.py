@@ -102,8 +102,14 @@ def run(
     steam_id: str,
     cfg: Any,
     reasons: frozenset[str] = ALL_REASONS,
+    use_saved: bool = False,
 ) -> None:
-    """Точка входа: dry-run по умолчанию, удаляет только при do_remove=True."""
+    """Точка входа: dry-run по умолчанию, удаляет только при do_remove=True.
+
+    use_saved (только с do_remove): удалить кандидатов из последнего
+    dry-run (candidates.txt), не проверяя магазин заново — полная проверка
+    большого вишлиста занимает десятки минут и упирается в 429.
+    """
     if list_only:
         listed = clean_state.load_candidates()
         for appid in listed:
@@ -115,7 +121,11 @@ def run(
     candidates: list[int] = []
     result = wishlist_api.AddResult()
     try:
-        candidates = discover(steam_id=steam_id, reasons=reasons)
+        if use_saved:
+            candidates = clean_state.load_candidates()
+            log.info("Кандидаты из последнего dry-run: %d", len(candidates))
+        else:
+            candidates = discover(steam_id=steam_id, reasons=reasons)
         if do_remove:
             result = remove(limit=limit, interval=interval)
     except KeyboardInterrupt:

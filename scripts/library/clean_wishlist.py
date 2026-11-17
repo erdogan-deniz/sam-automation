@@ -46,6 +46,14 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Реально удалить (по умолчанию — dry-run, только подсчёт)",
     )
+    parser.add_argument(
+        "--saved",
+        action="store_true",
+        help=(
+            "С --remove: удалить кандидатов из последнего dry-run, не "
+            "проверяя магазин заново (флаги причин при этом не действуют)"
+        ),
+    )
     reasons = parser.add_argument_group(
         "что удалять (без флагов — всё; флаги складываются)"
     )
@@ -80,7 +88,10 @@ def _selected_reasons(args: argparse.Namespace) -> frozenset[str]:
 
 
 def main() -> None:
-    args = _build_parser().parse_args(casefold_options(sys.argv[1:]))
+    parser = _build_parser()
+    args = parser.parse_args(casefold_options(sys.argv[1:]))
+    if args.saved and not args.remove:
+        parser.error("--saved действует только вместе с --remove")
 
     setup_logging(name="clean_wishlist", category="library/clean_wishlist")
     cfg = load_config()
@@ -104,6 +115,7 @@ def main() -> None:
         steam_id=cfg.steam_id,
         cfg=cfg,
         reasons=_selected_reasons(args),
+        use_saved=args.saved,
     )
 
 
