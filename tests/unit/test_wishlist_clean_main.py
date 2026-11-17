@@ -68,3 +68,18 @@ def test_remove_limit_interval_any_case(monkeypatch) -> None:
 
 def test_list_flag(monkeypatch) -> None:
     assert _run_with(monkeypatch, "--list")["list_only"] is True
+
+
+def test_saved_flag_with_remove(monkeypatch) -> None:
+    kw = _run_with(monkeypatch, "--remove", "--SAVED")
+    assert kw["do_remove"] is True
+    assert kw["use_saved"] is True
+
+
+def test_saved_flag_defaults_off(monkeypatch) -> None:
+    assert _run_with(monkeypatch, "--remove")["use_saved"] is False
+
+
+def test_saved_without_remove_is_rejected(monkeypatch) -> None:
+    with pytest.raises(SystemExit):
+        _run_with(monkeypatch, "--saved")

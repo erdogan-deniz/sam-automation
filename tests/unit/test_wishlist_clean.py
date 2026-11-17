@@ -203,6 +203,39 @@ def test_run_remove_passes_reasons_and_reports(monkeypatch, tmp_path) -> None:
     assert captured["added"] == 2
 
 
+def test_run_saved_skips_discover_and_removes_saved_candidates(
+    monkeypatch, tmp_path
+) -> None:
+    _patch_state(monkeypatch, tmp_path)
+
+    def _boom(**_k):
+        raise AssertionError("с --saved магазин заново не проверяется")
+
+    monkeypatch.setattr(clean, "discover", _boom)
+    monkeypatch.setattr(
+        clean,
+        "remove",
+        lambda **_k: clean.wishlist_api.AddResult(added=[1, 2]),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        clean.report, "report_result", lambda **kw: captured.update(kw)
+    )
+
+    clean.run(
+        do_remove=True,
+        list_only=False,
+        limit=None,
+        interval=1.0,
+        steam_id="s",
+        cfg=SimpleNamespace(),
+        use_saved=True,
+    )
+
+    assert captured["status"] == "ok"
+    assert captured["added"] == 2
+
+
 def test_run_list_only_prints_candidates(monkeypatch, tmp_path, capsys) -> None:
     _patch_state(monkeypatch, tmp_path)
     cs.save_candidates([4, 5])
